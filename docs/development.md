@@ -254,6 +254,10 @@ artifacts on their target OS before distributing them.
   violet/blue/cyan gradients. Generation details are in [assets/README.md](../assets/README.md).
   The PNG is embedded in the executable; macOS packaging converts it with
   `sips` and `iconutil` and installs the `.icns` resource in the bundle.
+  Windows builds link `packaging/windows/proview.ico` as native EXE resources
+  using MinGW `windres`, so Explorer and shortcuts display the application icon.
+  Regenerate the ICO after changing the source PNG with
+  `go run packaging/windows/icon.go assets/app-icon.png packaging/windows/proview.ico`.
 - Fonts: Go Sans, Go Mono and Latin Modern Roman. Bundled font, icon and native
   PDF notices are accessible through **Help → Third-Party Licenses**.
 

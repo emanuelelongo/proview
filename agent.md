@@ -210,6 +210,10 @@ PDF page combination/reordering/deletion and blank pages.
   from any host.
   Choose `ARCH=arm64` or `ARCH=amd64` as supported by the C compiler.
   Windows builds use `-H windowsgui` to suppress the console.
+  `packaging/build.py` also links the native Windows icon via MinGW `windres` and
+  a temporary architecture-specific `.syso` in `cmd/gui`, removed after building.
+  Keep `packaging/windows/proview.ico` aligned with `assets/app-icon.png` using
+  `packaging/windows/icon.go`; the release tooling checkout must include the ICO.
 - `task package:macos` creates `build/macos-<arch>/Proview.app`. It converts the PNG
   through `sips`/`iconutil`, installs the `.icns`, writes bundle metadata, signs ad hoc,
   verifies the signature, touches the bundle for Finder and deletes the intermediate

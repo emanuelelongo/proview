@@ -151,6 +151,8 @@ jobs:
           cp .ci-tooling/packaging/build.py packaging/build.py
           cp .ci-tooling/packaging/ocr_runtime.py packaging/ocr_runtime.py
           cp .ci-tooling/packaging/ocr_models.py packaging/ocr_models.py
+          mkdir -p packaging/windows
+          cp .ci-tooling/packaging/windows/proview.ico packaging/windows/proview.ico
           cp .ci-tooling/Taskfile.yaml Taskfile.yaml
       - uses: actions/setup-python@v6
         with:

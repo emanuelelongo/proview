@@ -69,7 +69,7 @@ class OCRRuntimeTests(TestCase):
             "ocr_runtime.build_runtime",
         ) as prepare, mock.patch("ocr_runtime.target_os", return_value="windows"), mock.patch(
             "platform.machine", return_value="AMD64",
-        ), mock.patch("build.subprocess.call", side_effect=[0, 0]) as run:
+        ), mock.patch("build.windows_icon_resources"), mock.patch("build.subprocess.call", side_effect=[0, 0]) as run:
             self.assertEqual(build.main(), 0)
             prepare.assert_called_once_with("windows", "amd64")
             command = run.call_args_list[0].args[0]
@@ -85,5 +85,5 @@ class OCRRuntimeTests(TestCase):
             "ocr_runtime.build_runtime",
         ), mock.patch("ocr_runtime.target_os", return_value="windows"), mock.patch(
             "platform.machine", return_value="AMD64",
-        ), mock.patch("build.subprocess.call", side_effect=[0, 1]):
+        ), mock.patch("build.windows_icon_resources"), mock.patch("build.subprocess.call", side_effect=[0, 1]):
             self.assertEqual(build.main(), 1)

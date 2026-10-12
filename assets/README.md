@@ -8,6 +8,9 @@ macOS `sips`, preserving transparency. The macOS packaging task creates the
 `.icns` resource; `FyneApp.toml` points to the PNG for Fyne packaging.
 The PNG is also embedded in the executable and set as Fyne's application icon,
 independently of the current working directory.
+Windows uses the derived multi-size `packaging/windows/proview.ico`, generated
+with `go run packaging/windows/icon.go assets/app-icon.png packaging/windows/proview.ico`.
+The build script compiles it into native executable icon resources with MinGW `windres`.
 
 ## Generation prompt
 

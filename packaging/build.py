@@ -5,10 +5,45 @@ The configuration identifies the application; user tokens are never build input.
 """
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 import re
+import shutil
 import subprocess
+import tempfile
+
+
+@contextmanager
+def windows_icon_resources():
+    """Link Explorer's icon into the EXE, then remove the generated Go object."""
+    arch = os.environ.get("GOARCH") or subprocess.check_output(["go", "env", "GOARCH"], text=True).strip()
+    targets = {"amd64": "pe-x86-64", "386": "pe-i386"}
+    if arch not in targets:
+        raise RuntimeError(f"Unsupported Windows icon resource architecture: {arch}")
+    compiler = shutil.which("x86_64-w64-mingw32-windres" if arch == "amd64" else "i686-w64-mingw32-windres") or shutil.which("windres")
+    if not compiler:
+        raise RuntimeError("Windows builds require MinGW windres to embed the application icon")
+    icon = Path(__file__).resolve().parent / "windows/proview.ico"
+    resource = Path("cmd/gui") / f"proview_icon_windows_{arch}.syso"
+    with tempfile.TemporaryDirectory(prefix="proview-icon-") as temporary:
+        directory = Path(temporary)
+        # Copy the icon beside the RC file to avoid escaping checkout paths.
+        shutil.copyfile(icon, directory / "proview.ico")
+        (directory / "icon.rc").write_text('1 ICON "proview.ico"\n', encoding="ascii")
+        subprocess.run([compiler, "--input", "icon.rc", "--output", "icon.syso",
+                        "--output-format", "coff", "--target", targets[arch]],
+                       cwd=directory, check=True)
+        # Exclusive creation protects any existing resource or concurrent build.
+        output = resource.open("xb")
+        try:
+            with output:
+                with (directory / "icon.syso").open("rb") as source:
+                    shutil.copyfileobj(source, output)
+            yield
+        finally:
+            resource.unlink()
 
 
 def git_metadata(commit="HEAD"):
@@ -85,7 +120,11 @@ def main():
     if flags:
         command.extend(["-ldflags", " ".join(flags)])
     command.extend(["-o", options.o, "./cmd/gui"])
-    result = subprocess.call(command)
+    if options.windows_gui or (os.environ.get("GOOS") or ("windows" if os.name == "nt" else "")) == "windows":
+        with windows_icon_resources():
+            result = subprocess.call(command)
+    else:
+        result = subprocess.call(command)
     if result == 0 and options.bundle_ocr and (os.environ.get("GOOS") or target_os()) == target_os():
         host_arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "amd64"
         if arch == host_arch:
