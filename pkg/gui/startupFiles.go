@@ -37,6 +37,24 @@ func (g *Gui) openFilesFromFinder(paths []string) {
 	})
 }
 
+func (g *Gui) openDroppedFiles(_ fyne.Position, uris []fyne.URI) {
+	paths := make([]string, 0, len(uris))
+	for _, uri := range uris {
+		if uri != nil && uri.Scheme() == "file" {
+			paths = append(paths, uri.Path())
+		}
+	}
+	if len(paths) == 0 {
+		return
+	}
+	// Native drop callbacks run outside Fyne's UI goroutine.
+	fyne.Do(func() {
+		if !g.closed {
+			g.openStartupFiles(paths)
+		}
+	})
+}
+
 func startupFileReader(path string) (reader fyne.URIReadCloser, err error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {

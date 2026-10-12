@@ -36,6 +36,9 @@ PDF page combination/reordering/deletion and blank pages.
   visible overlays, at preview resolution (144 DPI). It does not crop the PDF itself.
 - Each editor window owns its document, history and save destination; all windows
   share one Fyne application. Closing one must not close the other editors.
+- File drops use Fyne's window-wide `SetOnDropped` on all desktop platforms.
+  Dispatch to `fyne.Do`, ignore closed windows, and reuse startup opening: an
+  empty idle window opens the first file, otherwise use new editor windows.
 - Use the shared `chooseFile` / `chooseFiles` helpers for document opening,
   signature import and PDF collection selection. Native pickers use
   `github.com/ncruces/zenity`; unavailable/failing backends fall back to Fyne.

@@ -272,6 +272,7 @@ func newGui(application fyne.App) *Gui {
 
 	BuildMenu(g)
 	g.window.SetCloseIntercept(g.requestClose)
+	g.window.SetOnDropped(g.openDroppedFiles)
 	g.installKeyHandler()
 
 	return g

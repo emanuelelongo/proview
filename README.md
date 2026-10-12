@@ -20,6 +20,10 @@ I've never found an alternative that felt right for me across platforms. With th
 
 ## Features
 
+Drag files onto any Proview window to open them on Linux, Windows and macOS.
+An empty window opens the first file; additional files, or files dropped onto an
+occupied window, open in separate windows and preserve your current work.
+
 ### Image viewing and basic editing
 
 Proview opens the most common image formats and supports basic editing, such as cropping, rotating and annotating.

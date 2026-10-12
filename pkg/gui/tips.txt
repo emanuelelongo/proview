@@ -1,5 +1,6 @@
 # Status bar tips: one complete English tip per line.
 
+Tip: Drop files onto the window to open them; an occupied window opens them in new windows.
 Tip: Hold Shift while clicking New page to create a document from the image in your clipboard.
 Tip: Use Redact to securely remove sensitive information from PDFs when you export.
 Tip: Hold Shift to move or resize an object without leaving the current tool.
