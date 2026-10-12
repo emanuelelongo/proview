@@ -1,0 +1,127 @@
+<p align="center">
+  <img src="assets/app-icon.png" alt="Proview icon" width="128">
+</p>
+
+# Proview
+
+A simple desktop app for quickly viewing and making basic edits to common file formats on Linux, Windows and macOS.
+
+## Motivation
+
+One of the things I miss most when I switch from macOS to other systems is the Preview app. I know, it's a small thing, but it can make a big difference in everyday work: cropping and annotating a screenshot, signing a PDF or highlighting a paragraph, adding quick annotations, and so on.
+
+If you've ever used it, you know it's not just about the number of features, but how naturally they fit into a simple interface.
+
+I've never found an alternative that felt right for me across platforms. With the help of AI, I was finally able to build my own. I hope you like it too.
+
+<a href="docs/screenshots/overview.png" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/overview.png" alt="Main window: a PDF with the compact toolbar, page thumbnails and a handwritten signature placed on the page." width="400">
+</a>
+
+## Features
+
+### Image viewing and basic editing
+
+Proview opens the most common image formats and supports basic editing, such as cropping, rotating and annotating.
+
+<a href="docs/screenshots/image-editing.png" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/image-editing.png" alt="Image editing: an image with a crop selection, plus an example of a rotated or flipped image." width="400">
+</a>
+
+It also has a built-in OCR engine that recognizes text in images and scanned documents, making it easy to copy text or open links.
+
+<a href="docs/screenshots/ocr.png" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/ocr.png" alt="OCR: an image with recognized text highlighted and copied to the clipboard." width="400">
+</a>
+
+Proview also opens ASCII and binary STL files, letting you inspect 3D models with rotation, panning and zoom. You can switch between standard views, toggle wireframe, and crop the current view into an image.
+
+<a href="docs/screenshots/stl.gif" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/stl.gif" alt="STL model viewing: a 3D model being inspected with rotation, panning and zoom." width="400">
+</a>
+
+### PDF markup and organization
+
+For PDF documents, Proview also lets you highlight text, redact sensitive content, and add, remove, reorder or rotate pages.
+You can also combine multiple PDFs into one document, or split a PDF into separate files.
+
+All PDF operations preserve native PDF content: added text, ordinary shapes and vector signatures are exported as vector content rather than flattening the whole page into a bitmap.
+
+<a href="docs/screenshots/pdf.gif" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/pdf.gif" alt="PDF pages: several thumbnails with a page being dragged into a new position, and a document containing a blank or duplicated page." width="400">
+</a>
+
+### Add handwritten signatures
+
+Signing documents is still a common task in the digital age, and we have to accept that.
+What shouldn't be necessary is printing, signing and scanning a document just to send it back.
+
+Proview lets you capture your signature once and add it to any document with a single click.
+
+<a href="docs/screenshots/sign-pdf.gif" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/sign-pdf.gif" alt="Signing a PDF: the signature library next to a document, with an inserted signature selected and its editing controls visible." width="400">
+</a>
+
+You can draw your signature with a mouse or a stylus, or import it from a photo or scan.
+For imported signatures, the background is removed automatically and the signature is vectorized, so you can scale it without losing sharpness.
+You can save signatures to the cloud (S3-compatible storage or Google Drive) and use them across different computers.
+
+Google Drive sync currently uses a Google OAuth app in testing mode. It still needs approval before it can be made generally available; access is currently limited to approved test users.
+
+<a href="docs/screenshots/import-signature.png" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/import-signature.png" alt="Importing a signature: a fictional signature on paper beside its transparent vector preview, with the selection and sensitivity control visible." width="400">
+</a>
+
+### Remove sensitive PDF content
+
+The **Redact** tool marks words, lines or rectangular regions for removal. When you export, Proview removes the underlying content and sanitizes the PDF, including metadata, attachments and other supported document structures.
+
+<a href="docs/screenshots/redaction.gif" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/redaction.gif" alt="Redaction: a fictional document with marked text beside the exported result, using invented names and account numbers." width="400">
+</a>
+
+## Get Proview
+
+Builds are available from the repository's [Releases](../../releases).
+
+| Platform | Package |
+| --- | --- |
+| macOS, Apple Silicon or Intel | ZIP containing `Proview.app` |
+| Windows, x64 | ZIP containing `proview.exe` |
+| Linux, x64 or ARM64 | AppImage |
+
+### Build and contribute
+
+Proview is written in Go with Fyne, using MuPDF and pdfcpu for PDF work and Tesseract for OCR. Build dependencies include Go 1.26+, Python 3.10+, Task and the native libraries for your platform.
+
+```sh
+task run     # Run the app
+task check   # Run tests and static checks
+task build   # Build for the current platform
+```
+
+See [Development and packaging](docs/development.md) for setup, native and cross builds, release workflows and local data locations. Project conventions are in [agent.md](agent.md). Third-party notices are available in the app under **Help → Third-Party Licenses**; icon provenance is documented in [assets/README.md](assets/README.md).
+
+## What could come next
+
+These are directions to explore, rather than a release schedule:
+
+- **Full GIF support:** animation playback, frame editing and GIF export.
+- **Full TIFF support:** navigating and editing every page, plus TIFF export.
+- **More image formats:** HEIC/HEIF and AVIF.
+- **PDF forms:** filling and saving interactive form fields, beyond placing text on a page.
+- **Certificate-based PDF signatures:** a separate workflow from visible handwritten signatures.
+- **Markdown viewing:** read rendered Markdown documents.
+- **Better recognition and signature acquisition:** more OCR languages, mixed text/image PDF pages, and better handling of photographed signatures, shadows and paper backgrounds.
+- **Easier distribution:** macOS Developer ID signing and notarization, and broader testing across desktop environments.
+
+The aim is to keep useful everyday tools close at hand while preserving a simple interface.
+
+## License
+
+Copyright (C) 2026 Emanuele Longo.
+
+Proview is licensed under the **GNU Affero General Public License, version 3
+or any later version (AGPL-3.0-or-later)**. See [LICENSE](LICENSE) and
+[NOTICE](NOTICE). Third-party components retain their respective licenses;
+see the [dependency license review](docs/licensing.md).

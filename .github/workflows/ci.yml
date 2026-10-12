@@ -1,0 +1,377 @@
+name: Build
+run-name: Build [${{ inputs.runner || 'github-hosted' }}] - ${{ inputs.branch || github.head_ref || github.ref_name }}
+
+# Validate pull requests; publish releases only on manual dispatch.
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to build and publish
+        type: string
+        required: true
+        default: develop
+      runner:
+        description: Build runner
+        type: choice
+        required: true
+        default: github-hosted
+        options:
+          - github-hosted
+          - self-hosted
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    timeout-minutes: 45
+    needs: version
+    runs-on: ${{ inputs.runner == 'self-hosted' && 'macos-self-hosted' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.version.outputs.commit_sha }}
+      - name: Checkout workflow tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tooling
+          sparse-checkout: |
+            .github/workflows
+            packaging
+            docker
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: ${{ inputs.runner != 'self-hosted' }}
+      - name: Select self-hosted Python
+        if: inputs.runner == 'self-hosted'
+        run: bash .ci-tooling/packaging/self_hosted_python.sh
+      - name: Check macOS build prerequisites
+        if: inputs.runner == 'self-hosted'
+        run: |
+          xcrun --find clang
+          xcrun --find clang++
+          cmake --version
+          make --version
+          xcrun --show-sdk-path
+          docker info
+          command -v gh
+          command -v codesign
+          command -v iconutil
+      - name: Install Fyne build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+      - name: Test
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test build and release tooling
+        run: python3 -m unittest discover -s .ci-tooling/packaging -p 'test_*.py'
+      - name: Build
+        run: |
+          mkdir -p build
+          python3 .ci-tooling/packaging/build.py -o build/proview
+
+  version:
+    timeout-minutes: 10
+    runs-on: ${{ inputs.runner == 'self-hosted' && 'macos-self-hosted' || 'ubuntu-22.04' }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      commit_sha: ${{ steps.version.outputs.commit_sha }}
+      commit_date: ${{ steps.version.outputs.commit_date }}
+      branch: ${{ steps.version.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select self-hosted Python
+        if: inputs.runner == 'self-hosted'
+        run: bash packaging/self_hosted_python.sh
+      - name: Determine package version
+        id: version
+        env:
+          TARGET_BRANCH: ${{ inputs.branch }}
+          RELEASE_RUN_OFFSET: ${{ vars.RELEASE_RUN_OFFSET }}
+        run: python3 packaging/ci_version.py
+
+  native-build:
+    if: inputs.runner != 'self-hosted'
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - os: macos-15
+            platform: macos
+            arch: arm64
+          - os: macos-15-intel
+            platform: macos
+            arch: amd64
+          - os: windows-2022
+            platform: windows
+            arch: amd64
+          - os: ubuntu-22.04
+            platform: linux
+            arch: amd64
+          # Bundled ARM64 MuPDF libraries require glibc 2.38 or newer.
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+    runs-on: ${{ matrix.target.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: '1'
+      GOARCH: ${{ matrix.target.arch }}
+      PROVIEW_VERSION: ${{ needs.version.outputs.version }}
+      PROVIEW_APP_NAME: Proview
+      PROVIEW_BUILD_VERSION: ${{ needs.version.outputs.tag }}
+      PROVIEW_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+      PROVIEW_COMMIT_SHA: ${{ needs.version.outputs.commit_sha }}
+      PROVIEW_COMMIT_DATE: ${{ needs.version.outputs.commit_date }}
+      PROVIEW_GOOGLE_CLIENT_ID: ${{ secrets.PROVIEW_GOOGLE_CLIENT_ID || vars.PROVIEW_GOOGLE_CLIENT_ID }}
+      PROVIEW_GOOGLE_CLIENT_SECRET: ${{ secrets.PROVIEW_GOOGLE_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.version.outputs.commit_sha }}
+      - name: Checkout workflow tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tooling
+          sparse-checkout: packaging
+      - name: Use current build tooling
+        run: |
+          cp .ci-tooling/packaging/build.py packaging/build.py
+          cp .ci-tooling/packaging/ocr_runtime.py packaging/ocr_runtime.py
+          cp .ci-tooling/packaging/ocr_models.py packaging/ocr_models.py
+          cp .ci-tooling/Taskfile.yaml Taskfile.yaml
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Install Linux build and packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc g++ cmake make libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev desktop-file-utils patchelf
+      - name: Select runner Windows C compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # MuPDF's bundled archives require the runner's compatible MinGW runtime.
+          $compiler = 'C:/mingw64/bin/gcc.exe'
+          if (!(Test-Path $compiler)) { throw 'The runner MinGW compiler is missing.' }
+          'C:/mingw64/bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "CC=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          'CXX=C:/mingw64/bin/g++.exe' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $compiler --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check native OCR build prerequisites
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import shutil
+          tools = ["cmake", "mingw32-make", "gcc", "g++", "windres", "objdump"] if os.name == "nt" else ["cmake", "make", "cc", "c++"]
+          missing = [tool for tool in tools if not shutil.which(tool)]
+          if missing:
+              raise SystemExit("Missing OCR build prerequisites: " + ", ".join(missing))
+          PYTHON
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.53.1
+      - name: Check Google configuration for published builds
+        if: github.event_name != 'pull_request'
+        run: |
+          if [[ -z "$PROVIEW_GOOGLE_CLIENT_ID" || -z "$PROVIEW_GOOGLE_CLIENT_SECRET" ]]; then
+            echo 'Published packages require PROVIEW_GOOGLE_CLIENT_ID and PROVIEW_GOOGLE_CLIENT_SECRET.' >&2
+            exit 1
+          fi
+      - name: Set package version
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import re
+          from pathlib import Path
+          path = Path("FyneApp.toml")
+          metadata = path.read_text()
+          metadata = re.sub(r'^Version = ".*"$', 'Version = "' + os.environ["PROVIEW_VERSION"] + '"', metadata, flags=re.MULTILINE)
+          metadata = re.sub(r'^Build = .*$', "Build = " + os.environ["GITHUB_RUN_NUMBER"], metadata, flags=re.MULTILINE)
+          path.write_text(metadata)
+          PYTHON
+      - name: Test PDF redaction security
+        run: go test ./internal/pdfengine
+      - name: Package macOS application
+        if: runner.os == 'macOS'
+        run: |
+          task package:macos ARCH="$GOARCH"
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "build/macos-$GOARCH/Proview.app" "dist/Proview-$PROVIEW_BUILD_VERSION-macos-$GOARCH.zip"
+      - name: Package Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          task build:windows:native ARCH=$env:GOARCH
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path "build/windows-$env:GOARCH/proview.exe" -DestinationPath "dist/Proview-$env:PROVIEW_BUILD_VERSION-windows-$env:GOARCH.zip"
+      - name: Package Linux AppImage
+        if: runner.os == 'Linux'
+        run: |
+          task package:linux ARCH="$GOARCH"
+          mkdir -p dist
+          case "$GOARCH" in
+            amd64) appimage_arch=x86_64 ;;
+            arm64) appimage_arch=aarch64 ;;
+            *) echo "Unsupported AppImage architecture: $GOARCH" >&2; exit 1 ;;
+          esac
+          cp "build/linux-$GOARCH/Proview-$PROVIEW_VERSION-$appimage_arch.AppImage" "dist/Proview-$PROVIEW_BUILD_VERSION-linux-$GOARCH.AppImage"
+      - name: Test bundled OCR runtime
+        env:
+          PROVIEW_OCR_SMOKE: '1'
+        run: go test -tags proview_ocr_bundle ./internal/ocr -count=1
+      - uses: actions/upload-artifact@v6
+        with:
+          name: package-${{ matrix.target.platform }}-${{ matrix.target.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  cross-build:
+    if: github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted'
+    timeout-minutes: 120
+    needs: version
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        target:
+          - platform: macos
+            arch: arm64
+          - platform: macos
+            arch: amd64
+          - platform: windows
+            arch: amd64
+          - platform: linux
+            arch: amd64
+          - platform: linux
+            arch: arm64
+    runs-on: macos-self-hosted
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: '1'
+      PROVIEW_VERSION: ${{ needs.version.outputs.version }}
+      PROVIEW_APP_NAME: Proview
+      PROVIEW_BUILD_VERSION: ${{ needs.version.outputs.tag }}
+      PROVIEW_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+      PROVIEW_COMMIT_SHA: ${{ needs.version.outputs.commit_sha }}
+      PROVIEW_COMMIT_DATE: ${{ needs.version.outputs.commit_date }}
+      PROVIEW_GOOGLE_CLIENT_ID: ${{ secrets.PROVIEW_GOOGLE_CLIENT_ID || vars.PROVIEW_GOOGLE_CLIENT_ID }}
+      PROVIEW_GOOGLE_CLIENT_SECRET: ${{ secrets.PROVIEW_GOOGLE_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.version.outputs.commit_sha }}
+      - name: Checkout workflow tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tooling
+          sparse-checkout: |
+            packaging
+            docker
+      - name: Use current build tooling
+        run: |
+          cp .ci-tooling/packaging/build.py packaging/build.py
+          cp .ci-tooling/packaging/ocr_runtime.py packaging/ocr_runtime.py
+          cp .ci-tooling/packaging/ocr_models.py packaging/ocr_models.py
+          cp .ci-tooling/Taskfile.yaml Taskfile.yaml
+      - name: Select self-hosted Python
+        run: bash .ci-tooling/packaging/self_hosted_python.sh
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          # The persistent runner already retains Go caches locally.
+          cache: false
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.53.1
+      - name: Check Google configuration for published builds
+        run: |
+          if [[ -z "$PROVIEW_GOOGLE_CLIENT_ID" || -z "$PROVIEW_GOOGLE_CLIENT_SECRET" ]]; then
+            echo 'Published packages require PROVIEW_GOOGLE_CLIENT_ID and PROVIEW_GOOGLE_CLIENT_SECRET.' >&2
+            exit 1
+          fi
+      - name: Set package version
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import re
+          from pathlib import Path
+          path = Path("FyneApp.toml")
+          metadata = path.read_text()
+          metadata = re.sub(r'^Version = ".*"$', 'Version = "' + os.environ["PROVIEW_VERSION"] + '"', metadata, flags=re.MULTILINE)
+          metadata = re.sub(r'^Build = .*$', "Build = " + os.environ["GITHUB_RUN_NUMBER"], metadata, flags=re.MULTILINE)
+          path.write_text(metadata)
+          PYTHON
+      - name: Build and package target
+        run: python3 .ci-tooling/packaging/self_hosted.py --target '${{ matrix.target.platform }}' --arch '${{ matrix.target.arch }}' --tooling .ci-tooling
+      - uses: actions/upload-artifact@v6
+        with:
+          name: package-${{ matrix.target.platform }}-${{ matrix.target.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    timeout-minutes: 15
+    # One build path is intentionally skipped; require success from the selected path.
+    if: >-
+      ${{ always() && !cancelled() && github.event_name == 'workflow_dispatch' &&
+          needs.version.result == 'success' && needs.quality.result == 'success' &&
+          ((inputs.runner == 'self-hosted' && needs.cross-build.result == 'success' && needs.native-build.result == 'skipped') ||
+           (inputs.runner != 'self-hosted' && needs.native-build.result == 'success' && needs.cross-build.result == 'skipped')) }}
+    needs: [quality, version, native-build, cross-build]
+    runs-on: ${{ inputs.runner == 'self-hosted' && 'macos-self-hosted' || 'ubuntu-22.04' }}
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+      RELEASE_BRANCH: ${{ needs.version.outputs.branch }}
+      RELEASE_COMMIT: ${{ needs.version.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select self-hosted Python
+        if: inputs.runner == 'self-hosted'
+        run: bash packaging/self_hosted_python.sh
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: package-*
+          path: dist
+          merge-multiple: true
+      - name: Prepare complete release assets
+        run: python3 packaging/prepare_release.py
+      - name: Publish release
+        shell: bash
+        run: |
+          publish() {
+            local tag="$1" assets="$2" latest="$3"
+            if ! gh release view "$tag" > /dev/null 2>&1; then
+              gh release create "$tag" --target "$RELEASE_COMMIT" --title "Proview $tag" --notes-file "$assets/release-notes.md" --prerelease="$PRERELEASE" --draft
+            fi
+            gh release upload "$tag" "$assets"/*.zip "$assets"/*.AppImage "$assets/SHA256SUMS.txt" --clobber
+            gh release edit "$tag" --draft=false --prerelease="$PRERELEASE" --latest="$latest" --notes-file "$assets/release-notes.md"
+          }
+          publish "$RELEASE_TAG" release-assets false

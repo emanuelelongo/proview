@@ -1,0 +1,333 @@
+version: '3'
+
+dotenv: ['.env']
+
+vars:
+  FYNE_CROSS_VERSION: v1.6.3
+  LINUXDEPLOY_VERSION: 1-alpha-20251107-1
+  LINUXDEPLOY_X86_64_SHA256: c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+  LINUXDEPLOY_AARCH64_SHA256: 620095110d693282b8ebeb244a95b5e911cf8f65f76c88b4b47d16ae6346fcff
+
+tasks:
+  signature:probe:
+    desc: Evaluate a JPEG or PNG signature as SVG, PNG preview and vector PDF
+    cmds:
+      - go run ./cmd/signatureprobe {{.CLI_ARGS}}
+
+  ocr:models:
+    desc: Fetch pinned English and Italian OCR models
+    cmds:
+      - python3 packaging/ocr_models.py
+
+  ocr:probe:
+    desc: Generate an OCR corpus and accuracy/timing report (requires Tesseract 5)
+    deps: [ocr:models]
+    env:
+      TESSDATA_PREFIX: '{{.ROOT_DIR}}/build/ocr/tessdata'
+    cmds:
+      - go run ./cmd/ocrprobe
+
+  redact:probe:
+    desc: Run native PDF redaction security and geometry checks
+    cmds:
+      - go test -count=1 -v ./internal/pdfengine
+
+  build:
+    desc: Build a binary for the current OS and architecture
+    cmds:
+      - mkdir -p build
+      - python3 packaging/build.py --bundle-ocr -o ./build/proview{{if eq OS "windows"}}.exe{{end}}
+
+  build:macos:
+    desc: Build a macOS binary (ARCH=arm64 or amd64; run on macOS)
+    platforms: [darwin]
+    vars:
+      ARCH: '{{default ARCH .ARCH}}'
+    env:
+      CGO_ENABLED: '1'
+      GOARCH: '{{.ARCH}}'
+    cmds:
+      - mkdir -p build/macos-{{.ARCH}}
+      - python3 packaging/build.py --bundle-ocr -o build/macos-{{.ARCH}}/proview
+
+  build:linux:
+    desc: Build a Linux binary (run on Linux with Fyne development libraries)
+    platforms: [linux]
+    vars:
+      ARCH: '{{default ARCH .ARCH}}'
+    env:
+      CGO_ENABLED: '1'
+      GOARCH: '{{.ARCH}}'
+    cmds:
+      - mkdir -p build/linux-{{.ARCH}}
+      - python3 packaging/build.py --bundle-ocr -o build/linux-{{.ARCH}}/proview
+
+  tools:linuxdeploy:
+    desc: Download the pinned linuxdeploy AppImage for the host architecture
+    platforms: [linux]
+    vars:
+      TOOL_ARCH:
+        sh: |
+          case "$(uname -m)" in
+            x86_64) printf x86_64 ;;
+            aarch64|arm64) printf aarch64 ;;
+            *) printf unsupported ;;
+          esac
+      LINUXDEPLOY: 'build/tools/linuxdeploy-{{.TOOL_ARCH}}.AppImage'
+      SHA256:
+        sh: |
+          case '{{.TOOL_ARCH}}' in
+            x86_64) printf '{{.LINUXDEPLOY_X86_64_SHA256}}' ;;
+            aarch64) printf '{{.LINUXDEPLOY_AARCH64_SHA256}}' ;;
+          esac
+    preconditions:
+      - sh: test '{{.TOOL_ARCH}}' != unsupported
+        msg: 'linuxdeploy is supported only on x86_64 and aarch64 Linux hosts.'
+      - sh: command -v curl
+        msg: 'Install curl to download linuxdeploy.'
+      - sh: command -v sha256sum
+        msg: 'Install sha256sum to verify the linuxdeploy download.'
+    status:
+      - test -x '{{.LINUXDEPLOY}}'
+      - test "$(sha256sum '{{.LINUXDEPLOY}}' | cut -d ' ' -f 1)" = '{{.SHA256}}'
+    cmds:
+      - mkdir -p build/tools
+      - curl --fail --location --retry 3 --output '{{.LINUXDEPLOY}}' 'https://github.com/linuxdeploy/linuxdeploy/releases/download/{{.LINUXDEPLOY_VERSION}}/linuxdeploy-{{.TOOL_ARCH}}.AppImage'
+      - test "$(sha256sum '{{.LINUXDEPLOY}}' | cut -d ' ' -f 1)" = '{{.SHA256}}'
+      - chmod +x '{{.LINUXDEPLOY}}'
+
+  package:linux:
+    desc: Create a distributable Linux AppImage (native x86_64 or aarch64 build)
+    platforms: [linux]
+    vars:
+      ARCH: '{{default ARCH .ARCH}}'
+      APPIMAGE_ARCH:
+        sh: |
+          case '{{.ARCH}}' in
+            amd64) printf x86_64 ;;
+            arm64) printf aarch64 ;;
+            *) printf unsupported ;;
+          esac
+      VERSION:
+        sh: sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml
+      APPDIR: 'build/appimage-{{.ARCH}}/Proview.AppDir'
+      OUTPUT: 'build/linux-{{.ARCH}}/Proview-{{.VERSION}}-{{.APPIMAGE_ARCH}}.AppImage'
+      LINUXDEPLOY: '{{default (printf "build/tools/linuxdeploy-%s.AppImage" .APPIMAGE_ARCH) .LINUXDEPLOY_OVERRIDE}}'
+    deps:
+      - task: build:linux
+        vars: {ARCH: '{{.ARCH}}'}
+      - task: tools:linuxdeploy
+    preconditions:
+      - sh: test '{{.APPIMAGE_ARCH}}' != unsupported
+        msg: 'AppImage packaging supports ARCH=amd64 or ARCH=arm64.'
+      - sh: test '{{.ARCH}}' = "$(go env GOARCH)"
+        msg: 'Build the AppImage natively on the matching Linux architecture.'
+    cmds:
+      - rm -rf '{{.APPDIR}}' '{{.OUTPUT}}'
+      - mkdir -p 'build/appimage-{{.ARCH}}'
+      - APPIMAGE_EXTRACT_AND_RUN=1 ARCH='{{.APPIMAGE_ARCH}}' LDAI_OUTPUT='{{.OUTPUT}}' '{{.LINUXDEPLOY}}' --appdir '{{.APPDIR}}' --executable 'build/linux-{{.ARCH}}/proview' --desktop-file packaging/linux/com.emanuelelongo.proview.desktop --icon-file packaging/linux/hicolor/512x512/apps/com.emanuelelongo.proview.png --output appimage
+      - test -x '{{.OUTPUT}}'
+      - rm -rf '{{.APPDIR}}'
+
+  install:linux:
+    desc: Build and install Proview for the current Linux user
+    platforms: [linux]
+    vars:
+      ARCH: '{{default ARCH .ARCH}}'
+    deps:
+      - task: build:linux
+        vars: {ARCH: '{{.ARCH}}'}
+    cmds:
+      - install -Dm755 build/linux-{{.ARCH}}/proview "$HOME/.local/bin/proview"
+      - rm -f "$HOME/.local/share/icons/hicolor/1024x1024/apps/com.emanuelelongo.proview.png"
+      - install -Dm644 packaging/linux/hicolor/512x512/apps/com.emanuelelongo.proview.png "$HOME/.local/share/icons/hicolor/512x512/apps/com.emanuelelongo.proview.png"
+      - install -Dm644 packaging/linux/com.emanuelelongo.proview.desktop "$HOME/.local/share/applications/com.emanuelelongo.proview.desktop"
+      - desktop-file-edit --set-key=Exec --set-value="$HOME/.local/bin/proview %F" "$HOME/.local/share/applications/com.emanuelelongo.proview.desktop"
+      - command -v update-desktop-database >/dev/null && update-desktop-database "$HOME/.local/share/applications" || true
+      - command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" || true
+
+  uninstall:linux:
+    desc: Remove the per-user Linux installation of Proview
+    platforms: [linux]
+    cmds:
+      - rm -f "$HOME/.local/bin/proview"
+      - rm -f "$HOME/.local/share/icons/hicolor/512x512/apps/com.emanuelelongo.proview.png"
+      - rm -f "$HOME/.local/share/icons/hicolor/1024x1024/apps/com.emanuelelongo.proview.png"
+      - rm -f "$HOME/.local/share/applications/com.emanuelelongo.proview.desktop"
+      - command -v update-desktop-database >/dev/null && update-desktop-database "$HOME/.local/share/applications" || true
+      - command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" || true
+
+  build:windows:native:
+    desc: Build a Windows GUI executable natively (run on Windows with MinGW)
+    platforms: [windows]
+    vars:
+      ARCH: '{{default ARCH .ARCH}}'
+    env:
+      CGO_ENABLED: '1'
+      GOARCH: '{{.ARCH}}'
+    cmds:
+      - mkdir -p build/windows-{{.ARCH}}
+      - python3 packaging/build.py --bundle-ocr --windows-gui -o build/windows-{{.ARCH}}/proview.exe
+
+  build:windows:
+    desc: Build a Windows GUI executable using Docker from any OS
+    vars:
+      ARCH: '{{default "amd64" .ARCH}}'
+    cmds:
+      - task: cross:windows
+        vars: {ARCH: '{{.ARCH}}'}
+
+  package:macos:
+    desc: Create build/macos-ARCH/Proview.app with an ad hoc signature
+    platforms: [darwin]
+    vars:
+      ARCH: '{{default ARCH .ARCH}}'
+      APP: 'build/macos-{{.ARCH}}/Proview.app'
+      VERSION:
+        sh: sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml
+      BUNDLE_VERSION:
+        sh: sed -n 's/^Version = "\([^"-]*\).*"/\1/p' FyneApp.toml
+      BUILD_NUMBER:
+        sh: sed -n 's/^Build = //p' FyneApp.toml
+    cmds:
+      - task: build:macos
+        vars: {ARCH: '{{.ARCH}}'}
+      - task: icon:macos
+      - mkdir -p '{{.APP}}/Contents/MacOS' '{{.APP}}/Contents/Resources'
+      - cp build/macos-{{.ARCH}}/proview '{{.APP}}/Contents/MacOS/proview'
+      - cp build/icons/Proview.icns '{{.APP}}/Contents/Resources/Proview.icns'
+      - |
+        cat > '{{.APP}}/Contents/Info.plist' <<'PLIST'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>proview</string>
+          <key>CFBundleIdentifier</key><string>com.emanuelelongo.proview</string>
+          <key>CFBundleName</key><string>Proview</string>
+          <key>CFBundleDisplayName</key><string>Proview</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleIconFile</key><string>Proview.icns</string>
+          <key>CFBundleShortVersionString</key><string>{{.BUNDLE_VERSION}}</string>
+          <key>CFBundleGetInfoString</key><string>Proview {{.VERSION}}</string>
+          <key>CFBundleVersion</key><string>{{.BUILD_NUMBER}}</string>
+          <key>NSHighResolutionCapable</key><true/>
+          <key>CFBundleDocumentTypes</key>
+          <array>
+            <dict>
+              <key>CFBundleTypeName</key><string>PDF Document</string>
+              <key>CFBundleTypeRole</key><string>Editor</string>
+              <key>LSHandlerRank</key><string>Alternate</string>
+              <key>LSItemContentTypes</key>
+              <array><string>com.adobe.pdf</string></array>
+            </dict>
+            <dict>
+              <key>CFBundleTypeName</key><string>Image</string>
+              <key>CFBundleTypeRole</key><string>Editor</string>
+              <key>LSHandlerRank</key><string>Alternate</string>
+              <key>LSItemContentTypes</key>
+              <array><string>public.png</string><string>public.jpeg</string><string>com.compuserve.gif</string><string>public.tiff</string><string>com.microsoft.bmp</string><string>org.webmproject.webp</string></array>
+            </dict>
+            <dict>
+              <key>CFBundleTypeName</key><string>STL 3D Model</string>
+              <key>CFBundleTypeRole</key><string>Viewer</string>
+              <key>LSHandlerRank</key><string>Alternate</string>
+              <key>LSItemContentTypes</key>
+              <array><string>public.standard-tesselated-geometry-format</string></array>
+            </dict>
+          </array>
+        </dict></plist>
+        PLIST
+      - plutil -lint '{{.APP}}/Contents/Info.plist'
+      - codesign --force --sign - '{{.APP}}'
+      - codesign --verify --deep --strict '{{.APP}}'
+      - touch '{{.APP}}'
+      - rm -f 'build/macos-{{.ARCH}}/proview'
+
+  icon:macos:
+    desc: Convert the app PNG into a macOS icon with all standard sizes
+    platforms: [darwin]
+    sources:
+      - assets/app-icon.png
+      - Taskfile.yaml
+    generates:
+      - build/icons/Proview.icns
+    cmds:
+      - mkdir -p build/icons/Proview.iconset
+      - |
+        for size in 16 32 128 256 512; do
+          sips -z "$size" "$size" assets/app-icon.png --out "build/icons/Proview.iconset/icon_${size}x${size}.png" >/dev/null
+          retina_size=$((size * 2))
+          sips -z "$retina_size" "$retina_size" assets/app-icon.png --out "build/icons/Proview.iconset/icon_${size}x${size}@2x.png" >/dev/null
+        done
+      - iconutil -c icns build/icons/Proview.iconset -o build/icons/Proview.icns
+
+  tools:cross:
+    desc: Install the pinned fyne-cross CLI (requires Go; add GOPATH/bin to PATH)
+    cmds:
+      - go install github.com/fyne-io/fyne-cross@{{.FYNE_CROSS_VERSION}}
+
+  tools:windows-image:
+    desc: Build the local Windows cross-compilation image with Go 1.26
+    sources:
+      - docker/fyne-cross-windows/Dockerfile
+    cmds:
+      - docker build --pull --platform linux/amd64 -f docker/fyne-cross-windows/Dockerfile -t proview/fyne-cross-windows:go1.26 .
+
+  cross:linux:
+    desc: Cross compile and package Linux using Docker (ARCH defaults to amd64)
+    vars:
+      ARCH: '{{default "amd64" .ARCH}}'
+    preconditions:
+      - sh: command -v fyne-cross
+        msg: 'Install fyne-cross with task tools:cross and add GOPATH/bin to PATH.'
+      - sh: docker info
+        msg: 'Start Docker before cross compiling.'
+    cmds:
+      - fyne-cross linux -arch={{.ARCH}} -app-id=com.emanuelelongo.proview -output=proview ./cmd/gui
+
+  cross:windows:
+    desc: Build a single Windows executable with bundled OCR using Docker
+    vars:
+      ARCH: '{{default "amd64" .ARCH}}'
+    preconditions:
+      - sh: test '{{.ARCH}}' = amd64
+        msg: 'Windows OCR packages support ARCH=amd64.'
+      - sh: docker info
+        msg: 'Start Docker before cross compiling.'
+    cmds:
+      - task: tools:windows-image
+      - >-
+        docker run --rm --platform linux/amd64
+        --mount 'type=bind,source={{.ROOT_DIR}},target=/workspace'
+        --mount type=volume,source=proview-go-mod,target=/go/pkg/mod
+        --mount type=volume,source=proview-go-build-windows,target=/root/.cache/go-build
+        --workdir /workspace
+        --env PROVIEW_GOOGLE_CLIENT_ID --env PROVIEW_GOOGLE_CLIENT_SECRET
+        --env PROVIEW_APP_NAME --env PROVIEW_BUILD_VERSION --env PROVIEW_REPOSITORY_URL
+        --env PROVIEW_COMMIT_SHA --env PROVIEW_COMMIT_DATE
+        proview/fyne-cross-windows:go1.26 bash -ceu
+        'mkdir -p build/windows-amd64;
+        export GOOS=windows GOARCH=amd64 CGO_ENABLED=1
+        CC="zig cc -target x86_64-windows-gnu -Wl,--subsystem,windows"
+        CXX="zig c++ -target x86_64-windows-gnu -Wl,--subsystem,windows";
+        python3 packaging/build.py --bundle-ocr --windows-gui -o build/windows-amd64/proview.exe'
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  vet:
+    desc: Run Go static checks
+    cmds:
+      - go vet ./...
+
+  check:
+    desc: Run tests and static checks
+    deps: [test, vet]
+
+  run:
+    desc: Build and run the application with bundled OCR
+    cmds:
+      - task: build
+      - ./build/proview{{if eq OS "windows"}}.exe{{end}} {{.CLI_ARGS}}

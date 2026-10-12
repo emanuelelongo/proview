@@ -1,0 +1,13 @@
+/build/
+/gui
+/proview
+/fyne-cross/
+/dist/
+/release-assets/
+/.task/
+.DS_Store
+.env
+
+/internal/ocr/payloads/
+
+__pycache__/

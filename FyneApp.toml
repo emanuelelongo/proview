@@ -1,0 +1,6 @@
+[Details]
+Name = "Proview"
+Icon = "assets/app-icon.png"
+ID = "com.emanuelelongo.proview"
+Version = "1.0.0-beta.1"
+Build = 1

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Proview
+GenericName=Document Viewer and Editor
+Comment=View STL models, and view, edit, and sign images and PDF documents
+Exec=proview %F
+Icon=com.emanuelelongo.proview
+Terminal=false
+Categories=Graphics;Viewer;
+MimeType=application/pdf;image/png;image/jpeg;image/gif;image/tiff;image/bmp;image/webp;model/stl;
+Keywords=PDF;image;signature;crop;document;STL;3D;
+StartupNotify=true
+StartupWMClass=Proview

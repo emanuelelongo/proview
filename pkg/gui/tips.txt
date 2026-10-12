@@ -1,0 +1,19 @@
+# Status bar tips: one complete English tip per line.
+
+Tip: Hold Shift while clicking New page to create a document from the image in your clipboard.
+Tip: Use Redact to securely remove sensitive information from PDFs when you export.
+Tip: Hold Shift to move or resize an object without leaving the current tool.
+Tip: Hold Ctrl while resizing a shape to preserve its proportions.
+Tip: Press Esc to cancel the current operation or clear a selection.
+Tip: Click a thumbnail to switch PDF pages; drag thumbnails to reorder them.
+Tip: After inserting a signature, select it to change its color and thickness.
+Tip: Use Undo to revert your last change.
+Tip: Right-click an object to bring it forward or send it backward among overlapping objects.
+Tip: Hold Space and drag to pan around a zoomed document or an STL model.
+Tip: Select recognized text in an image or PDF to copy it.
+Tip: Click a QR code to reveal its contents in the status bar; click a link there to open it.
+Tip: Crop a PDF page or STL view to open the selected area as an image in a new window.
+Tip: File > Close closes the current document and keeps the editor window open.
+Tip: For STL models, keys 1-7 select standard views and 0 toggles wireframe.
+Tip: GIF and multipage TIFF files currently show only their first frame or page.
+Tip: Sync your signature library with Google Drive or S3 to use it on another computer.
