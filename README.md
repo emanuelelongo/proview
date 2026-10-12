@@ -14,6 +14,8 @@ If you've ever used it, you know it's not just about the number of features, but
 
 I've never found an alternative that felt right for me across platforms. With the help of AI, I was finally able to build my own. I hope you like it too.
 
+Proview is an independent project and is not affiliated with, sponsored by, or endorsed by Apple Inc.
+
 <a href="docs/screenshots/overview.png" target="_blank" rel="noopener noreferrer">
   <img src="docs/screenshots/overview.png" alt="Main window: a PDF with the compact toolbar, page thumbnails and a handwritten signature placed on the page." width="400">
 </a>
