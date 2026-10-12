@@ -78,6 +78,14 @@ After all jobs succeed, branches other than `develop` publish a prerelease named
 with no provider-specific filename markers.
 
 Manual runs always publish a prerelease, without changing GitHub's latest release.
+
+Release notes use a fixed template with a **What's new** section, platform
+download links, installation tips, checksums and collapsible build details.
+After publication, edit **What's new** on GitHub to replace the placeholder
+with the release highlights. The workflow does not infer changes from commits.
+To promote a tested prerelease, edit it on GitHub or run
+`gh release edit <tag> --prerelease=false --latest`.
+
 The workflow must be present on the default branch for the manual button to appear.
 Every release points to the selected commit. Release numbers can have gaps.
 All build jobs and the release use the same

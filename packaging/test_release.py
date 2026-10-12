@@ -13,6 +13,19 @@ from prepare_release import prepare, TARGETS
 
 
 class ReleaseTests(TestCase):
+    def test_release_template_includes_highlights_and_download_links(self):
+        changes = "New feature\n- Bug fix"
+        notes = prepare_release.release_notes("v1.4", {
+            "branch": "develop", "commit": "target-sha", "run_url": "https://github.com/example/proview/actions/runs/123",
+            "previous_tag": "v1.3", "changes": changes,
+        })
+        self.assertIn("- New feature\n- Bug fix", notes)
+        self.assertNotIn("- - Bug fix", notes)
+        self.assertIn("https://github.com/example/proview/compare/v1.3...v1.4", notes)
+        for platform, arch in TARGETS:
+            extension = "AppImage" if platform == "linux" else "zip"
+            self.assertIn(f"/releases/download/v1.4/Proview-v1.4-{platform}-{arch}.{extension}", notes)
+
     def test_ci_outputs_include_metadata_for_the_built_commit(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "outputs"

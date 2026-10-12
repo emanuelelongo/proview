@@ -363,7 +363,7 @@ jobs:
           pattern: package-*
           path: dist
           merge-multiple: true
-      - name: Prepare complete release assets
+      - name: Prepare complete release assets and release notes
         run: python3 packaging/prepare_release.py
       - name: Publish release
         shell: bash

@@ -373,6 +373,10 @@ PDF page combination/reordering/deletion and blank pages.
 - Gate publication on quality and all matrix jobs; upload into a draft before
   publishing. Reruns replace published assets and checksums. Restrict
   `contents: write` to the release job; no personal token is needed.
+- Release notes are rendered by `packaging/prepare_release.py`, with a shared
+  changelog/downloads/installation template. Fill in the release highlights
+  manually after publication; do not infer them from commit history.
+  Manual builds remain prereleases until explicitly promoted.
 - Keep the Linux ARM64 package job on Ubuntu 24.04 or newer: bundled go-fitz
   MuPDF archives reference glibc 2.38 C23 conversion symbols that are absent
   on Ubuntu 22.04. Linux AMD64 can retain its older build baseline.
