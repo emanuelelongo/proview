@@ -1,9 +1,13 @@
-# Publish Proview on GitHub Pages and attempt Google OAuth brand verification
+# Proview website and Google OAuth branding
 
-Prepared on October 12, 2026. The website is static HTML/CSS, with no build,
+Updated October 14, 2026. The website is published at
+[proview.0x7f.it](https://proview.0x7f.it/). Google OAuth branding has been
+approved and published, and the app's Audience is **External**, **In production**.
+
+The website is static HTML/CSS, with no build,
 JavaScript, external fonts or analytics. Its files are `index.html`,
-`privacy.html`, `terms.html`, `site-assets/` and `.nojekyll`; the homepage also
-uses the existing `screenshots/overview.png`. All links work under `/proview/`.
+`privacy.html`, `terms.html`, `site-assets/`, `.nojekyll` and `CNAME`; the homepage also
+uses the existing `screenshots/overview.png`. Relative links work at the custom domain's root.
 The application icon is copied from `assets/app-icon.png`.
 
 ## 1. Review contact information and content
@@ -19,9 +23,8 @@ The privacy page covers local processing, Google Drive data and tokens,
 optional S3, retention, revocation, deletion and GitHub Pages security logging.
 Terms preserve the project's AGPL-3.0-or-later grant and the rights to users'
 documents. These pages do not add a privacy notice inside the desktop app.
-Google also expects accessible in-product privacy disclosures; review the
-Cloud sync UI before submission and add a link to the published privacy page
-if needed.
+Keep the published policies and in-product privacy disclosures aligned with
+the distributed app.
 
 ## 2. Optional local preview
 
@@ -34,23 +37,12 @@ python3 -m http.server 8080 --directory docs
 Open `http://localhost:8080/`. Check all three pages and the mobile layout.
 Stop the server with Ctrl+C. No installation or build is needed.
 
-## 3. Commit and push only the website files
+## 3. Publish website updates
 
-The intended publishing branch is `develop`, currently the repository's default
-branch. If you choose another branch, it must contain all the website files.
-Review the diff first. Existing unrelated working-tree changes should not be
-included in this commit.
-
-```sh
-git add docs/index.html docs/privacy.html docs/terms.html docs/site-assets docs/.nojekyll docs/github-pages-setup.md
-git diff --cached --stat
-git commit -m "Add Proview website and OAuth policy pages"
-git push origin develop
-```
-
-The existing screenshot must already be tracked on the publishing branch.
-If other changes were already staged, remove them from this commit before
-committing. Do not upload `.env`, OAuth credentials or user tokens.
+The publishing branch is `develop`, with Pages serving `/docs`. Review the
+website diff before committing and pushing changes. Keep `docs/CNAME` containing
+`proview.0x7f.it` and include any required assets. Preserve unrelated working-tree
+changes. Do not upload `.env`, OAuth credentials or user tokens.
 
 ## 4. Enable Pages
 
@@ -59,15 +51,16 @@ In `https://github.com/emanuelelongo/proview`:
 1. Open **Settings → Pages**.
 2. Under **Build and deployment**, choose **Deploy from a branch**.
 3. Select **develop**, folder **/docs**, and click **Save**.
-4. Leave **Custom domain** empty. Enable **Enforce HTTPS** if offered.
+4. Set **Custom domain** to `proview.0x7f.it`. Enable **Enforce HTTPS** once
+   the certificate is available.
 5. Wait for the Pages deployment in **Actions** to finish successfully.
 6. Open the URLs below and confirm that all pages and the screenshot load.
 
 | Purpose | URL |
 | --- | --- |
-| Homepage | https://emanuelelongo.github.io/proview/ |
-| Privacy policy | https://emanuelelongo.github.io/proview/privacy.html |
-| Terms of service | https://emanuelelongo.github.io/proview/terms.html |
+| Homepage | https://proview.0x7f.it/ |
+| Privacy policy | https://proview.0x7f.it/privacy.html |
+| Terms of service | https://proview.0x7f.it/terms.html |
 
 `.nojekyll` makes Pages serve these files without a Jekyll build. Publishing
 `/docs` also exposes the existing documentation and screenshots in that folder.
@@ -75,33 +68,35 @@ Future pushes to the chosen branch update the site automatically.
 
 Reference: [GitHub publishing source documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
-## 5. Attempt website ownership verification without a custom domain
+## 5. Configure OVH DNS and verify domain ownership
 
-This is an experiment, not a guaranteed way to pass OAuth domain verification.
-Google's current OAuth remediation guide explicitly asks for a Search Console
-**Domain property**, verified through DNS, rather than a **URL-prefix property**.
-You cannot add DNS records to GitHub's assigned `github.io` host. A successful
-HTML verification proves control of the published site but may not satisfy
-Google's OAuth ownership requirement.
+In the `0x7f.it` DNS zone, the `proview` CNAME must point to
+`emanuelelongo.github.io.`. The trailing dot is essential with OVH: without it,
+OVH treats the target as relative and appends `.0x7f.it`. Do not include a scheme
+or `/proview/` path. To correct the existing record and publish the zone:
 
-To establish the website control that is available:
+```sh
+ovhcloud domain-zone record update 0x7f.it 5441804432 \
+  --target 'emanuelelongo.github.io.'
+ovhcloud domain-zone refresh 0x7f.it
+dig proview.0x7f.it CNAME +short
+```
+
+The expected answer is `emanuelelongo.github.io.`. After propagation, use
+**Check again** in GitHub Pages if needed.
+
+For Google ownership verification:
 
 1. Sign in to [Google Search Console](https://search.google.com/search-console)
-   with the Google account that owns your Google Cloud project.
-2. Add a **URL-prefix** property for `https://emanuelelongo.github.io/proview/`.
-3. Choose **HTML tag** and copy the exact `google-site-verification` meta tag
-   generated by Google.
-4. Paste it inside `<head>` in `docs/index.html`. Do not use a dummy token.
-5. Commit and push the change, wait for Pages to deploy, then click **Verify**
-   in Search Console. Keep the tag in place afterwards.
+   with the Google account that owns the Google Cloud project.
+2. Add a **Domain property** for `0x7f.it`.
+3. Add Google's provided TXT record to the OVH zone and refresh the zone.
+4. Click **Verify** in Search Console and keep the TXT record in place.
 
-You can alternatively use Google's HTML verification file: place the exact
-provided file in `docs/`, publish it and verify at the URL Google specifies.
-Use this only if the specified location is under `/proview/`; a verification
-file requested at the host root requires control of the separate
-`emanuelelongo.github.io` user-site repository.
+Domain ownership is verified through DNS. Keep all three pages' canonical URLs
+on the custom domain.
 
-References: [Search Console ownership methods](https://support.google.com/webmasters/answer/9008080),
+References: [GitHub custom domain configuration](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site),
 [OAuth domain verification requirements](https://support.google.com/cloud/answer/13804266?hl=en).
 
 ## 6. Configure Google Auth Platform
@@ -116,24 +111,27 @@ website. The website does not host an OAuth callback or need client secrets.
    contact email is also required.
 2. Upload `docs/site-assets/app-icon.png` if using a logo. The PNG is under
    Google's 1 MB limit; Google recommends a square 120 × 120 image.
-3. Attempt to add **emanuelelongo.github.io** under **Authorized domains**.
-   Enter only the hostname, without `https://` or `/proview/`. Do not enter
-   `github.com` or claim ownership of GitHub's shared `github.io` domain.
+3. Set **Authorized domains** to `0x7f.it`, which covers `proview.0x7f.it`.
+   Enter the domain without a scheme or path.
 4. Enter the three URLs from the table above in **Application home page**,
    **Application privacy policy link** and **Application terms of service link**.
 5. In **Data Access**, keep only the scope the app requests:
    `https://www.googleapis.com/auth/drive.file`. Remove unused scopes after
-   checking that no other client in the same project needs them.
-6. In **Audience**, use **External** for a public app. Keep test accounts
-   configured during testing; move to **In production** when ready for public
-   use. Testing refresh tokens for this Drive scope are short-lived.
-7. Use **Verify Branding** when available. Inspect any **View issues** result
-   and the **Verification Center**. Once approved, click **Publish branding**.
-   Publishing the app audience and publishing branding are separate steps.
-8. Test the released app: open the signature library → Cloud sync → Google
-   Drive → Connect; approve access, create a sample signature and confirm it
-   reaches Drive. Test a second installation, deletion, disconnect and account
-   revocation using non-sensitive test artwork.
+   checking that no other client in the same project needs them. This scope is
+   non-sensitive and does not require sensitive or restricted scope verification.
+   Keep **Google Drive API** enabled in the project.
+6. Keep **Audience** set to **External**, **In production**. Use a separate
+   project for development and testing.
+7. Keep the approved branding published. Publishing the app audience and
+   publishing branding are separate steps. Future branding changes may require
+   verification again.
+8. Test the released app with a Google account:
+   open the signature library → Cloud sync → Google Drive → Connect to Google
+   Drive; approve access, create a sample signature and confirm it reaches Drive.
+   Test a second installation, deletion, disconnect and account revocation using
+   sample artwork. See the [cloud sync acceptance check](signature-cloud-sync.md#google-drive-two-installation-acceptance-check).
+
+Google Workspace administrators can still restrict authorization for their users.
 
 If useful for the reviewer, describe the feature this way:
 
@@ -148,15 +146,9 @@ References: [Branding configuration](https://support.google.com/cloud/answer/155
 [Drive scope classification](https://developers.google.com/workspace/drive/api/guides/api-specific-auth),
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy).
 
-## 7. If Google rejects the GitHub host
+## 7. Desktop release configuration
 
-Save the exact issue text. If the console rejects the hostname or the reviewer
-requires DNS-level Domain verification, HTML tags and files do not satisfy that
-requirement. A manual review may be offered if you believe a finding is wrong,
-but approval of this host is not assured. Do not repeatedly submit unchanged
-configuration. The prepared site can stay on GitHub Pages and later use a
-custom domain without rebuilding its content; update canonical URLs if that
-happens.
-
-Keep the existing Desktop OAuth configuration and release credentials. No
-repository secrets or app rebuild are needed solely to publish this website.
+Keep the existing Desktop OAuth configuration and release credentials. Publishing
+the website, changing its domain and publishing branding alone do not require an
+app rebuild. If the embedded client configuration changes, rebuild the packages;
+see the [cloud sync guide](signature-cloud-sync.md).

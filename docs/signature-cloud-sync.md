@@ -6,6 +6,11 @@ it does not erase the previous remote archive. The local signature archive remai
 without a network connection. No documents or general application preferences
 are uploaded.
 
+Proview's Google OAuth app is **External** and **In production**, with published
+branding. The app requests only the non-sensitive
+`drive.file` scope. The public website and policies are at
+[proview.0x7f.it](https://proview.0x7f.it/).
+
 ## Configure Proview's Google project
 
 This is a maintainer task, once for Proview. Users do **not** create Google Cloud
@@ -17,10 +22,13 @@ projects or supply credentials.
 3. Create OAuth credentials of type **Desktop app**. Keep the same project and
    application identity across distributed builds so authorized files remain
    accessible on other installations.
-4. Initially use **Testing** and add the accounts used for validation as test
-   users. Drive refresh tokens in Testing expire after seven days. Before a
-   public release, configure the production consent screen and complete Google's
-   applicable publishing/verification requirements.
+4. Keep the public app's Audience **External** and **In production**, and its
+   approved branding published. Use `0x7f.it` as the authorized domain and the
+   website URLs documented in the [Pages and branding guide](github-pages-setup.md).
+   The current `drive.file` scope does not require sensitive or restricted scope
+   verification. Use a separate project for development or testing rather than
+   changing the public app's production configuration. Google Workspace administrators can
+   still restrict access for accounts in their organization.
 5. Set GitHub repository secrets `PROVIEW_GOOGLE_CLIENT_ID` and
    `PROVIEW_GOOGLE_CLIENT_SECRET` from the downloaded desktop client
    configuration. The client ID may alternatively be a repository variable;
@@ -240,7 +248,8 @@ are never written to ordinary preferences or build artifacts.
 
 ## Google Drive two-installation acceptance check
 
-Use two installations built with the same OAuth project and a Google test account.
+Use two released installations built with the same OAuth project and a Google
+account. Use sample signatures for this check.
 
 1. Create different local signatures on both installations. Create one identical
    signature independently on both. Connect both to the same Drive account.

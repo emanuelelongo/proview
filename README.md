@@ -72,7 +72,7 @@ You can draw your signature with a mouse or a stylus, or import it from a photo 
 For imported signatures, the background is removed automatically and the signature is vectorized, so you can scale it without losing sharpness.
 You can save signatures to the cloud (S3-compatible storage or Google Drive) and use them across different computers.
 
-Google Drive sync currently uses a Google OAuth app in testing mode. It still needs approval before it can be made generally available; access is currently limited to approved test users.
+Google Drive sync uses the published Proview OAuth app. Cloud sync is optional and uploads your saved signature library. Documents opened for editing stay on your computer. See the [cloud sync guide](docs/signature-cloud-sync.md) for setup and storage details.
 
 <a href="docs/screenshots/import-signature.png" target="_blank" rel="noopener noreferrer">
   <img src="docs/screenshots/import-signature.png" alt="Importing a signature: a fictional signature on paper beside its transparent vector preview, with the selection and sensitivity control visible." width="400">
