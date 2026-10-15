@@ -29,6 +29,11 @@ func (g *Gui) redo() {
 
 func (g *Gui) syncDocumentView() {
 	g.clearAreaSelection()
+	if g.formsActive && g.window != nil {
+		g.window.Canvas().Focus(nil)
+	}
+	g.reloadFormLayers()
+	g.refreshFormPreviews()
 	if g.document == nil {
 		g.updateHistoryActions()
 		return
@@ -68,6 +73,10 @@ func (g *Gui) updateHistoryActions() {
 	g.syncOCR()
 	g.updateFileInfo()
 	hasDocument := g.document != nil
+	if g.formAction != nil {
+		setToggleToolbarActionEnabled(g.formAction, hasDocument && g.document.HasFormFields())
+		g.formAction.SetActive(hasDocument && g.formsActive)
+	}
 	if g.openAction != nil {
 		g.openAction.Enable()
 	}

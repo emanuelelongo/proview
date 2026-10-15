@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -100,6 +101,7 @@ func (s SignatureOverlay) Asset() signatures.Asset {
 }
 
 type Document struct {
+	formValues      map[formKey][]string
 	unsaved         bool
 	pages           []pageRef
 	source          *Source
@@ -117,6 +119,7 @@ type Document struct {
 }
 
 type editorState struct {
+	formValues      map[formKey][]string
 	imageTransform  img.Transform
 	pages           []pageRef
 	crop            *NormalizedRect
@@ -204,7 +207,10 @@ func (d *Document) Preview(page int) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	preview, err := source.Preview(index)
+	preview, changed, err := d.formPreview(source, index, pdfPreviewDPI)
+	if !changed {
+		preview, err = source.Preview(index)
+	}
 	if err == nil && d.Format() == FormatPDF {
 		preview = (img.Transform{Turns: d.pages[page].turns}).Apply(preview)
 	}
@@ -216,7 +222,10 @@ func (d *Document) Thumbnail(page int) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	thumbnail, err := source.Thumbnail(index)
+	thumbnail, changed, err := d.formPreview(source, index, pdfThumbnailDPI)
+	if !changed {
+		thumbnail, err = source.Thumbnail(index)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -709,6 +718,7 @@ func (d *Document) signatureIndex(id SignatureID) int {
 
 func (d *Document) snapshot() editorState {
 	state := editorState{
+		formValues:      cloneFormValues(d.formValues),
 		imageTransform:  d.imageTransform,
 		pages:           append([]pageRef(nil), d.pages...),
 		signatures:      make([]SignatureOverlay, len(d.signatures)),
@@ -727,6 +737,7 @@ func (d *Document) snapshot() editorState {
 }
 
 func (d *Document) restore(state editorState) {
+	d.formValues = cloneFormValues(state.formValues)
 	d.imageTransform = state.imageTransform
 	d.pages = append([]pageRef(nil), state.pages...)
 	d.crop = nil
@@ -758,6 +769,9 @@ func (d *Document) record(before editorState) {
 }
 
 func editorStatesEqual(first, second editorState, includeNextID bool) bool {
+	if !maps.EqualFunc(first.formValues, second.formValues, slices.Equal[[]string]) {
+		return false
+	}
 	if first.imageTransform != second.imageTransform {
 		return false
 	}

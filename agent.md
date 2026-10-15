@@ -4,6 +4,13 @@ Development conventions, architectural constraints and regression prevention.
 Keep this file current when those rules change. Operational commands and
 dependency references are in `README.md`; version metadata is in `FyneApp.toml`.
 
+## PDF forms work in progress
+
+Read [docs/pdf-forms.md](docs/pdf-forms.md) before continuing PDF form work. It is
+the current implementation/status handoff, including accepted decisions, tests,
+limitations and remaining tasks. Branch: `prototype/pdf-forms`. The prototype,
+fixtures and manual demo are committed together; release/packaging is separate.
+
 ## Language and collaboration
 
 - Use **English only in code, comments, UI strings, errors and project documentation**.

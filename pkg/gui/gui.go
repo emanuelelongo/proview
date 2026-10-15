@@ -21,6 +21,11 @@ import (
 )
 
 type Gui struct {
+	formPulse                         *fyne.Animation
+	formPulseSerial                   uint64
+	formsActive                       bool
+	formAction                        *toggleToolbarAction
+	formLayers                        map[int]*formLayer
 	modelViewport                     *modelViewport
 	modelPanel                        fyne.CanvasObject
 	modelCrop                         *cropOverlay
@@ -186,6 +191,9 @@ func newGui(application fyne.App) *Gui {
 	g.imageScroll = container.NewScroll(g.imageContent)
 	g.imagePanOverlay.SetScroll(g.imageScroll)
 
+	g.formAction = newToggleToolbarAction(tablerIcon("forms"), g.toggleForms)
+	g.formAction.button.tooltip = "Fill PDF form"
+	g.formAction.preparePulse()
 	g.cropAction = newToggleToolbarAction(tablerIcon("crop"), g.startCrop)
 	g.cropAction.button.tooltip = "Crop"
 	g.annotationControls = container.NewVBox()
@@ -219,6 +227,7 @@ func newGui(application fyne.App) *Gui {
 		g.annotationActions[toolShapes],
 		g.annotationActions[toolText],
 		g.signatureAction,
+		g.formAction,
 		g.annotationActions[toolRedact],
 		widget.NewToolbarSeparator(),
 		rotateLeftAction,

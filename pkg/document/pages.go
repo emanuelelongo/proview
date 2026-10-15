@@ -233,7 +233,7 @@ func (d *Document) basePDF() ([]byte, error) {
 		}
 	}
 	if unchanged {
-		return d.Original(), nil
+		return d.sourcePDF(d.source)
 	}
 	ctx := context.Background()
 	var chunks []io.ReadSeeker
@@ -246,7 +246,11 @@ func (d *Document) basePDF() ([]byte, error) {
 			end++
 		}
 		var chunk bytes.Buffer
-		if err := collectPDFPages(ctx, source.Original(), &chunk, selection); err != nil {
+		original, err := d.sourcePDF(source)
+		if err != nil {
+			return nil, err
+		}
+		if err := collectPDFPages(ctx, original, &chunk, selection); err != nil {
 			return nil, fmt.Errorf("document: collect PDF pages: %w", err)
 		}
 		chunks = append(chunks, bytes.NewReader(chunk.Bytes()))

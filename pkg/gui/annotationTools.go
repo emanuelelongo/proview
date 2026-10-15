@@ -122,6 +122,7 @@ func (g *Gui) setAnnotationTool(tool annotationTool) {
 	if g.working && g.annotationPending == 0 {
 		return
 	}
+	g.setFormsActive(false)
 	g.commitTextObject()
 	g.stopSelectionModifierTimer()
 	g.temporarySelection = false

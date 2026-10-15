@@ -318,6 +318,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	pageLoaded := make([]bool, loadedDocument.PageCount())
 	pageLoading := make([]bool, loadedDocument.PageCount())
 	signatureLayers := make(map[int]*signatureLayer, loadedDocument.PageCount())
+	g.formLayers = make(map[int]*formLayer, loadedDocument.PageCount())
 	panOverlays := make([]*panOverlay, 0, loadedDocument.PageCount())
 
 	firstPreview, err := loadedDocument.Preview(0)
@@ -360,7 +361,9 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		crop := newCropOverlay()
 		crop.onActiveChanged = g.setCropToolActive
 		g.pdfCrops[page] = crop
-		pageContainer := container.NewCenter(container.NewStack(canvas.NewRectangle(color.White), pageImage, pageBorder, layer, crop, pan))
+		forms := newFormLayer(g, page)
+		g.formLayers[page] = forms
+		pageContainer := container.NewCenter(container.NewStack(canvas.NewRectangle(color.White), pageImage, pageBorder, layer, crop, forms, pan))
 		objects = append(objects, pageContainer)
 		pageContainers = append(pageContainers, pageContainer)
 
@@ -437,6 +440,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 }
 
 func (g *Gui) setDocument(doc *document.Document) {
+	g.stopFormPulse()
 	previous := g.document
 	if previous != doc {
 		g.stopOCR()
@@ -448,6 +452,9 @@ func (g *Gui) setDocument(doc *document.Document) {
 	g.clearRedactionSelection()
 	g.redactedTargets = nil
 	g.setAnnotationTool(toolSelect)
+	if previous != doc {
+		g.startFormPulse()
+	}
 	if previous != nil && previous != doc {
 		go previous.Close()
 	}

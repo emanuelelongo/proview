@@ -1,0 +1,59 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R 6 0 R 7 0 R 8 0 R 9 0 R] /DA (/Helv 12 Tf 0 g) /DR << /Font << /Helv 4 0 R >> >> >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << >> /Annots [5 0 R 6 0 R 7 0 R 8 0 R 9 0 R] >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /Rect [20 140 180 165] /P 3 0 R /F 4 /V (Initial) /MaxLen 30 >>
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /Rect [20 100 40 120] /P 3 0 R /F 4 /V /Off /AS /Off /AP << /N << /Off 10 0 R /Yes 11 0 R >> >> >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 131072 /T (choice) /Rect [20 60 180 85] /P 3 0 R /F 4 /Opt [[(a) (Alpha)] [(b) (Beta)]] /V (a) >>
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 1 /T (readonly) /Rect [20 20 100 40] /P 3 0 R /F 4 /V (Locked) >>
+endobj
+9 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (hidden) /Rect [110 20 190 40] /P 3 0 R /F 2 /V (Hidden) >>
+endobj
+10 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Resources << >> /Length 0 >>
+stream
+
+endstream
+endobj
+11 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Resources << >> /Length 23 >>
+stream
+0 0 0 rg 2 2 16 16 re f
+endstream
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000009 00000 n 
+0000000170 00000 n 
+0000000227 00000 n 
+0000000355 00000 n 
+0000000425 00000 n 
+0000000555 00000 n 
+0000000722 00000 n 
+0000000880 00000 n 
+0000001006 00000 n 
+0000001125 00000 n 
+0000001240 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R >>
+startxref
+1379
+%%EOF

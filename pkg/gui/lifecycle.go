@@ -44,6 +44,7 @@ func (g *Gui) requestCloseDocument() {
 }
 
 func (g *Gui) closeDocument() {
+	g.stopFormPulse()
 	if g.showingModel() {
 		g.clearModel()
 		g.panModifierDown = false
@@ -73,6 +74,7 @@ func (g *Gui) closeDocument() {
 	g.activePDFPage = 0
 	g.imageSignatureLayer.SetDocument(nil, 0, image.Point{})
 	g.signatureLayers = map[int]*signatureLayer{}
+	g.formLayers = nil
 	g.panOverlays = []*panOverlay{g.imagePanOverlay}
 	g.pdfCrops = nil
 	g.pdfPageIDs = nil
@@ -97,6 +99,7 @@ func (g *Gui) closeDocument() {
 }
 
 func (g *Gui) closeWindow() {
+	g.stopFormPulse()
 	g.closed = true
 	g.hideObjectOrderMenu()
 	g.clearModel()
@@ -222,6 +225,10 @@ func (g *Gui) installKeyHandler() {
 }
 
 func (g *Gui) cancelCurrentOperation() bool {
+	if g.formsActive {
+		g.setFormsActive(false)
+		return true
+	}
 	if g.objectOrderMenu != nil && g.objectOrderMenu.Visible() {
 		g.hideObjectOrderMenu()
 		return true

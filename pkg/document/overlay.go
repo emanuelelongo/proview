@@ -21,7 +21,7 @@ func (d *Document) CancelOverlayEdit(id OverlayID) error { return d.CancelSignat
 // Capture on the UI thread before rendering thumbnails in a worker.
 func (d *Document) RenderingSnapshot() *Document {
 	state := d.snapshot()
-	return &Document{source: d.source, pages: state.pages, crop: state.crop, signatures: state.signatures, redactions: state.redactions, imageTransform: state.imageTransform}
+	return &Document{formValues: state.formValues, source: d.source, pages: state.pages, crop: state.crop, signatures: state.signatures, redactions: state.redactions, imageTransform: state.imageTransform}
 }
 
 // ReplaceAnnotation can participate in a property gesture transaction, allowing

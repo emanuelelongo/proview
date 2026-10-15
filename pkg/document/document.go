@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"emanuelelongo/proview/internal/pdfengine"
 	img "emanuelelongo/proview/pkg/images"
 	"github.com/gen2brain/go-fitz"
 	_ "golang.org/x/image/bmp"
@@ -46,6 +47,9 @@ type pageData struct {
 }
 
 type Source struct {
+	formsLoaded bool
+	forms       []pdfengine.FormField
+	formsErr    error
 	mu          sync.Mutex
 	name        string
 	location    string
@@ -132,6 +136,10 @@ func (s *Source) PageCount() int {
 }
 
 func (s *Source) Preview(page int) (image.Image, error) {
+	var fields []pdfengine.FormField
+	if s.format == FormatPDF {
+		fields, _ = s.formFields()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if page < 0 || page >= len(s.pages) {
@@ -141,7 +149,13 @@ func (s *Source) Preview(page int) (image.Image, error) {
 		if err := s.openPDF(); err != nil {
 			return nil, err
 		}
-		preview, err := s.pdf.ImageDPI(page, pdfPreviewDPI)
+		var preview image.Image
+		var err error
+		if len(fields) > 0 {
+			preview, err = pdfengine.RenderFormPage(s.original, page, pdfPreviewDPI)
+		} else {
+			preview, err = s.pdf.ImageDPI(page, pdfPreviewDPI)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("render PDF page %d: %w", page+1, err)
 		}
@@ -152,6 +166,10 @@ func (s *Source) Preview(page int) (image.Image, error) {
 }
 
 func (s *Source) Thumbnail(page int) (image.Image, error) {
+	var fields []pdfengine.FormField
+	if s.format == FormatPDF {
+		fields, _ = s.formFields()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if page < 0 || page >= len(s.pages) {
@@ -164,7 +182,13 @@ func (s *Source) Thumbnail(page int) (image.Image, error) {
 		if err := s.openPDF(); err != nil {
 			return nil, err
 		}
-		thumbnail, err := s.pdf.ImageDPI(page, pdfThumbnailDPI)
+		var thumbnail image.Image
+		var err error
+		if len(fields) > 0 {
+			thumbnail, err = pdfengine.RenderFormPage(s.original, page, pdfThumbnailDPI)
+		} else {
+			thumbnail, err = s.pdf.ImageDPI(page, pdfThumbnailDPI)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("render PDF thumbnail %d: %w", page+1, err)
 		}

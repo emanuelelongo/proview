@@ -1,0 +1,95 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [6 0 R 7 0 R 10 0 R 11 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R 19 0 R 20 0 R] /DA (/Helv 12 Tf 0 g) /DR << /Font << /Helv 5 0 R >> >> >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << >> /Annots [6 0 R 8 0 R 10 0 R 11 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R 19 0 R 20 0 R] >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << >> /Annots [9 0 R] >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 8192 /T (password) /Rect [20 440 180 470] /P 3 0 R /F 4 /V (secret) /DV (default) /MaxLen 20 >>
+endobj
+7 0 obj
+<< /FT /Ch /Ff 2097152 /T (colors) /Kids [8 0 R 9 0 R] /Opt [[(r) (Red)] [(g) (Green)] [(b) (Blue)]] /V [(r) (b)] /DV [(g)] /I [0 2] >>
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 7 0 R /Rect [20 300 180 400] /P 3 0 R /F 4 >>
+endobj
+9 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 7 0 R /Rect [20 300 180 400] /P 4 0 R /F 4 >>
+endobj
+10 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 2 /T (profile.name) /Rect [20 240 180 270] /P 3 0 R /F 4 /V (Existing) /MaxLen 12 >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 2 /T (agree) /Rect [20 200 40 220] /P 3 0 R /F 4 /V /Off /AS /Off /AP << /N << /Off 12 0 R /Yes 13 0 R >> >> >>
+endobj
+12 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Resources << >> /Length 0 >>
+stream
+
+endstream
+endobj
+13 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Resources << >> /Length 23 >>
+stream
+0 0 0 rg 2 2 16 16 re f
+endstream
+endobj
+14 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 65536 /T (reset_all) /Rect [20 140 130 170] /P 3 0 R /F 4 /MK << /CA (Reset all) >> /A << /S /ResetForm >> >>
+endobj
+15 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 65536 /T (reset_subset) /Rect [140 140 250 170] /P 3 0 R /F 4 /MK << /CA (Reset profile) >> /A << /S /ResetForm /Fields [6 0 R (profile)] >> >>
+endobj
+16 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 65536 /T (reset_exclude) /Rect [260 140 380 170] /P 3 0 R /F 4 /A << /S /ResetForm /Fields [(profile)] /Flags 1 >> >>
+endobj
+17 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 1 /T (locked) /Rect [210 440 380 470] /P 3 0 R /F 4 /V (Locked) /DV (Locked default) >>
+endobj
+18 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (profile.note) /Rect [210 240 380 270] /P 3 0 R /F 4 /V (Edited note) /DV (Default) /MaxLen 12 >>
+endobj
+19 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 65536 /T (unsupported_submit) /Rect [20 80 130 110] /P 3 0 R /F 4 /A << /S /SubmitForm /F << /Type /Filespec /FS /URL /F (https://example.invalid/) >> >> >>
+endobj
+20 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (hidden) /Rect [210 80 380 110] /P 3 0 R /F 2 /V (Hidden) /DV (Hidden default) >>
+endobj
+xref
+0 21
+0000000000 65535 f 
+0000000009 00000 n 
+0000000215 00000 n 
+0000000278 00000 n 
+0000000451 00000 n 
+0000000555 00000 n 
+0000000625 00000 n 
+0000000781 00000 n 
+0000000932 00000 n 
+0000001034 00000 n 
+0000001136 00000 n 
+0000001282 00000 n 
+0000001456 00000 n 
+0000001571 00000 n 
+0000001710 00000 n 
+0000001882 00000 n 
+0000002088 00000 n 
+0000002268 00000 n 
+0000002417 00000 n 
+0000002575 00000 n 
+0000002794 00000 n 
+trailer
+<< /Size 21 /Root 1 0 R >>
+startxref
+2936
+%%EOF

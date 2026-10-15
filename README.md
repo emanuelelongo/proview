@@ -86,6 +86,14 @@ The **Redact** tool marks words, lines or rectangular regions for removal. When 
   <img src="docs/screenshots/redaction.gif" alt="Redaction: a fictional document with marked text beside the exported result, using invented names and account numbers." width="400">
 </a>
 
+### Fill PDF forms
+
+Use **Fill PDF form** to edit supported fields directly on the page. Text,
+passwords, checkbox/radio controls, dropdowns and single/multiple-selection lists
+remain editable after saving. Standard ResetForm buttons restore field defaults;
+missing required values are marked without blocking draft saves. Current scope,
+limitations and development status are in [PDF forms](docs/pdf-forms.md).
+
 ## Get Proview
 
 Builds are available from the repository's [Releases](../../releases).
@@ -115,7 +123,6 @@ These are directions to explore, rather than a release schedule:
 - **Full GIF support:** animation playback, frame editing and GIF export.
 - **Full TIFF support:** navigating and editing every page, plus TIFF export.
 - **More image formats:** HEIC/HEIF and AVIF.
-- **PDF forms:** filling and saving interactive form fields, beyond placing text on a page.
 - **Certificate-based PDF signatures:** a separate workflow from visible handwritten signatures.
 - **Markdown viewing:** read rendered Markdown documents.
 - **Better recognition and signature acquisition:** more OCR languages, mixed text/image PDF pages, and better handling of photographed signatures, shadows and paper backgrounds.
