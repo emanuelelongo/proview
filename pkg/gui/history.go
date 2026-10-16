@@ -70,6 +70,7 @@ func (g *Gui) syncDocumentView() {
 }
 
 func (g *Gui) updateHistoryActions() {
+	g.syncSearch()
 	g.syncOCR()
 	g.updateFileInfo()
 	hasDocument := g.document != nil

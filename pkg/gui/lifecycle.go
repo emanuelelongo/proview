@@ -44,6 +44,7 @@ func (g *Gui) requestCloseDocument() {
 }
 
 func (g *Gui) closeDocument() {
+	g.closeSearch()
 	g.stopFormPulse()
 	if g.showingModel() {
 		g.clearModel()
@@ -99,6 +100,7 @@ func (g *Gui) closeDocument() {
 }
 
 func (g *Gui) closeWindow() {
+	g.closeSearch()
 	g.stopFormPulse()
 	g.closed = true
 	g.hideObjectOrderMenu()
@@ -225,6 +227,10 @@ func (g *Gui) installKeyHandler() {
 }
 
 func (g *Gui) cancelCurrentOperation() bool {
+	if g.search != nil && g.search.bar.Visible() {
+		g.closeSearch()
+		return true
+	}
 	if g.formsActive {
 		g.setFormsActive(false)
 		return true

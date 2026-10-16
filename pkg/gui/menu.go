@@ -54,6 +54,13 @@ func BuildMenu(g *Gui) {
 	pasteItem := fyne.NewMenuItem("Paste", g.pasteImage)
 	pasteItem.Shortcut = &fyne.ShortcutPaste{}
 	editMenu := fyne.NewMenu("Edit", undoItem, redoItem, fyne.NewMenuItemSeparator(), copyItem, pasteItem)
+	findItem := fyne.NewMenuItem("Find", g.openSearch)
+	findItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyF, Modifier: shortcutModifier}
+	nextMatchItem := fyne.NewMenuItem("Find Next", func() { g.nextSearch(false) })
+	nextMatchItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyG, Modifier: shortcutModifier}
+	previousMatchItem := fyne.NewMenuItem("Find Previous", func() { g.nextSearch(true) })
+	previousMatchItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyG, Modifier: toolModifier}
+	editMenu.Items = append(editMenu.Items, fyne.NewMenuItemSeparator(), findItem, nextMatchItem, previousMatchItem)
 
 	zoomInItem := fyne.NewMenuItem("Zoom In", g.zoomIn)
 	zoomInItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyPlus, Modifier: shortcutModifier}
@@ -115,6 +122,7 @@ func BuildMenu(g *Gui) {
 	g.undoItem = undoItem
 	g.redoItem = redoItem
 	g.menuDocumentItems = []*fyne.MenuItem{
+		findItem, nextMatchItem, previousMatchItem,
 		openTogetherItem, appendItem, deletePageItem, saveItem, saveAsItem, closeItem,
 		zoomInItem, zoomOutItem, resetZoomItem,
 		copyItem, pasteItem, selectItem, cropItem, drawItem, highlightItem, shapesItem, textItem, redactItem,
@@ -122,17 +130,22 @@ func BuildMenu(g *Gui) {
 	g.stateMenus = []*fyne.Menu{fileMenu, editMenu, viewMenu, toolsMenu}
 
 	shortcuts := map[*desktop.CustomShortcut]func(fyne.Shortcut){
-		{KeyName: fyne.KeyW, Modifier: shortcutModifier}: func(fyne.Shortcut) { g.requestCloseDocument() },
-		{KeyName: fyne.KeyO, Modifier: shortcutModifier}: func(fyne.Shortcut) { g.requestOpen() },
-		{KeyName: fyne.KeyN, Modifier: shortcutModifier}: func(fyne.Shortcut) { g.newBlankPage() },
-		{KeyName: fyne.KeyN, Modifier: toolModifier}:     func(fyne.Shortcut) { g.newFromClipboard() },
-		{KeyName: fyne.KeyC, Modifier: toolModifier}:     func(fyne.Shortcut) { g.startCrop() },
-		{KeyName: fyne.KeyV, Modifier: toolModifier}:     func(fyne.Shortcut) { g.setAnnotationTool(toolSelect) },
-		{KeyName: fyne.KeyD, Modifier: toolModifier}:     func(fyne.Shortcut) { g.setAnnotationTool(toolDraw) },
-		{KeyName: fyne.KeyH, Modifier: toolModifier}:     func(fyne.Shortcut) { g.setAnnotationTool(toolHighlight) },
-		{KeyName: fyne.KeyT, Modifier: toolModifier}:     func(fyne.Shortcut) { g.setAnnotationTool(toolText) },
-		{KeyName: fyne.KeyI, Modifier: toolModifier}:     func(fyne.Shortcut) { g.promptSignature() },
-		{KeyName: fyne.KeyR, Modifier: toolModifier}:     func(fyne.Shortcut) { g.setAnnotationTool(toolRedact) },
+		{KeyName: fyne.KeyF, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.openSearch() },
+		{KeyName: fyne.KeyG, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.nextSearch(false) },
+		{KeyName: fyne.KeyG, Modifier: toolModifier}:           func(fyne.Shortcut) { g.nextSearch(true) },
+		{KeyName: fyne.KeyF3}:                                  func(fyne.Shortcut) { g.nextSearch(false) },
+		{KeyName: fyne.KeyF3, Modifier: fyne.KeyModifierShift}: func(fyne.Shortcut) { g.nextSearch(true) },
+		{KeyName: fyne.KeyW, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.requestCloseDocument() },
+		{KeyName: fyne.KeyO, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.requestOpen() },
+		{KeyName: fyne.KeyN, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.newBlankPage() },
+		{KeyName: fyne.KeyN, Modifier: toolModifier}:           func(fyne.Shortcut) { g.newFromClipboard() },
+		{KeyName: fyne.KeyC, Modifier: toolModifier}:           func(fyne.Shortcut) { g.startCrop() },
+		{KeyName: fyne.KeyV, Modifier: toolModifier}:           func(fyne.Shortcut) { g.setAnnotationTool(toolSelect) },
+		{KeyName: fyne.KeyD, Modifier: toolModifier}:           func(fyne.Shortcut) { g.setAnnotationTool(toolDraw) },
+		{KeyName: fyne.KeyH, Modifier: toolModifier}:           func(fyne.Shortcut) { g.setAnnotationTool(toolHighlight) },
+		{KeyName: fyne.KeyT, Modifier: toolModifier}:           func(fyne.Shortcut) { g.setAnnotationTool(toolText) },
+		{KeyName: fyne.KeyI, Modifier: toolModifier}:           func(fyne.Shortcut) { g.promptSignature() },
+		{KeyName: fyne.KeyR, Modifier: toolModifier}:           func(fyne.Shortcut) { g.setAnnotationTool(toolRedact) },
 	}
 	for shortcut, action := range shortcuts {
 		g.window.Canvas().AddShortcut(shortcut, action)

@@ -41,6 +41,7 @@ type signatureLayer struct {
 	redactionWidgets []*redactionWidget
 	selectionBox     *canvas.Rectangle
 	textHighlight    *canvas.Raster
+	searchHighlight  *canvas.Raster
 	textGesture      bool
 	textMouse        fyne.Position
 }
@@ -215,6 +216,11 @@ type signatureLayerRenderer struct {
 func (r *signatureLayerRenderer) Destroy() {}
 
 func (r *signatureLayerRenderer) Layout(fyne.Size) {
+	if r.layer.searchHighlight != nil {
+		origin, size := r.layer.displayRect()
+		r.layer.searchHighlight.Move(origin)
+		r.layer.searchHighlight.Resize(size)
+	}
 	if r.layer.textHighlight != nil {
 		origin, size := r.layer.displayRect()
 		r.layer.textHighlight.Move(origin)
@@ -267,6 +273,9 @@ func (r *signatureLayerRenderer) Objects() []fyne.CanvasObject {
 	}
 	if r.layer.textHighlight != nil {
 		objects = append(objects, r.layer.textHighlight)
+	}
+	if r.layer.searchHighlight != nil {
+		objects = append(objects, r.layer.searchHighlight)
 	}
 	return objects
 }

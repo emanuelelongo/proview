@@ -107,6 +107,7 @@ type Gui struct {
 	zoom                              float32
 	fitZoom                           float32
 	zoomLevel                         int
+	search                            *documentSearch
 	panModifierDown                   bool
 	working                           bool
 	signatureStore                    *signatures.Store
@@ -273,7 +274,7 @@ func newGui(application fyne.App) *Gui {
 		}
 	}
 	g.toolPanel = container.New(g.toolPanelLayout, toolbar, propertySeparator, properties)
-	layout := container.NewBorder(g.toolPanel, g.tipBar, nil, nil, g.mainSplit)
+	layout := container.NewBorder(g.toolPanel, g.tipBar, nil, nil, container.NewBorder(g.newSearchBar(), nil, nil, nil, g.mainSplit))
 
 	g.window = g.app.NewWindow("Proview")
 	g.window.SetContent(newTooltipSurface(layout))

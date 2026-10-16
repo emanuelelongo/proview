@@ -12,6 +12,7 @@ Tip: Use Undo to revert your last change.
 Tip: Right-click an object to bring it forward or send it backward among overlapping objects.
 Tip: Hold Space and drag to pan around a zoomed document or an STL model.
 Tip: Select recognized text in an image or PDF to copy it.
+Tip: Press Ctrl+F (Command+F on macOS) to find text; F3 and Shift+F3 move between matches.
 Tip: Click a QR code to reveal its contents in the status bar; click a link there to open it.
 Tip: Crop a PDF page or STL view to open the selected area as an image in a new window.
 Tip: File > Close closes the current document and keeps the editor window open.
