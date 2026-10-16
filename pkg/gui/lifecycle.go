@@ -76,6 +76,8 @@ func (g *Gui) closeDocument() {
 	g.imageSignatureLayer.SetDocument(nil, 0, image.Point{})
 	g.signatureLayers = map[int]*signatureLayer{}
 	g.formLayers = nil
+	g.correctionLayers = nil
+	g.correctionPreviewKeys = nil
 	g.panOverlays = []*panOverlay{g.imagePanOverlay}
 	g.pdfCrops = nil
 	g.pdfPageIDs = nil
@@ -100,6 +102,7 @@ func (g *Gui) closeDocument() {
 }
 
 func (g *Gui) closeWindow() {
+	g.setTextEditing(false)
 	g.closeSearch()
 	g.stopFormPulse()
 	g.closed = true
@@ -227,6 +230,17 @@ func (g *Gui) installKeyHandler() {
 }
 
 func (g *Gui) cancelCurrentOperation() bool {
+	if g.correctionDialog != nil {
+		g.correctionDialog.Hide()
+		return true
+	}
+	if g.textEditing {
+		if g.cancelTextMove() {
+			return true
+		}
+		g.setTextEditing(false)
+		return true
+	}
 	if g.search != nil && g.search.bar.Visible() {
 		g.closeSearch()
 		return true

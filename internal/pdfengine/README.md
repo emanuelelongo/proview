@@ -4,6 +4,12 @@
 `TrialRedact` remains an unsafe comparison helper; application exports must
 never use it. CGO and go-fitz's bundled native archives are required.
 
+Other native engine features have dedicated status/verification guides:
+[editable PDF forms](../../docs/pdf-forms.md) and
+[native PDF text editing](../../docs/pdf-text-editing.md). Future
+[certificate-based signatures](../../docs/pdf-digital-signatures.md) are planning
+only; current rewrite/export paths do not preserve digital signatures.
+
 ## Checks
 
 ```sh

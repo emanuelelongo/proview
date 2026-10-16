@@ -2,7 +2,8 @@
 
 Development conventions, architectural constraints and regression prevention.
 Keep this file current when those rules change. Operational commands and
-dependency references are in `README.md`; version metadata is in `FyneApp.toml`.
+dependency references are in [Development and packaging](docs/development.md);
+version metadata is in `FyneApp.toml`.
 
 ## PDF forms work in progress
 
@@ -10,6 +11,26 @@ Read [docs/pdf-forms.md](docs/pdf-forms.md) before continuing PDF form work. It 
 the current implementation/status handoff, including accepted decisions, tests,
 limitations and remaining tasks. Branch: `prototype/pdf-forms`. The prototype,
 fixtures and manual demo are committed together; release/packaging is separate.
+
+## Native PDF text correction prototype
+
+Read [docs/pdf-text-editing.md](docs/pdf-text-editing.md) before continuing native
+text editing. The prototype is now connected to the application, with a separate
+mode and reversible source replacement. Preserve its conservative eligibility
+checks and insertion at the original text object's position; do not restore an
+append-at-page-end fallback. Read [docs/text-search.md](docs/text-search.md) for
+whole-document search, OCR reuse and result invalidation.
+
+## Documentation and future PDF signatures
+
+Use [docs/README.md](docs/README.md) as the documentation map. Keep feature status
+in its topic document; retain dated studies as historical evidence rather than
+copying their pending work into current plans. Platform work is in `next-to-do.md`.
+
+[docs/pdf-digital-signatures.md](docs/pdf-digital-signatures.md) records the future
+certificate-signature plan: detection/protection, verification, local PAdES
+signing, then hardware/remote signing and long-term validation. It is planning
+only. Current artwork signatures and rewriting exports do not provide this support.
 
 ## Language and collaboration
 
@@ -80,13 +101,14 @@ PDF page combination/reordering/deletion and blank pages.
 - Use compact icon buttons with readable tooltips instead of wide text buttons.
   Property controls should align in height; colors use swatches and dimensions
   use compact preset selectors. Keep forms spacious enough to use comfortably.
-- Toolbar order is Open file, Blank page, Select, Crop, Draw, Highlight, Shapes, Text,
-  Signature, Redact, Zoom out, Zoom in. With no document, only Open file and
-  Blank page stay enabled. File, Edit, View and Tools menu commands must track
+- Toolbar order is Open file, New page, Select, Crop, Draw, Highlight, Shapes, Text,
+  Signature, Fill PDF form, Edit PDF Text, Redact PDF, rotation/flip controls,
+  Zoom out, Zoom in. With no document, only Open file, New page and signature
+  acquisition stay enabled. File, Edit, View and Tools menu commands must track
   document availability as well. Keyboard shortcuts are shown in their menu
   items; tool switches use the platform shortcut modifier plus Shift and a
   mnemonic key.
-- Toolbar order begins **Open file**, then **Blank page**. Their icons are
+- Toolbar order begins **Open file**, then **New page**. Their icons are
   `folder` and `file-spark`, respectively.
 - Use **Tabler Icons outline assets**, from https://github.com/tabler/tabler-icons,
   pinned to revision `74929e50416e2b7c0abb8368cdc74bdcb2560ab6`.
@@ -95,7 +117,8 @@ PDF page combination/reordering/deletion and blank pages.
 - Load toolbar icons with `tablerIcon`: its conversion of SVG strokes into filled
   outlines is intentional, because Fyne themes recolor fills. Do not bypass it.
 - Current icon names: `signature`, `crop`, `pointer`, `text-outline`, `sketching`,
-  `highlight`, `xxx`, `zoom-in`, `zoom-out`; stroke width is **stroke-straight** and opacity
+  `highlight`, `circle-square`, `forms`, `file-type-pdf`, `arrows-move`, `xxx`,
+  `zoom-in`, `zoom-out`; stroke width is **stroke-straight** and opacity
   is **brightness-up**.
 - The final application icon is **Arcade**: white document and magnifying glass,
   violet/blue/cyan gradients inspired by the 1980s. `assets/app-icon.png` is the

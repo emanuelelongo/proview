@@ -101,6 +101,9 @@ func (s SignatureOverlay) Asset() signatures.Asset {
 }
 
 type Document struct {
+	// Retain ownership even when history eviction drops an old correction version.
+	// Rendering snapshots can still refer to those immutable sources.
+	textSources     []*Source
 	formValues      map[formKey][]string
 	unsaved         bool
 	pages           []pageRef
@@ -172,6 +175,9 @@ func (d *Document) Original() []byte {
 
 func (d *Document) Close() {
 	sources := map[*Source]bool{d.source: true}
+	for _, source := range d.textSources {
+		sources[source] = true
+	}
 	collect := func(pages []pageRef) {
 		for _, page := range pages {
 			sources[page.source] = true

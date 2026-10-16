@@ -26,6 +26,7 @@ type searchHit struct {
 }
 type documentSearch struct {
 	bar                      *fyne.Container
+	host                     *fyne.Container
 	entry                    *searchEntry
 	status                   *widget.Label
 	cancel                   context.CancelFunc
@@ -74,6 +75,9 @@ func (g *Gui) openSearch() {
 	}
 	g.setAnnotationTool(toolSelect)
 	g.search.bar.Show()
+	if g.search.host != nil {
+		g.search.host.Refresh()
+	}
 	g.window.Canvas().Focus(g.search.entry)
 	g.search.entry.TypedShortcut(&fyne.ShortcutSelectAll{})
 	g.startSearch()
@@ -92,6 +96,9 @@ func (g *Gui) closeSearch() {
 	s.hits = nil
 	s.current = -1
 	s.bar.Hide()
+	if s.host != nil {
+		s.host.Refresh()
+	}
 	g.refreshSearchHighlight()
 	if g.window != nil && g.window.Canvas().Focused() == s.entry {
 		g.window.Canvas().Focus(nil)

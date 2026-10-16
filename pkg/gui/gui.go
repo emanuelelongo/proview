@@ -26,6 +26,13 @@ type Gui struct {
 	formsActive                       bool
 	formAction                        *toggleToolbarAction
 	formLayers                        map[int]*formLayer
+	textEditing                       bool
+	textEditAction                    *toggleToolbarAction
+	textEditItem                      *fyne.MenuItem
+	correctionLayers                  map[int]*textCorrectionLayer
+	correctionDialog                  *dialog.CustomDialog
+	textMove                          *textMoveState
+	correctionPreviewKeys             map[int]string
 	modelViewport                     *modelViewport
 	modelPanel                        fyne.CanvasObject
 	modelCrop                         *cropOverlay
@@ -195,14 +202,16 @@ func newGui(application fyne.App) *Gui {
 	g.formAction = newToggleToolbarAction(tablerIcon("forms"), g.toggleForms)
 	g.formAction.button.tooltip = "Fill PDF form"
 	g.formAction.preparePulse()
+	g.textEditAction = newToggleToolbarAction(tablerIcon("file-type-pdf"), g.toggleTextEditing)
+	g.textEditAction.button.tooltip = "Edit PDF Text"
 	g.cropAction = newToggleToolbarAction(tablerIcon("crop"), g.startCrop)
 	g.cropAction.button.tooltip = "Crop"
 	g.annotationControls = container.NewVBox()
 	g.annotationControls.Hide()
 	g.annotationActions = map[annotationTool]*toggleToolbarAction{}
-	for tool, icon := range map[annotationTool]string{toolSelect: "pointer", toolText: "text-outline", toolDraw: "sketching", toolHighlight: "highlight", toolRedact: "xxx", toolShapes: "shape"} {
+	for tool, icon := range map[annotationTool]string{toolSelect: "pointer", toolText: "text-outline", toolDraw: "sketching", toolHighlight: "highlight", toolRedact: "xxx", toolShapes: "circle-square"} {
 		action := newToggleToolbarAction(tablerIcon(icon), func() { g.setAnnotationTool(tool) })
-		action.button.tooltip = map[annotationTool]string{toolSelect: "Select", toolText: "Text", toolDraw: "Draw", toolHighlight: "Highlight", toolRedact: "Redact", toolShapes: "Shapes"}[tool]
+		action.button.tooltip = map[annotationTool]string{toolSelect: "Select", toolText: "Text", toolDraw: "Draw", toolHighlight: "Highlight", toolRedact: "Redact PDF", toolShapes: "Shapes"}[tool]
 		g.annotationActions[tool] = action
 	}
 	g.annotationActions[toolSelect].SetActive(true)
@@ -229,6 +238,7 @@ func newGui(application fyne.App) *Gui {
 		g.annotationActions[toolText],
 		g.signatureAction,
 		g.formAction,
+		g.textEditAction,
 		g.annotationActions[toolRedact],
 		widget.NewToolbarSeparator(),
 		rotateLeftAction,
@@ -274,7 +284,9 @@ func newGui(application fyne.App) *Gui {
 		}
 	}
 	g.toolPanel = container.New(g.toolPanelLayout, toolbar, propertySeparator, properties)
-	layout := container.NewBorder(g.toolPanel, g.tipBar, nil, nil, container.NewBorder(g.newSearchBar(), nil, nil, nil, g.mainSplit))
+	documentArea := container.NewBorder(g.newSearchBar(), nil, nil, nil, g.mainSplit)
+	g.search.host = documentArea
+	layout := container.NewBorder(g.toolPanel, g.tipBar, nil, nil, documentArea)
 
 	g.window = g.app.NewWindow("Proview")
 	g.window.SetContent(newTooltipSurface(layout))

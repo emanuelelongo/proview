@@ -80,7 +80,7 @@ Google Drive sync uses the published Proview OAuth app. Cloud sync is optional a
 
 ### Remove sensitive PDF content
 
-The **Redact** tool marks words, lines or rectangular regions for removal. When you export, Proview removes the underlying content and sanitizes the PDF, including metadata, attachments and other supported document structures.
+The **Redact PDF** tool marks words, lines or rectangular regions for removal. When you export, Proview removes the underlying content and sanitizes the PDF, including metadata, attachments and other supported document structures.
 
 <a href="docs/screenshots/redaction.gif" target="_blank" rel="noopener noreferrer">
   <img src="docs/screenshots/redaction.gif" alt="Redaction: a fictional document with marked text beside the exported result, using invented names and account numbers." width="400">
@@ -93,6 +93,15 @@ passwords, checkbox/radio controls, dropdowns and single/multiple-selection list
 remain editable after saving. Standard ResetForm buttons restore field defaults;
 missing required values are marked without blocking draft saves. Current scope,
 limitations and development status are in [PDF forms](docs/pdf-forms.md).
+
+### Search and edit PDF text
+
+Find searches the entire document, using native PDF text or available OCR for
+images/scanned pages. The **Edit PDF Text** prototype supports small corrections
+and mouse positioning of native words, with Undo and searchable PDF output.
+It does not reflow surrounding text or edit scanned lettering. See
+[document search](docs/text-search.md) and [native text editing](docs/pdf-text-editing.md)
+for scope and current limits.
 
 ## Get Proview
 
@@ -114,7 +123,7 @@ task check   # Run tests and static checks
 task build   # Build for the current platform
 ```
 
-See [Development and packaging](docs/development.md) for setup, native and cross builds, release workflows and local data locations. Project conventions are in [agent.md](agent.md). Third-party notices are available in the app under **Help → Third-Party Licenses**; icon provenance is documented in [assets/README.md](assets/README.md).
+See [Development and packaging](docs/development.md) for setup, native and cross builds, release workflows and local data locations. Project conventions are in [agent.md](agent.md); the [documentation map](docs/README.md) links feature status, plans and evaluation records. Third-party notices are available in the app under **Help → Third-Party Licenses**; icon provenance is documented in [assets/README.md](assets/README.md).
 
 ## What could come next
 
@@ -123,7 +132,7 @@ These are directions to explore, rather than a release schedule:
 - **Full GIF support:** animation playback, frame editing and GIF export.
 - **Full TIFF support:** navigating and editing every page, plus TIFF export.
 - **More image formats:** HEIC/HEIF and AVIF.
-- **Certificate-based PDF signatures:** a separate workflow from visible handwritten signatures.
+- **Certificate-based PDF signatures:** [detection, verification and signing plan](docs/pdf-digital-signatures.md), separate from visible handwritten signatures.
 - **Markdown viewing:** read rendered Markdown documents.
 - **Better recognition and signature acquisition:** more OCR languages, mixed text/image PDF pages, and better handling of photographed signatures, shadows and paper backgrounds.
 - **Easier distribution:** macOS Developer ID signing and notarization, and broader testing across desktop environments.

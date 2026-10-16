@@ -31,6 +31,7 @@ func (g *Gui) handleSelectionShift(key fyne.KeyName, down bool) {
 		g.selectionShiftKeys &^= bit
 	}
 	g.updateTemporarySelection()
+	g.refreshTextMoveAlignment()
 }
 
 func (g *Gui) updateTemporarySelection() {

@@ -97,8 +97,9 @@ func BuildMenu(g *Gui) {
 	shapesItem := toolItem("Shapes", fyne.KeyS, func() { g.setAnnotationTool(toolShapes) })
 	textItem := toolItem("Text", fyne.KeyT, func() { g.setAnnotationTool(toolText) })
 	signatureItem := toolItem("Signature", fyne.KeyI, g.promptSignature)
-	redactItem := toolItem("Redact", fyne.KeyR, func() { g.setAnnotationTool(toolRedact) })
-	toolsMenu := fyne.NewMenu("Tools", selectItem, cropItem, drawItem, highlightItem, shapesItem, textItem, signatureItem, redactItem)
+	redactItem := toolItem("Redact PDF", fyne.KeyR, func() { g.setAnnotationTool(toolRedact) })
+	g.textEditItem = toolItem("Edit PDF Text", fyne.KeyE, g.toggleTextEditing)
+	toolsMenu := fyne.NewMenu("Tools", selectItem, cropItem, drawItem, highlightItem, shapesItem, textItem, signatureItem, g.textEditItem, redactItem)
 
 	showTipsItem := fyne.NewMenuItem("Show Tips", func() { g.setTipsEnabled(!g.tipsEnabled) })
 	showTipsItem.Checked = g.tipsEnabled
@@ -130,6 +131,7 @@ func BuildMenu(g *Gui) {
 	g.stateMenus = []*fyne.Menu{fileMenu, editMenu, viewMenu, toolsMenu}
 
 	shortcuts := map[*desktop.CustomShortcut]func(fyne.Shortcut){
+		{KeyName: fyne.KeyE, Modifier: toolModifier}:           func(fyne.Shortcut) { g.toggleTextEditing() },
 		{KeyName: fyne.KeyF, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.openSearch() },
 		{KeyName: fyne.KeyG, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.nextSearch(false) },
 		{KeyName: fyne.KeyG, Modifier: toolModifier}:           func(fyne.Shortcut) { g.nextSearch(true) },
@@ -332,6 +334,8 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	pageLoading := make([]bool, loadedDocument.PageCount())
 	signatureLayers := make(map[int]*signatureLayer, loadedDocument.PageCount())
 	g.formLayers = make(map[int]*formLayer, loadedDocument.PageCount())
+	g.correctionLayers = make(map[int]*textCorrectionLayer, loadedDocument.PageCount())
+	g.correctionPreviewKeys = make(map[int]string, loadedDocument.PageCount())
 	panOverlays := make([]*panOverlay, 0, loadedDocument.PageCount())
 
 	firstPreview, err := loadedDocument.Preview(0)
@@ -376,7 +380,10 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		g.pdfCrops[page] = crop
 		forms := newFormLayer(g, page)
 		g.formLayers[page] = forms
-		pageContainer := container.NewCenter(container.NewStack(canvas.NewRectangle(color.White), pageImage, pageBorder, layer, crop, forms, pan))
+		correction := newTextCorrectionLayer(g, page)
+		g.correctionLayers[page] = correction
+		g.correctionPreviewKeys[page] = loadedDocument.TextSelectionKey(page)
+		pageContainer := container.NewCenter(container.NewStack(canvas.NewRectangle(color.White), pageImage, pageBorder, layer, crop, forms, correction, pan))
 		objects = append(objects, pageContainer)
 		pageContainers = append(pageContainers, pageContainer)
 

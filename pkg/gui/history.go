@@ -28,6 +28,8 @@ func (g *Gui) redo() {
 }
 
 func (g *Gui) syncDocumentView() {
+	g.cancelTextMove()
+	g.refreshCorrectionPreviews()
 	g.clearAreaSelection()
 	if g.formsActive && g.window != nil {
 		g.window.Canvas().Focus(nil)
@@ -74,6 +76,17 @@ func (g *Gui) updateHistoryActions() {
 	g.syncOCR()
 	g.updateFileInfo()
 	hasDocument := g.document != nil
+	if g.textEditAction != nil {
+		available := hasDocument && g.document.Format() == document.FormatPDF && !g.document.HasRedactions()
+		setToggleToolbarActionEnabled(g.textEditAction, available)
+		if g.textEditItem != nil {
+			g.textEditItem.Disabled = !available
+			g.textEditItem.Checked = g.textEditing
+		}
+		if !available {
+			g.setTextEditing(false)
+		}
+	}
 	if g.formAction != nil {
 		setToggleToolbarActionEnabled(g.formAction, hasDocument && g.document.HasFormFields())
 		g.formAction.SetActive(hasDocument && g.formsActive)
@@ -135,7 +148,7 @@ func (g *Gui) updateHistoryActions() {
 		}
 		if g.menuDocumentItems != nil {
 			for _, item := range g.menuDocumentItems {
-				if item.Label == "Redact" {
+				if item.Label == "Redact PDF" {
 					item.Disabled = true
 				}
 			}

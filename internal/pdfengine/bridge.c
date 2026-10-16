@@ -97,6 +97,7 @@ void pv_layout(const unsigned char *data, size_t length, int page_number, pv_res
                     pv_glyph *out = &result->glyphs[result->glyph_count++];
                     out->codepoint = ch->c;
                     out->line = line_number;
+                    out->origin = pv_normalize(ch->origin, bounds);
                     out->quad = (pv_quad){pv_normalize(ch->quad.ul, bounds),
                         pv_normalize(ch->quad.ur, bounds), pv_normalize(ch->quad.ll, bounds),
                         pv_normalize(ch->quad.lr, bounds)};

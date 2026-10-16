@@ -1,6 +1,9 @@
 # STL viewer feasibility
 
-Assessment date: 2026-10-10. This is a design study, not an implemented feature.
+Assessment date: 2026-10-10. Historical design study and initial measurements.
+The viewer has since been implemented; use [STL viewer prototype](stl-prototype.md)
+for current behavior and remaining work. Recommendations below describe the
+original proposal rather than an active implementation backlog.
 
 ## Recommendation
 

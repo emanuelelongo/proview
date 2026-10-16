@@ -25,9 +25,10 @@ import (
 type Point struct{ X, Y float64 }
 type Quad struct{ UL, UR, LL, LR Point }
 type Glyph struct {
-	Rune rune
-	Line int
-	Quad Quad
+	Rune   rune
+	Line   int
+	Quad   Quad
+	Origin Point // Normalized baseline origin, independent of font ascenders.
 }
 type Layout struct {
 	Width, Height float64
@@ -53,7 +54,7 @@ func TextLayout(data []byte, page int) (Layout, error) {
 	}
 	layout := Layout{Width: float64(result.width), Height: float64(result.height)}
 	for _, glyph := range unsafe.Slice(result.glyphs, int(result.glyph_count)) {
-		layout.Glyphs = append(layout.Glyphs, Glyph{Rune: rune(glyph.codepoint), Line: int(glyph.line), Quad: goQuad(glyph.quad)})
+		layout.Glyphs = append(layout.Glyphs, Glyph{Rune: rune(glyph.codepoint), Line: int(glyph.line), Quad: goQuad(glyph.quad), Origin: Point{X: float64(glyph.origin.x), Y: float64(glyph.origin.y)}})
 	}
 	return layout, nil
 }

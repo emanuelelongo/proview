@@ -14,6 +14,7 @@ typedef struct {
 typedef struct {
     int codepoint, line;
     pv_quad quad;
+    pv_point origin;
 } pv_glyph;
 
 typedef struct {

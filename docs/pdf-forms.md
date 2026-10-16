@@ -56,7 +56,8 @@ its attached validation or formatting script.
 - [ ] Other actions: submission, import, links and action chains need explicit scope.
 - [ ] Script-based date/number formatting, custom validation and automatic calculations.
       JavaScript remains disabled. The current validators enforce declarative PDF rules only.
-- [ ] Certificate-based digital signatures and verification: separate from artwork signatures.
+- [ ] Certificate-based digital signatures and verification: separate from artwork
+      signatures; see the [dedicated future plan](pdf-digital-signatures.md).
 - [ ] XFA: separate engine/compatibility evaluation; currently rejected by form discovery.
 - [ ] Rich-text fidelity and broader font/encoding compatibility. Editing text uses
       the Fyne theme; PDF appearances use MuPDF and the field's appearance settings,

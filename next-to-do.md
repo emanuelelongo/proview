@@ -1,54 +1,34 @@
-# Next platform integration work
+# Platform integration backlog
 
-Linux file associations are implemented first. The items below describe the
-remaining work required to offer the same PDF, PNG and JPEG opening experience
-on macOS and Windows without changing the user's default applications.
+Reviewed 2026-10-16 against the current implementation. This file tracks desktop
+integration only; [the documentation map](docs/README.md) links feature-specific
+plans and remaining work. Build/installation instructions belong in
+[Development and packaging](docs/development.md).
 
-## macOS
+## Implemented
 
-- [x] Add `CFBundleDocumentTypes` entries to the generated `Info.plist` for
-      `com.adobe.pdf`, `public.png` and `public.jpeg`.
-- [x] Declare Proview as an editor/viewer for those Uniform Type Identifiers,
-      without claiming the default-handler role during installation.
-- [x] Route Finder/Open With document-open events to the same GUI loading path
-      used by Linux command-line arguments.
-- [x] Verify that Fyne does not expose a public macOS document-open callback and
-      add an Apple Event bridge for files delivered at launch or while running.
-- [x] Open the first requested file in the current window when it is empty, and
-      preserve existing documents while opening other files in separate windows.
-- [x] Update `task package:macos` so document declarations are included in
-      `Proview.app` before code signing.
-- [x] Re-sign the final bundle after all metadata changes and verify it with
-      `codesign --verify --deep --strict` and `plutil -lint`.
-- [ ] Test Finder Open With, drag-and-drop onto the application icon, filenames
-      containing spaces and Unicode, multiple selected files, and opening files
-      while another Proview window is active.
+- Linux per-user installation, launcher, icon and Open With associations for
+  PDF, supported images and STL, without changing defaults.
+- macOS bundle document declarations and Finder/Open With Apple Event handling;
+  the first file uses an empty window and additional files use separate windows.
+  Packaging signs the final bundle and checks metadata/signature integrity.
+- Windows embedded application icon, shared startup-file loading and automatic
+  per-user Open With registration on launch. Moving the executable updates the
+  registered path; no administrator privileges or implicit default changes.
 
-## Windows
+## Remaining work
 
-- [ ] Embed the application icon and version metadata in `proview.exe`.
-- [ ] Create an installer or per-user registration step for PDF, PNG and JPEG
-      Open With support.
-- [ ] Register a Proview ProgID, `DefaultIcon`, supported MIME/extensions and a
-      quoted shell command such as `"proview.exe" "%1"` under the appropriate
-      per-user `HKCU\\Software\\Classes` keys.
-- [ ] Register application capabilities so Windows Settings can offer Proview
-      in the Default Apps UI, without changing defaults automatically.
-- [ ] Remove every registry entry created by Proview during uninstall.
-- [ ] Route paths received from Explorer to the shared startup-file loader.
-- [ ] Decide whether each Explorer request starts a new process or forwards the
-      path to an existing Proview process; implement IPC only if single-instance
-      behavior is selected.
-- [ ] Test Open With, filenames containing spaces and Unicode, multiple selected
-      files, long paths, UNC paths, and opening files while Proview is already
-      running.
-
-## Shared acceptance criteria
-
-- [ ] PDF, PNG and JPEG files list Proview in the platform Open With UI.
-- [ ] Installation never changes the user's default applications implicitly.
-- [ ] Unsupported or missing files show a clear error without closing existing
-      editor windows.
-- [ ] File opening reuses the same validated document loader on every platform.
-- [ ] Platform packaging and association behavior are covered by automated
-      checks where practical and by a documented manual release checklist.
+- [ ] macOS: manually test Finder Open With, dropping onto the app icon, multiple
+      selected files, spaces/Unicode and opening while other windows are active.
+- [ ] Windows: manually test Open With/Default apps, multiple files, spaces/Unicode,
+      long/UNC paths, moved executable registration and already-running windows.
+- [ ] Windows: evaluate native executable version resources separately from the
+      embedded icon and in-app About metadata.
+- [ ] Windows: decide whether to add an installer/uninstaller or a command to
+      remove portable per-user registration. Document cleanup behavior.
+- [ ] Windows: consider single-instance IPC only if forwarding Explorer requests
+      to an existing process becomes a product requirement.
+- [ ] All platforms: verify PDF, supported images and STL association coverage;
+      missing/unsupported files must preserve other open documents and report errors.
+- [ ] Record native desktop acceptance results; automated packaging checks and
+      cross compilation alone do not establish runtime integration.

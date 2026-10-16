@@ -15,6 +15,26 @@ import (
 
 type searchOCR struct{ calls int }
 
+func TestClosingSearchRestoresDocumentViewport(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	g := newGui(app)
+	doc := testDocument(t, 100, 100)
+	defer doc.Close()
+	g.document = doc
+	g.window.Show()
+	g.window.Content().Refresh()
+	position, size := g.mainSplit.Position(), g.mainSplit.Size()
+	g.openSearch()
+	if g.mainSplit.Size().Height >= size.Height {
+		t.Fatal("search did not reserve space")
+	}
+	g.closeSearch()
+	if g.mainSplit.Position() != position || g.mainSplit.Size() != size {
+		t.Fatalf("viewport not restored: %v %v, want %v %v", g.mainSplit.Position(), g.mainSplit.Size(), position, size)
+	}
+}
+
 func (e *searchOCR) Recognize(ctx context.Context, im image.Image) (textselect.Layout, error) {
 	e.calls++
 	return textselect.Layout{Width: 100, Height: 100, Words: []textselect.Word{{Text: "found", Quad: textselect.Rect(.1, .2, .4, .3)}}}, ctx.Err()

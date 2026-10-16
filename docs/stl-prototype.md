@@ -14,8 +14,9 @@ go run ./cmd/gui internal/model3d/testdata/cube.stl
 ```
 
 The app's **File → Open** picker also accepts STL. Existing startup-file handling
-supports opening STL from the command line. Prototype file associations have not
-been added to the macOS bundle or Linux desktop entry yet.
+supports opening STL from the command line. STL associations are declared in the macOS bundle and Linux desktop entry;
+Windows registers Open With support per user when launched. See the
+[platform backlog](../next-to-do.md) for remaining desktop verification.
 
 For the usual build with bundled OCR, run `task run`, then open an STL through
 File → Open. A direct `go run` or the local `build/proview-stl-prototype` binary

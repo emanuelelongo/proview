@@ -68,6 +68,8 @@ func (d *Document) TextGeometry(page int) (TextLayout, error) {
 		for i := 0; i < turns; i++ {
 			for j := range layout.Glyphs {
 				layout.Glyphs[j].Quad = rotateTextQuad(layout.Glyphs[j].Quad, "right")
+				p := layout.Glyphs[j].Origin
+				layout.Glyphs[j].Origin = TextPoint{X: 1 - p.Y, Y: p.X}
 			}
 			layout.Width, layout.Height = layout.Height, layout.Width
 		}

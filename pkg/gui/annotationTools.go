@@ -123,6 +123,7 @@ func (g *Gui) setAnnotationTool(tool annotationTool) {
 		return
 	}
 	g.setFormsActive(false)
+	g.setTextEditing(false)
 	g.commitTextObject()
 	g.stopSelectionModifierTimer()
 	g.temporarySelection = false
