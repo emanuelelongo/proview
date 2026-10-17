@@ -17,7 +17,7 @@ I've never found an alternative that felt right for me across platforms. With th
 Proview is an independent project and is not affiliated with, sponsored by, or endorsed by Apple Inc.
 
 <a href="docs/screenshots/overview.png" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/overview.png" alt="Main window: a PDF with the compact toolbar, page thumbnails and a handwritten signature placed on the page." width="400">
+  <img src="docs/screenshots/overview.png" alt="Main window: a PDF with the current toolbar and numbered page thumbnails." width="400">
 </a>
 
 ## Features
@@ -33,19 +33,19 @@ See [Document workspace](docs/document-workspace.md) for the current local behav
 Proview opens the most common image formats and supports basic editing, such as cropping, rotating and annotating.
 
 <a href="docs/screenshots/image-editing.png" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/image-editing.png" alt="Image editing: an image with a crop selection, plus an example of a rotated or flipped image." width="400">
+  <img src="docs/screenshots/image-editing.png" alt="Image editing: Lenna with a crop selection and confirmation controls." width="400">
 </a>
 
 It also has a built-in OCR engine that recognizes text in images and scanned documents, making it easy to copy text or open links.
 
 <a href="docs/screenshots/ocr.png" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/ocr.png" alt="OCR: an image with recognized text highlighted and copied to the clipboard." width="400">
+  <img src="docs/screenshots/ocr.png" alt="OCR: recognized text selected directly in an image." width="400">
 </a>
 
 Proview also opens ASCII and binary STL files, letting you inspect 3D models with rotation, panning and zoom. You can switch between standard views, toggle wireframe, and crop the current view into an image.
 
 <a href="docs/screenshots/stl.gif" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/stl.gif" alt="STL model viewing: a 3D model being inspected with rotation, panning and zoom." width="400">
+  <img src="docs/screenshots/stl.gif" alt="STL model viewing: rotating the supplied model to inspect it." width="400">
 </a>
 
 ### PDF markup and organization
@@ -60,7 +60,7 @@ You can also combine multiple PDFs into one document, or split a PDF into separa
 All PDF operations preserve native PDF content: added text, ordinary shapes and vector signatures are exported as vector content rather than flattening the whole page into a bitmap.
 
 <a href="docs/screenshots/pdf.gif" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/pdf.gif" alt="PDF pages: several thumbnails with a page being dragged into a new position, and a document containing a blank or duplicated page." width="400">
+  <img src="docs/screenshots/pdf.gif" alt="PDF pages: dragging the second thumbnail before the first to reorder the document." width="400">
 </a>
 
 ### Add handwritten signatures
@@ -71,7 +71,7 @@ What shouldn't be necessary is printing, signing and scanning a document just to
 Proview lets you capture your signature once and add it to any document with a single click.
 
 <a href="docs/screenshots/sign-pdf.gif" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/sign-pdf.gif" alt="Signing a PDF: the signature library next to a document, with an inserted signature selected and its editing controls visible." width="400">
+  <img src="docs/screenshots/sign-pdf.gif" alt="Signing a PDF: positioning an inserted John Doe signature on the page." width="400">
 </a>
 
 You can draw your signature with a mouse or a stylus, or import it from a photo or scan.
@@ -81,7 +81,7 @@ You can save signatures to the cloud (S3-compatible storage or Google Drive) and
 Google Drive sync uses the published Proview OAuth app. Cloud sync is optional and uploads your saved signature library. Documents opened for editing stay on your computer. See the [cloud sync guide](docs/signature-cloud-sync.md) for setup and storage details.
 
 <a href="docs/screenshots/import-signature.png" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/import-signature.png" alt="Importing a signature: a fictional signature on paper beside its transparent vector preview, with the selection and sensitivity control visible." width="400">
+  <img src="docs/screenshots/import-signature.png" alt="Importing a signature: fictional signature artwork beside its transparent vector preview, with the sensitivity control visible." width="400">
 </a>
 
 ### Remove sensitive PDF content
@@ -89,7 +89,7 @@ Google Drive sync uses the published Proview OAuth app. Cloud sync is optional a
 The **Redact PDF** tool marks words, lines or rectangular regions for removal. When you export, Proview removes the underlying content and sanitizes the PDF, including metadata, attachments and other supported document structures.
 
 <a href="docs/screenshots/redaction.gif" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/redaction.gif" alt="Redaction: a fictional document with marked text beside the exported result, using invented names and account numbers." width="400">
+  <img src="docs/screenshots/redaction.gif" alt="Redaction: marking a fictional contact line for removal from a PDF." width="400">
 </a>
 
 ### Fill PDF forms

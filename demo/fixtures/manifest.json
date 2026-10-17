@@ -1,0 +1,15 @@
+{
+  "origin": "Prepared for Proview demos; edit the committed fixture files directly.",
+  "license": "Synthetic fixtures follow the repository license; Go fonts retain their license. John Doe and STL are user-supplied; Lenna retains its original copyright (see README.md).",
+  "sha256": {
+    "crop.jpg": "d09e3a9c4aa27ec19d6dba7e7bbdd0d41a929d2f3fa3491dd6586103ef59b1bf",
+    "merge.pdf": "2b7f39694ff44f7555a1d5fa38d4da783c610332d8ae16ff2f34071252d81940",
+    "model.stl": "00d5e7eef579174f62d1598d5f35302a5d9a181bf6aedbbd4e854f8ce072a221",
+    "qr.png": "b6e7c851cd8ce78602f84f74029a1b72b00994dc54397213ccef9406e4fde4a2",
+    "scan.png": "757ce4990a54bd6324def479d96922d9ede494de6fb82b11e7b78f94f74c45de",
+    "showcase.pdf": "667bdd2561b1f1965a3b5045d50d2735a9aa9f31aed4e5152f9454b9f7b70c5a",
+    "transparent.png": "70afbf513962cb24538b9930e2f3ea29f7c2964401725fbc4de3b253f0285885",
+    "johndoe.png": "c5eac034d7b9c5bb51aca6ae708313d09e622f1207df6d777606082140f4d752",
+    "lenna.png": "7e497501a28bcf9a353ccadf6eb9216bf098ac32888fb542fb9bfe71d486761f"
+  }
+}

@@ -1,0 +1,6 @@
+# Checksums and regeneration compare exact bytes on every platform.
+*.pdf binary
+*.png -text
+*.jpg -text
+*.stl -text
+manifest.json text eol=lf

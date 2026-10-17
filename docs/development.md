@@ -504,3 +504,10 @@ Details and evaluation commands are in [the prototype notes](signature-vectoriza
 Use **Help → Open logs folder** for local rotating diagnostic logs and Go crash
 reports. See [Diagnostic logs](logging.md) for paths, retention and performance.
 `task run` continues to show the same application logs in the terminal.
+
+## Demonstration media
+
+See [demo/README.md](../demo/README.md) for synthetic PDF/image/STL fixtures and
+local macOS capture recipes. `task demo:check` validates fixtures and tooling
+without desktop access; `task demo:plan` prints recipes. Agents regenerating
+screenshots or animations must follow [demo/agent.md](../demo/agent.md).

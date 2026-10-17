@@ -112,10 +112,12 @@ jobs:
             printf '::error::Run gofmt on the following files:\n%s\n' "$unformatted"
             exit 1
           fi
-      - name: Build and release tooling tests
+      - name: Python tooling tests
         id: tooling
         if: ${{ !cancelled() && matrix.target.os == 'ubuntu-22.04' }}
-        run: python3 -m unittest discover -s packaging -p 'test_*.py'
+        run: |
+          python3 -m unittest discover -s packaging -p 'test_*.py'
+          python3 -m unittest discover -s demo/scripts -p 'test_*.py'
       - name: Check summary
         if: always()
         env:
@@ -135,7 +137,7 @@ jobs:
               ("Go vet", "VET_RESULT"),
               ("Logging race tests", "RACE_RESULT"),
               ("Go formatting (Linux x64)", "FORMATTING_RESULT"),
-              ("Build/release tooling tests (Linux x64)", "TOOLING_RESULT"),
+              ("Python tooling tests (Linux x64)", "TOOLING_RESULT"),
           ]
           summary = "## " + os.environ["TARGET_NAME"] + "\n\n| Check | Result |\n| --- | --- |\n"
           summary += "".join(f"| {label} | {os.environ[key]} |\n" for label, key in rows)

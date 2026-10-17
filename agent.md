@@ -69,6 +69,17 @@ only. Current artwork signatures and rewriting exports do not provide this suppo
 - Preserve unrelated working-tree changes. Do not assume uncommitted work is
   disposable or commit it unless requested.
 
+## Demonstration media
+
+For fixture or screenshot/animation work, read [demo/agent.md](demo/agent.md).
+Inputs and recipes live in `demo/`; each generation clears and reuses ignored
+`build/demo/`. Final media replaces `docs/screenshots/<target>` directly and must
+be visually reviewed. Keep cases, README references/alt text and relevant prose
+aligned in the same change; for now cover only the existing README media slots.
+`--work-dir` controls picker folders; demos use the standard executable with
+`--data-dir` for a separate signature library, application preferences, credentials
+and IPC identity. No dedicated demo launcher or test-only GUI entrypoint is needed.
+
 ## Product and editing rules
 
 Proview is a desktop image/PDF viewer and editor.
