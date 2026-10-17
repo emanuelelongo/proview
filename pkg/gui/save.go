@@ -170,7 +170,7 @@ func (g *Gui) finishFileSave(data []byte, uri fyne.URI, revision uint64, saved f
 func (g *Gui) finishSave(uri fyne.URI, revision uint64, saved func()) {
 	g.logEvent("save_completed", "bytes=%d exported_revision=%d scheme=%q", g.fileSizeBytes, revision, uri.Scheme())
 	g.saveTarget = uri
-	if uri.Scheme() == "file" {
+	if uri.Scheme() == "file" && g.workDir == "" {
 		if directory, err := filepath.Abs(filepath.Dir(uri.Path())); err == nil {
 			g.app.Preferences().SetString(lastSaveDirectoryKey, directory)
 		}
@@ -332,7 +332,7 @@ func (g *Gui) showLocalSaveAsDialog(exports preparedExports, saved func()) {
 }
 
 func (g *Gui) initialSaveDirectory() string {
-	directories := []string{g.app.Preferences().String(lastSaveDirectoryKey)}
+	directories := []string{g.workDir, g.app.Preferences().String(lastSaveDirectoryKey)}
 	if g.saveTarget != nil && g.saveTarget.Scheme() == "file" {
 		directories = append(directories, filepath.Dir(g.saveTarget.Path()))
 	}

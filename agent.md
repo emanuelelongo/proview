@@ -113,6 +113,19 @@ PDF page combination/reordering/deletion and blank pages.
 - Desktop launches with paths use `internal/openfiles` to forward to an existing
   process through a private authenticated loopback endpoint and OS file lock.
   macOS retains its Apple Event bridge. Keep `--check-ocr` free of IPC/registration.
+  Parse CLI options before logging/IPC/GUI startup. `--new-window` forwards a fresh
+  window request, including without files; the initial process uses its existing
+  first window. `--work-dir` validates/resolves an existing directory and overrides
+  Open/import/collection/Save As starting directories for the receiving window,
+  without changing cwd or persisted save-folder preferences. File arguments remain
+  relative to the caller's cwd. App-created child windows inherit this setting;
+  explicit new-window launches use their supplied directory or normal defaults.
+  Version the IPC endpoint so older servers cannot silently discard these options.
+  `--data-dir` selects process-wide signature/log/IPC storage before startup and
+  namespaces Fyne application preferences and keychain credentials by canonical
+  root. Fyne preferences stay in its platform configuration directory; framework
+  theme settings and the verified OCR cache remain shared. Custom profiles skip
+  file-association registration. Default storage and credential names stay compatible.
 - Use the shared `chooseFile` / `chooseFiles` helpers for document opening,
   signature import and PDF collection selection. Native pickers use
   `github.com/ncruces/zenity`; unavailable/failing backends fall back to Fyne.

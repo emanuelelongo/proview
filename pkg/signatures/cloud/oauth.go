@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"emanuelelongo/proview/internal/appprofile"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -26,7 +27,6 @@ import (
 var GoogleClientID string
 var GoogleClientSecret string
 
-const keyringService = "com.emanuelelongo.proview.google-drive"
 const driveScope = "https://www.googleapis.com/auth/drive.file"
 
 var ErrNotConnected = errors.New("Google Drive is not connected")
@@ -39,7 +39,7 @@ type Credentials interface {
 type SystemCredentials struct{}
 
 func (SystemCredentials) Get() (*oauth2.Token, error) {
-	data, err := keyring.Get(keyringService, "oauth")
+	data, err := keyring.Get(appprofile.CredentialService("google-drive"), "oauth")
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil, ErrNotConnected
 	}
@@ -57,10 +57,10 @@ func (SystemCredentials) Set(token *oauth2.Token) error {
 	if err != nil {
 		return err
 	}
-	return keyring.Set(keyringService, "oauth", string(data))
+	return keyring.Set(appprofile.CredentialService("google-drive"), "oauth", string(data))
 }
 func (SystemCredentials) Delete() error {
-	err := keyring.Delete(keyringService, "oauth")
+	err := keyring.Delete(appprofile.CredentialService("google-drive"), "oauth")
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}

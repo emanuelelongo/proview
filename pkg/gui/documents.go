@@ -374,6 +374,7 @@ func (g *Gui) activateEditor() {
 }
 func (g *Gui) newEditor() *Gui {
 	editor := newGui(g.app)
+	editor.workDir = g.workDir
 	if g.editors == nil {
 		g.editors = &editorGroup{windows: []*Gui{g}}
 	}

@@ -2,6 +2,7 @@ package signatures
 
 import (
 	"crypto/rand"
+	"emanuelelongo/proview/internal/appprofile"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -56,6 +57,9 @@ func DataDir(goos, home string, getenv func(string) string) (string, error) {
 }
 
 func DefaultStore() (*Store, error) {
+	if appprofile.Root != "" {
+		return &Store{Root: filepath.Join(appprofile.Root, "signatures")}, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err

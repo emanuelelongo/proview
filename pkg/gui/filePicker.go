@@ -80,10 +80,7 @@ func (g *Gui) chooseFiles(title string, extensions []string, multiple bool, done
 	ctx, cancel := context.WithCancel(context.Background())
 	state := &filePickerState{cancel: cancel, done: done}
 	g.filePicker, filePickerOwner, g.working = state, g, true
-	request := filePickerRequest{title: title, extensions: extensions, multiple: multiple, directory: g.filePickerDirectory}
-	if request.directory == "" {
-		request.directory, _ = os.UserHomeDir()
-	}
+	request := filePickerRequest{title: title, extensions: extensions, multiple: multiple, directory: g.initialOpenDirectory()}
 	backend := g.filePickerBackend
 	if backend == nil {
 		native, ok := g.window.(driver.NativeWindow)
@@ -207,4 +204,14 @@ func (g *Gui) cancelFilePicker() {
 	if state.hide != nil {
 		state.hide()
 	}
+}
+
+func (g *Gui) initialOpenDirectory() string {
+	for _, directory := range []string{g.workDir, g.filePickerDirectory} {
+		if info, err := os.Stat(directory); err == nil && info.IsDir() {
+			return directory
+		}
+	}
+	home, _ := os.UserHomeDir()
+	return home
 }

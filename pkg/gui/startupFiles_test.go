@@ -94,3 +94,82 @@ func TestStartupJPEGFileReaderHandlesFinderPaths(t *testing.T) {
 		})
 	}
 }
+
+func TestNewWindowLaunchKeepsExistingWorkspaceAndAppliesWindowDirectory(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	existing := testDocument(t, 20, 20)
+	existing.MarkUnsaved()
+	g.addDocument(existing, nil, nil)
+	originalDirectory := t.TempDir()
+	g.workDir = originalDirectory
+	directory := t.TempDir()
+	before := len(driver.AllWindows())
+	g.OpenFilesWithOptions(nil, OpenOptions{NewWindow: true, WorkDir: directory})
+	for g.desktopEditor() == g {
+		driver.runNext(t)
+	}
+	editor := g.desktopEditor()
+	if editor == g || len(driver.AllWindows()) != before+1 || editor.app != g.app || editor.document != nil || editor.workDir != directory {
+		t.Fatal("launch did not create a dedicated empty window")
+	}
+	if g.document != existing || !existing.Dirty() || len(g.documents) != 1 || g.workDir != originalDirectory {
+		t.Fatal("new-window altered the existing editor")
+	}
+	if editor.initialOpenDirectory() != directory || editor.initialSaveDirectory() != directory {
+		t.Fatal("new window did not apply dialog directory")
+	}
+	inherited := editor.newEditor()
+	if inherited.workDir != directory {
+		t.Fatal("child editor lost the session directory")
+	}
+	previous := g.desktopEditor()
+	g.OpenFilesWithOptions(nil, OpenOptions{NewWindow: true})
+	for g.desktopEditor() == previous {
+		driver.runNext(t)
+	}
+	if g.desktopEditor().workDir != "" {
+		t.Fatal("a separate launch inherited another window's work directory")
+	}
+	for _, window := range append([]*Gui(nil), g.editors.windows...) {
+		window.closeWindow()
+	}
+}
+
+func TestWorkDirOnlyLaunchUsesCurrentEditorAndOrdinaryFilesKeepRouting(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	directory := t.TempDir()
+	before := len(driver.AllWindows())
+	g.OpenFilesWithOptions(nil, OpenOptions{WorkDir: directory})
+	for g.workDir != directory {
+		driver.runNext(t)
+	}
+	if g.desktopEditor() != g || len(driver.AllWindows()) != before || g.workDir != directory {
+		t.Fatal("work-dir-only launch created an extra window")
+	}
+	path := filepath.Join(directory, "test.png")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = png.Encode(file, image.NewNRGBA(image.Rect(0, 0, 12, 8))); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	g.OpenFilesWithOptions([]string{path}, OpenOptions{NewWindow: true, WorkDir: directory})
+	for g.desktopEditor() == g {
+		driver.runNext(t)
+	}
+	editor := g.desktopEditor()
+	for editor.openingFiles || len(editor.pendingFiles) > 0 {
+		driver.runNext(t)
+	}
+	if editor == g || editor.document == nil || g.document != nil || editor.workDir != directory {
+		t.Fatal("forwarded files did not open in the requested window")
+	}
+	for _, window := range append([]*Gui(nil), g.editors.windows...) {
+		window.closeWindow()
+	}
+}

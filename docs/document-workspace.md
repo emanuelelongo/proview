@@ -89,14 +89,29 @@ are unchanged.
 macOS Finder Apple Events continue through the existing native bridge. Startup
 paths, including Windows/Linux Open With launches, first try forwarding to a
 running primary process. The receiver queues these requests on the UI thread.
-A launch without file arguments may still create another process.
+A plain launch without file arguments may still create another process.
+`--new-window` instead forwards an explicit new-window request, even without
+files. `--work-dir` carries an absolute per-window dialog directory, taking
+priority for opening and Save As without changing the process working directory
+or persistent save-folder preferences. App-created child windows inherit it;
+explicit new-window launches get their supplied directory or normal defaults.
 
 `internal/openfiles` owns a per-user OS file lock and publishes a loopback TCP
 endpoint with a random authentication token in the user's configuration folder
 (`Proview/desktop`). Endpoints bind only to 127.0.0.1. Requests accept bounded
 absolute paths and require the token; relative launch paths become absolute in
-the sending process. OS locks release after crashes; a new primary replaces
+the sending process. The versioned endpoint advertises launch-option support.
+Older running instances still accept ordinary file requests; requests with new
+options fall back to a new process before sending files, so an older server cannot
+silently ignore the new-window/directory options. OS locks release after crashes;
+a new primary replaces
 stale endpoint metadata. Forwarding failure falls back to normal local opening.
+`--data-dir` creates a separate process-wide profile: signatures, logs and the
+private `desktop/` endpoint use that root, while Fyne application preferences and
+keychain credentials use a root-derived identity. Requests never change a running
+process's profile. Aliases of the same root share IPC; different roots and the
+default application do not. See [launch options](development.md#command-line-window-and-dialog-options)
+for framework preferences and cache locations.
 `--check-ocr` still exits before desktop registration or forwarding.
 
 ## Verification

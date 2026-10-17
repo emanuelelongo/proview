@@ -35,6 +35,60 @@ Run commands from the repository root.
 | `task redact:probe` | Run native PDF redaction security and geometry checks |
 | `task build` | Build for the current OS into `build/proview` (`.exe` on Windows) |
 
+## Command-line window and dialog options
+
+```sh
+proview --new-window --work-dir /path/to/fixtures
+proview --new-window --work-dir /path/to/fixtures document.pdf image.png
+```
+
+`--new-window` opens one fresh editor window, including when Proview is already
+running and when no files are supplied. Additional file arguments use the normal
+workspace rules inside that window. Without a running application, the initial
+window fulfills the request; it does not create a second empty window.
+
+`--work-dir` must name an existing directory. Relative directory paths are resolved
+against the caller's current directory before forwarding. Every new Open,
+PDF collection, signature import and Save As dialog in the receiving window starts
+there, even after selecting files elsewhere. It does not change the process
+working directory, reinterpret file arguments, restrict browsing, or overwrite an
+existing document's Save target. Save As still permits another destination.
+
+This setting is local to the window and does not update the persistent last-save
+folder. App-created child windows inherit it; an explicit `--new-window` launch
+without `--work-dir` starts with the normal directory defaults. `--work-dir` alone
+applies to the current editor if another instance is running. Preferences such as
+theme and the signature library are still shared; this is not an isolated profile.
+If the directory is removed during the session, dialogs use their normal fallback.
+
+`--data-dir /path/to/profile` selects a separate process-wide profile. The folder
+is created if needed, resolved against the caller's cwd and canonicalized through
+symlinks. Signatures, bounded logs and desktop IPC live under `signatures/`,
+`logs/` and `desktop/` inside it. Only launches using the same canonical root can
+forward to one another; the ordinary installed instance remains separate.
+File association registration is skipped for custom profiles.
+
+Application preferences use a Fyne application ID derived from that root and
+remain in Fyne's platform configuration directory (on macOS,
+`~/Library/Preferences/fyne/com.emanuelelongo.proview.profile.<hash>/`). They are
+separate from the normal profile, but are not moved into `--data-dir`. OS keychain
+credentials use the same distinct identity; secrets are never stored in the data
+folder. An empty profile does not restore the normal profile's cloud connection.
+Fyne's global theme settings and the verified OCR runtime cache remain shared.
+Without `--data-dir`, all existing storage locations and credentials are retained.
+This option is independent of the per-window `--work-dir` and is never forwarded
+as a change to a running process's profile.
+
+```sh
+proview --new-window --work-dir demo/fixtures --data-dir build/manual-profile demo/fixtures/showcase.pdf
+```
+
+Options precede file arguments; use `--` before a filename starting with `-`.
+Use `--help` for usage. `--check-ocr` remains a standalone check and cannot be
+combined with window options or files. Invalid arguments exit before starting
+logging, IPC or the GUI. These options are available on all desktop platforms;
+automated macOS demo recording is a separate workflow.
+
 ## Signature cloud sync
 
 The signature library supports optional Google Drive and S3 synchronization. See
