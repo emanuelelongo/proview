@@ -28,7 +28,7 @@ func (g *Gui) stopQRCodes() {
 	}
 	g.qr.doc = nil
 	g.qr.revision = 0
-	g.qr.cache = map[string]*ocrEntry{}
+	clear(g.qr.cache)
 	g.qr.requested = nil
 }
 
@@ -36,11 +36,11 @@ func (g *Gui) syncQRCodes() {
 	if g.closed || g.document == nil {
 		return
 	}
+	rev := g.document.Revision()
 	if g.qr == nil {
-		g.qr = &qrState{cache: map[string]*ocrEntry{}}
+		g.qr = &qrState{doc: g.document, revision: rev, cache: map[string]*ocrEntry{}}
 	}
 	s := g.qr
-	rev := g.document.Revision()
 	docChanged := s.doc != g.document
 	if docChanged {
 		g.stopQRCodes()
@@ -52,13 +52,15 @@ func (g *Gui) syncQRCodes() {
 	}
 	if docChanged || s.revision != rev {
 		s.revision = rev
-		valid := make(map[string]bool, g.document.PageCount())
-		for page := 0; page < g.document.PageCount(); page++ {
-			valid[g.document.TextSelectionKey(page)] = true
-		}
-		for key := range s.cache {
-			if !valid[key] {
-				delete(s.cache, key)
+		if len(s.cache) > 0 {
+			valid := make(map[string]bool, g.document.PageCount())
+			for page := 0; page < g.document.PageCount(); page++ {
+				valid[g.document.TextSelectionKey(page)] = true
+			}
+			for key := range s.cache {
+				if !valid[key] {
+					delete(s.cache, key)
+				}
 			}
 		}
 	}

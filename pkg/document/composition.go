@@ -15,7 +15,12 @@ func (s SignatureOverlay) IsLens() bool {
 	return s.annotation != nil && s.annotation.Kind == annotations.Shape && s.annotation.Shape == annotations.Magnifier
 }
 func (s SignatureOverlay) ArtworkAsset(aspect float64) (signaturesAsset []byte, err error) {
-	a, e := s.Asset().Transformed(s.Transform)
+	base := s.asset
+	if base == nil {
+		fallback := s.Asset()
+		base = &fallback
+	}
+	a, e := base.Transformed(s.Transform)
 	if e != nil {
 		return nil, e
 	}
@@ -66,7 +71,7 @@ func (d *Document) renderPageDPI(page int, dpi float64, lenses bool) (image.Imag
 		if s.IsLens() {
 			p, e = d.RenderLens(s.ID, dpi)
 		} else if s.IsVector() {
-			a, err := s.Asset().Transformed(s.Transform)
+			a, err := s.asset.Transformed(s.Transform)
 			if err != nil {
 				return nil, err
 			}
@@ -86,9 +91,7 @@ func (d *Document) renderPageDPI(page int, dpi float64, lenses bool) (image.Imag
 		if p.Bounds().Dx() == target.Dx() && p.Bounds().Dy() == target.Dy() {
 			draw.Draw(out, target, p, p.Bounds().Min, draw.Over)
 		} else {
-			scaled := image.NewNRGBA(image.Rect(0, 0, target.Dx(), target.Dy()))
-			xdraw.BiLinear.Scale(scaled, scaled.Bounds(), p, p.Bounds(), draw.Src, nil)
-			draw.Draw(out, target, scaled, image.Point{}, draw.Over)
+			xdraw.BiLinear.Scale(out, target, p, p.Bounds(), draw.Over, nil)
 		}
 	}
 	return d.paintRedactions(page, base), nil
@@ -121,10 +124,10 @@ func (d *Document) RenderLens(id OverlayID, dpi float64) (image.Image, error) {
 	}
 	s := d.signatures[i]
 	under := d.RenderingSnapshot()
-	under.signatures = nil
+	under.signatures = under.signatures[:0]
 	for _, o := range d.signatures[:i] {
 		if !o.IsLens() {
-			under.signatures = append(under.signatures, cloneSignature(o))
+			under.signatures = append(under.signatures, o)
 		}
 	}
 	base, e := under.SafeRenderPage(s.Page, dpi)

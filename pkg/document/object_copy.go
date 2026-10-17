@@ -137,7 +137,7 @@ func (d *Document) ObjectImage(id OverlayID) (image.Image, error) {
 		if e != nil {
 			return nil, e
 		}
-		a, e := s.Asset().Transformed(s.Transform)
+		a, e := s.asset.Transformed(s.Transform)
 		if e != nil {
 			return nil, e
 		}

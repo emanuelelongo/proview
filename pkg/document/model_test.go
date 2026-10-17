@@ -2,6 +2,7 @@ package document
 
 import (
 	"bytes"
+	"emanuelelongo/proview/pkg/annotations"
 	"errors"
 	"image"
 	"image/color"
@@ -559,6 +560,20 @@ func TestSnapshotSharesImmutableBuffersAndPreservesIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	annData := annotations.Default(annotations.Drawing)
+	annData.PageWidth, annData.PageHeight = 100, 100
+	annData.Points = []annotations.Point{{X: 10, Y: 10}, {X: 50, Y: 50}}
+	asset, _, err := annData.Artwork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prep, err := asset.Prepare()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.AddAnnotation(0, NormalizedRect{X: .2, Y: .2, Width: .3, Height: .3}, annData, prep); err != nil {
+		t.Fatal(err)
+	}
 	doc.MarkSaved()
 
 	// Dirty() should not allocate when comparing unchanged state.
@@ -571,17 +586,37 @@ func TestSnapshotSharesImmutableBuffersAndPreservesIsolation(t *testing.T) {
 		t.Fatalf("Dirty() allocated %v objects per run, want 0", allocs)
 	}
 
-	// Internal snapshots share the immutable PNG backing array.
+	// Internal snapshots share immutable PNG, annotation, and asset payloads and preserve revision.
 	snap := doc.RenderingSnapshot()
+	if snap.Revision() != doc.Revision() {
+		t.Fatalf("RenderingSnapshot revision = %d, want %d", snap.Revision(), doc.Revision())
+	}
 	if &snap.signatures[0].png[0] != &doc.signatures[0].png[0] {
 		t.Fatal("RenderingSnapshot cloned immutable PNG slice")
 	}
+	if snap.signatures[1].annotation != doc.signatures[1].annotation || snap.signatures[1].asset != doc.signatures[1].asset {
+		t.Fatal("RenderingSnapshot cloned immutable annotation or asset pointer")
+	}
 
-	// Public PNG() accessor still returns a defensive copy.
+	// Public PNG(), Annotation(), and Asset() accessors still return defensive copies.
 	exported := doc.Signatures()[0].PNG()
 	exported[0] ^= 0xff
 	if bytes.Equal(exported, doc.Signatures()[0].PNG()) {
 		t.Fatal("mutating exported PNG slice affected document state")
+	}
+	exportedAnn, ok := doc.Signatures()[1].Annotation()
+	if !ok {
+		t.Fatal("expected annotation")
+	}
+	exportedAnn.Points[0].X = 999
+	currentAnn, _ := doc.Signatures()[1].Annotation()
+	if currentAnn.Points[0].X == 999 {
+		t.Fatal("mutating exported annotation points affected document state")
+	}
+	exportedAsset := doc.Signatures()[1].Asset()
+	exportedAsset.Data[0] ^= 0xff
+	if bytes.Equal(exportedAsset.Data, doc.Signatures()[1].Asset().Data) {
+		t.Fatal("mutating exported asset data affected document state")
 	}
 	if err := doc.UpdateSignature(sig.ID, 0, NormalizedRect{X: .2, Y: .2, Width: .2, Height: .2}); err != nil {
 		t.Fatal(err)

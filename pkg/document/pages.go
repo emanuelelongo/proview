@@ -322,7 +322,8 @@ func (d *Document) DuplicatePage(page int) error {
 		}
 	}
 	d.signatures = append(d.signatures, copies...)
-	for _, r := range cloneRedactions(d.redactions) {
+	existing := d.redactions
+	for _, r := range existing {
 		if r.PageID == oldID {
 			d.nextRedactionID++
 			r.ID = d.nextRedactionID

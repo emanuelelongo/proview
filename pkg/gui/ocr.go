@@ -44,7 +44,7 @@ func (g *Gui) stopOCR() {
 		}
 		g.ocr.doc = nil
 		g.ocr.revision = 0
-		g.ocr.cache = map[string]*ocrEntry{}
+		clear(g.ocr.cache)
 		g.ocr.requested = nil
 	}
 	g.clearTextSelection()
@@ -57,14 +57,14 @@ func (g *Gui) syncOCR() {
 	if g.closed || g.document == nil {
 		return
 	}
+	rev := g.document.Revision()
 	if g.ocr == nil {
 		if !ocr.Enabled() {
 			return
 		}
-		g.ocr = &ocrState{engine: ocr.NewEngine(), cache: map[string]*ocrEntry{}}
+		g.ocr = &ocrState{engine: ocr.NewEngine(), doc: g.document, revision: rev, cache: map[string]*ocrEntry{}}
 	}
 	s := g.ocr
-	rev := g.document.Revision()
 	docChanged := s.doc != g.document
 	if docChanged {
 		g.stopOCR()
@@ -76,13 +76,15 @@ func (g *Gui) syncOCR() {
 	}
 	if docChanged || s.revision != rev {
 		s.revision = rev
-		valid := make(map[string]bool, g.document.PageCount())
-		for page := 0; page < g.document.PageCount(); page++ {
-			valid[g.document.TextSelectionKey(page)] = true
-		}
-		for key := range s.cache {
-			if !valid[key] {
-				delete(s.cache, key)
+		if len(s.cache) > 0 {
+			valid := make(map[string]bool, g.document.PageCount())
+			for page := 0; page < g.document.PageCount(); page++ {
+				valid[g.document.TextSelectionKey(page)] = true
+			}
+			for key := range s.cache {
+				if !valid[key] {
+					delete(s.cache, key)
+				}
 			}
 		}
 	}

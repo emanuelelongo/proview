@@ -30,7 +30,12 @@ func (d *Document) TextSelectionKey(page int) string {
 	}
 	security := ""
 	if d.HasRedactions() {
-		security = fmt.Sprintf("%d:%v", d.Revision(), d.RedactionKeys())
+		var b strings.Builder
+		fmt.Fprintf(&b, "%d", d.Revision())
+		for _, r := range d.redactions {
+			fmt.Fprintf(&b, ";%d:%d:%v", r.ID, r.PageID, r.Quads)
+		}
+		security = b.String()
 	}
 	if d.Format() == FormatPDF {
 		p := d.pages[page]

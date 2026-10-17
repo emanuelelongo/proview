@@ -32,6 +32,7 @@ type documentSearch struct {
 	cancel                   context.CancelFunc
 	serial                   uint64
 	doc                      *document.Document
+	revision                 uint64
 	key                      string
 	hits                     []searchHit
 	current, scanned, failed int
@@ -121,9 +122,11 @@ func (g *Gui) syncSearch() {
 			g.closeSearch()
 			return
 		}
-		if s.doc != g.document || s.key != g.searchKey() {
+		rev := g.document.Revision()
+		if s.doc != g.document || (s.revision != rev && s.key != g.searchKey()) {
 			g.startSearch()
 		} else {
+			s.revision = rev
 			g.refreshSearchHighlight()
 		}
 	}
@@ -138,6 +141,11 @@ func (g *Gui) startSearch() {
 	}
 	s.serial++
 	s.doc = g.document
+	if g.document != nil {
+		s.revision = g.document.Revision()
+	} else {
+		s.revision = 0
+	}
 	s.key = g.searchKey()
 	s.hits = nil
 	s.current = -1

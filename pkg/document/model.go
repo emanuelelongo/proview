@@ -685,11 +685,7 @@ func (d *Document) SetSignatureStroke(id SignatureID, width int) error {
 }
 
 func (d *Document) Signatures() []SignatureOverlay {
-	result := make([]SignatureOverlay, len(d.signatures))
-	for index, signature := range d.signatures {
-		result[index] = cloneSignature(signature)
-	}
-	return result
+	return slices.Clone(d.signatures)
 }
 
 func (d *Document) SignaturesForPage(page int) ([]SignatureOverlay, error) {
@@ -726,17 +722,14 @@ func (d *Document) snapshot() editorState {
 		formValues:      cloneFormValues(d.formValues),
 		imageTransform:  d.imageTransform,
 		pages:           slices.Clone(d.pages),
-		signatures:      make([]SignatureOverlay, len(d.signatures)),
+		signatures:      slices.Clone(d.signatures),
 		nextSignatureID: d.nextSignatureID,
-		redactions:      cloneRedactions(d.redactions),
+		redactions:      slices.Clone(d.redactions),
 		nextRedactionID: d.nextRedactionID,
 	}
 	if d.crop != nil {
 		crop := *d.crop
 		state.crop = &crop
-	}
-	for index, signature := range d.signatures {
-		state.signatures[index] = cloneSignature(signature)
 	}
 	return state
 }
@@ -750,12 +743,9 @@ func (d *Document) restore(state editorState) {
 		crop := *state.crop
 		d.crop = &crop
 	}
-	d.signatures = make([]SignatureOverlay, len(state.signatures))
-	for index, signature := range state.signatures {
-		d.signatures[index] = cloneSignature(signature)
-	}
+	d.signatures = slices.Clone(state.signatures)
 	d.nextSignatureID = state.nextSignatureID
-	d.redactions = cloneRedactions(state.redactions)
+	d.redactions = slices.Clone(state.redactions)
 	d.nextRedactionID = state.nextRedactionID
 }
 
@@ -820,11 +810,21 @@ func redactionsEqual(first, second []Redaction) bool {
 		return false
 	}
 	for i := range first {
-		if first[i].ID != second[i].ID || first[i].PageID != second[i].PageID || !slices.Equal(first[i].Quads, second[i].Quads) {
+		if first[i].ID != second[i].ID || first[i].PageID != second[i].PageID || !quadsSameOrEqual(first[i].Quads, second[i].Quads) {
 			return false
 		}
 	}
 	return true
+}
+
+func quadsSameOrEqual(a, b []TextQuad) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 || &a[0] == &b[0] {
+		return true
+	}
+	return slices.Equal(a, b)
 }
 
 func signaturesEqual(first, second SignatureOverlay) bool {
@@ -912,15 +912,6 @@ func assetsEqual(a, b *signatures.Asset) bool {
 // Defensive copies are created at public API boundaries (PNG, Asset, Annotation)
 // and whenever an edit replaces annotation/asset fields.
 func cloneSignature(signature SignatureOverlay) SignatureOverlay {
-	if signature.annotation != nil {
-		data := *signature.annotation
-		data.Points = slices.Clone(data.Points)
-		signature.annotation = &data
-	}
-	if signature.asset != nil {
-		asset := *signature.asset
-		signature.asset = &asset
-	}
 	return signature
 }
 
