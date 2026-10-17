@@ -9,6 +9,8 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"path/filepath"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -112,7 +114,7 @@ func BuildMenu(g *Gui) {
 		scroll.SetMinSize(g.signatureViewport())
 		dialog.NewCustom("Third-Party Licenses", "Close", scroll, g.window).Show()
 	})
-	helpMenu := fyne.NewMenu("Help", showTipsItem, fyne.NewMenuItemSeparator(), thirdPartyLicensesItem,
+	helpMenu := fyne.NewMenu("Help", showTipsItem, fyne.NewMenuItem("Open logs folder", g.openLogsFolder), fyne.NewMenuItemSeparator(), thirdPartyLicensesItem,
 		fyne.NewMenuItemSeparator(), fyne.NewMenuItem("About", g.showAbout))
 	g.tipsMenu = helpMenu
 	g.window.SetMainMenu(fyne.NewMainMenu(fileMenu, editMenu, viewMenu, toolsMenu, helpMenu))
@@ -182,54 +184,72 @@ func zoomInShortcuts() []*desktop.CustomShortcut {
 }
 
 func BuildOpenFileCallback(g *Gui) func(fyne.URIReadCloser, error) {
-	// Open file handler
-	return func(uri fyne.URIReadCloser, err error) {
-		if err != nil {
-			dialog.ShowError(err, g.window)
-			return
+	return func(uri fyne.URIReadCloser, err error) { g.openFile(uri, err, nil) }
+}
+
+func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
+	finish := func() {
+		if done != nil {
+			done()
 		}
-		if uri == nil {
-			return
-		}
-		if g.working {
-			_ = uri.Close()
-			return
-		}
-		target := uri.URI()
-		g.working = true
-		progress := dialog.NewCustomWithoutButtons("Opening", widget.NewProgressBarInfinite(), g.window)
-		progress.Show()
-		go func() {
-			var loadedDocument *document.Document
-			var mesh *model3d.Mesh
-			var readErr error
-			if isModelFile(target.Name()) {
-				mesh, readErr = loadModelReader(uri)
-			} else {
-				loadedDocument, readErr = loadDocumentReader(uri)
-			}
-			fyne.Do(func() {
-				progress.Hide()
-				g.working = false
-				if g.closed {
-					if loadedDocument != nil {
-						loadedDocument.Close()
-					}
-					return
-				}
-				if readErr != nil {
-					dialog.ShowError(readErr, g.window)
-					return
-				}
-				if mesh != nil {
-					g.showModel(mesh)
-				} else {
-					g.showDocument(loadedDocument)
-					g.saveTarget = target
-				}
-			})
-		}()
+		g.processPendingFiles()
 	}
+	if err != nil {
+		g.showOperationError("open", err)
+		finish()
+		return
+	}
+	if uri == nil {
+		finish()
+		return
+	}
+	if g.closed {
+		_ = uri.Close()
+		finish()
+		return
+	}
+	if g.waitAnnotationChanges(func() { g.openFile(uri, nil, done) }) {
+		return
+	}
+	if g.working {
+		_ = uri.Close()
+		finish()
+		return
+	}
+	target := uri.URI()
+	started := time.Now()
+	g.logEvent("open_started", "extension=%q", filepath.Ext(target.Name()))
+	g.working = true
+	progress := dialog.NewCustomWithoutButtons("Opening", widget.NewProgressBarInfinite(), g.window)
+	progress.Show()
+	go func() {
+		var doc *document.Document
+		var mesh *model3d.Mesh
+		var err error
+		if isModelFile(target.Name()) {
+			mesh, err = loadModelReader(uri)
+		} else {
+			doc, err = loadDocumentReader(uri)
+		}
+		fyne.Do(func() {
+			progress.Hide()
+			g.working = false
+			if g.closed {
+				if doc != nil {
+					doc.Close()
+				}
+				finish()
+				return
+			}
+			if err != nil {
+				g.showOperationError("open", err)
+				finish()
+				return
+			}
+			g.logEvent("open_loaded", "extension=%q elapsed=%s", filepath.Ext(target.Name()), time.Since(started).Round(time.Millisecond))
+			g.receiveDocument(doc, mesh, target, finish)
+		})
+	}()
 }
 
 func loadDocumentReader(uri fyne.URIReadCloser) (*document.Document, error) {
@@ -272,7 +292,7 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	}
 	preview, err := loadedDocument.Preview(0)
 	if err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("open", err)
 		return
 	}
 
@@ -340,13 +360,13 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 
 	firstPreview, err := loadedDocument.Preview(0)
 	if err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("open", err)
 		return
 	}
 	for page := 0; page < loadedDocument.PageCount(); page++ {
 		pageSize, err := loadedDocument.PageSize(page)
 		if err != nil {
-			dialog.ShowError(err, g.window)
+			g.showOperationError("open", err)
 			return
 		}
 		var preview image.Image
@@ -462,6 +482,12 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 func (g *Gui) setDocument(doc *document.Document) {
 	g.stopFormPulse()
 	previous := g.document
+	if previous != doc && g.activeDocument != nil && (g.activeDocument.doc == previous && previous != nil || g.activeDocument.mesh != nil) {
+		g.activeDocument.doc = doc
+		g.activeDocument.mesh = nil
+		g.activeDocument.target = nil
+		g.activeDocument.redactedTargets = nil
+	}
 	if previous != doc {
 		g.stopOCR()
 		g.objectPasteDocument = nil
@@ -470,12 +496,16 @@ func (g *Gui) setDocument(doc *document.Document) {
 	g.document = doc
 	g.fileSizeBytes = doc.SourceSize()
 	g.clearRedactionSelection()
-	g.redactedTargets = nil
+	if previous != doc {
+		g.redactedTargets = nil
+	}
 	g.setAnnotationTool(toolSelect)
 	if previous != doc {
 		g.startFormPulse()
 	}
 	if previous != nil && previous != doc {
-		go previous.Close()
+		if !g.retainsDocument(previous) {
+			go previous.Close()
+		}
 	}
 }

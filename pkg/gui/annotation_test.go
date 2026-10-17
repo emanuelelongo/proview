@@ -34,6 +34,7 @@ func finishAnnotationJobs(t *testing.T, g *Gui) {
 		}
 	}
 	g.working = false
+	g.updateTemporarySelection()
 	after := g.annotationAfterIdle
 	g.annotationAfterIdle = nil
 	for _, action := range after {
@@ -136,7 +137,7 @@ func TestPageTextInsertionEditingAndStableStacking(t *testing.T) {
 
 func TestDrawingClipsExitBeforeAnotherPageAndKeepsZoomIndependentWidth(t *testing.T) {
 	g, layer := annotationTestGui(t)
-	g.setAnnotationTool(toolHighlight)
+	g.setAnnotationTool(toolDraw)
 	p := layer.input
 	p.MouseDown(mouseAt(900, 250))
 	p.MouseOut()
@@ -156,7 +157,7 @@ func TestDrawingClipsExitBeforeAnotherPageAndKeepsZoomIndependentWidth(t *testin
 	p.MouseUp(mouseAt(400, 400))
 	finishAnnotationJobs(t, g)
 	zoomed, _ := g.document.Overlays()[1].Annotation()
-	if zoomed.Width != 12 || zoomed.Points[0] != (annotations.Point{X: 100, Y: 100}) {
+	if zoomed.Width != 2 || zoomed.Points[0] != (annotations.Point{X: 100, Y: 100}) {
 		t.Fatal("zoom changed physical coordinates or brush width")
 	}
 }

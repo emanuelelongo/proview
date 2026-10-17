@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -20,7 +21,7 @@ import (
 )
 
 func (g *Gui) openImageWindow(doc *document.Document) {
-	editor := newGui(g.app)
+	editor := g.newEditor()
 	editor.showDocument(doc)
 	editor.saveTarget = nil
 	editor.window.Show()
@@ -56,7 +57,7 @@ func (g *Gui) newBlankPage() {
 		}, func(blank *document.Document) {
 			if err := doc.InsertBlankPage(page, blank); err != nil {
 				blank.Close()
-				dialog.ShowError(err, g.window)
+				g.showOperationError("add_blank_page", err)
 				return
 			}
 			g.rebuildPDFWithCompletion(page+1, func() { g.revealThumbnail(page + 1) })
@@ -134,7 +135,7 @@ func (g *Gui) startPDFCrop() {
 	g.setAnnotationTool(toolSelect)
 	size, err := g.document.PageSize(page)
 	if err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("file_work", err)
 		return
 	}
 	crop.Activate(image.Rectangle{Max: size}, func(rect image.Rectangle) {
@@ -146,6 +147,8 @@ func (g *Gui) startPDFCrop() {
 
 // Expensive loading, rendering and encoding never run in the event callback.
 func (g *Gui) runFileWork(title string, work func() (*document.Document, error), done func(*document.Document)) {
+	started := time.Now()
+	g.logEvent("operation_started", "operation=%q", title)
 	g.working = true
 	progress := dialog.NewCustomWithoutButtons(title, widget.NewProgressBarInfinite(), g.window)
 	progress.Show()
@@ -154,10 +157,12 @@ func (g *Gui) runFileWork(title string, work func() (*document.Document, error),
 		fyne.Do(func() {
 			progress.Hide()
 			g.working = false
+			defer g.processPendingFiles()
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError(title, err)
 				return
 			}
+			g.logEvent("operation_completed", "operation=%q elapsed=%s", title, time.Since(started).Round(time.Millisecond))
 			done(doc)
 		})
 	}()
@@ -200,7 +205,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 				return
 			}
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("file_work", err)
 				return
 			}
 			if len(readers) == 0 {
@@ -225,6 +230,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 				}
 				fyne.Do(func() {
 					g.working = false
+					defer g.processPendingFiles()
 					if !collectionOpen || g.closed {
 						return
 					}
@@ -310,7 +316,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 			chooser.Hide()
 			if appendPages {
 				if err := current.AppendDocumentPages(loaded); err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("file_work", err)
 					return
 				}
 				g.rebuildPDF(g.activePDFPage)
@@ -356,7 +362,7 @@ func (g *Gui) deletePDFPage(page int) {
 		active = min(page, len(order)-1)
 	}
 	if err := g.document.SetPageOrder(order); err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("file_work", err)
 		return
 	}
 	g.rebuildPDFWithCompletion(active, func() { g.revealThumbnail(active) })
@@ -390,7 +396,7 @@ func (g *Gui) duplicatePDFPage(page int) {
 		return
 	}
 	if err := g.document.DuplicatePage(page); err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("file_work", err)
 		return
 	}
 	g.cancelThumbnailDrag()

@@ -38,6 +38,10 @@ func TestTemporarySelectionMovesAndResizesNewObjects(t *testing.T) {
 			data.Text = "Example"
 			data.PageWidth, data.PageHeight = g.annotationPageSize(layer)
 			data.Points = []annotations.Point{{X: 100, Y: 100}, {X: 160, Y: 160}}
+			if scenario.tool == toolHighlight {
+				data.Points = nil
+				data.Quads = []annotations.Quad{{{X: 100, Y: 100}, {X: 160, Y: 100}, {X: 160, Y: 130}, {X: 100, Y: 130}}}
+			}
 			if scenario.tool == toolShapes {
 				data.Shape = scenario.shape
 			}
@@ -55,6 +59,7 @@ func TestTemporarySelectionMovesAndResizesNewObjects(t *testing.T) {
 			object.Tapped(&fyne.PointEvent{})
 			object.resize(signatureBottomRight, fyne.Delta{DX: 15, DY: 15})
 			object.finishChange()
+			finishAnnotationJobs(t, g)
 			resized := g.document.Overlays()[0].Rect
 			if resized == original {
 				t.Fatal("temporary selection did not resize the object")
@@ -67,7 +72,11 @@ func TestTemporarySelectionMovesAndResizesNewObjects(t *testing.T) {
 			}
 			g.handleSelectionShift(desktop.KeyShiftRight, false)
 			object.DragEnd()
-			if g.effectiveAnnotationTool() != scenario.tool || !layer.input.Visible() || len(g.document.Overlays()) != 1 {
+			inputVisible := layer.input.Visible()
+			if scenario.tool == toolHighlight {
+				inputVisible = layer.highlightInput.Visible()
+			}
+			if g.effectiveAnnotationTool() != scenario.tool || !inputVisible || len(g.document.Overlays()) != 1 {
 				t.Fatal("releasing Shift did not restore the insertion tool")
 			}
 			if g.hasSelectedSignature || object.selected {

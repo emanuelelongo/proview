@@ -5,6 +5,7 @@ package pdfengine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -386,7 +387,6 @@ func TestTextCorrectionRejectsUnsupportedTextStates(t *testing.T) {
 	for _, content := range []string{
 		"BT /F1 16 Tf 3 Tr 30 140 Td (SECRET) Tj ET",
 		"BT /F1 16 Tf 80 Tz 30 140 Td (SECRET) Tj ET",
-		"BT /F1 16 Tf 2 Tc 30 140 Td (SECRET) Tj ET",
 		"20 20 m BT /F1 16 Tf 30 140 Td (SECRET) Tj ET 30 30 l S",
 	} {
 		input := probeFixture(content, "")
@@ -400,34 +400,28 @@ func TestTextCorrectionRejectsUnsupportedTextStates(t *testing.T) {
 	}
 }
 
-func TestTextCorrectionAllowsProposedOverlap(t *testing.T) {
+func TestTextEditingRejectsProposedOverlap(t *testing.T) {
 	input := probeFixture("BT /F1 16 Tf 30 140 Td (PUBLIC SECRET KEEP) Tj ET", "")
+	layout, start, count := probeRange(t, input, 0, "SECRET")
+	_, keep, _ := probeRange(t, input, 0, "KEEP")
+	aligned := (layout.Glyphs[keep].Origin.X - layout.Glyphs[start].Origin.X) * layout.Width
 	for _, tc := range []struct {
 		value string
 		dx    float64
-	}{
-		{"EXPANSION", 0}, // A longer replacement reaches KEEP.
-		{"SECRET", 30},   // The original value moved into KEEP.
-	} {
-		out := probeCorrect(t, input, 0, "SECRET", tc.value, tc.dx, 0)
-		if !strings.Contains(extractedText(t, out), tc.value) {
-			t.Fatalf("overlapping replacement missing: %q", tc.value)
+	}{{"EXPANSION", 0}, {"SECRET", 30}, {"SECRET", aligned}} {
+		original := bytes.Clone(input)
+		output, err := CorrectText(input, 0, start, count, tc.value, tc.dx, 0)
+		if !errors.Is(err, ErrTextOverlap) || output != nil {
+			t.Fatalf("overlap accepted: %v", err)
 		}
-		probeSameWordPosition(t, input, out, 0, "PUBLIC")
-		probeSameWordPosition(t, input, out, 0, "KEEP")
+		if !bytes.Equal(input, original) {
+			t.Fatal("rejected edit changed source")
+		}
 	}
-	// Use distinct glyph origins to keep source identification unambiguous
-	// when reopening and editing text that still overlaps its neighbor.
-	overlapping := probeCorrect(t, input, 0, "SECRET", "CORRECTION", .37, 0)
-	repaired := probeCorrect(t, overlapping, 0, "CORRECTION", "OK", 0, 30)
-	if !strings.Contains(extractedText(t, repaired), "OK") {
-		t.Fatal("re-editing overlapping text failed")
-	}
-	probeSameWordPosition(t, input, repaired, 0, "KEEP")
-	// Moving a long replacement to an empty line is valid.
-	out := probeCorrect(t, input, 0, "SECRET", "CORRECTION", 0, 30)
-	if !strings.Contains(extractedText(t, out), "CORRECTION") {
-		t.Fatal("moved replacement missing")
+	output := probeCorrect(t, input, 0, "SECRET", "EXPANSION", 0, 30)
+	probeSameWordPosition(t, input, output, 0, "KEEP")
+	if !strings.Contains(extractedText(t, output), "EXPANSION") {
+		t.Fatal("free position rejected")
 	}
 }
 
@@ -452,6 +446,14 @@ func TestTextCorrectionCanRepairExistingOverlap(t *testing.T) {
 		{"keep-overlap", "CORRECTION!", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "keep-overlap" {
+				_, start, count := probeRange(t, input, 0, "CORRECTION")
+				output, err := CorrectText(input, 0, start, count, tc.value, 0, tc.dy)
+				if !errors.Is(err, ErrTextOverlap) || output != nil {
+					t.Fatalf("overlap accepted: %v", err)
+				}
+				return
+			}
 			out := probeCorrect(t, input, 0, "CORRECTION", tc.value, 0, tc.dy)
 			text := extractedText(t, out)
 			if tc.value != "CORRECTION" && tc.value != "CORRECTION!" && strings.Contains(text, "CORRECTION") {
@@ -502,5 +504,172 @@ func TestTextCorrectionBaselineGeometry(t *testing.T) {
 		if math.Abs(small.Quad.UL.Y-large.Quad.UL.Y)*layout.Height < 1 {
 			t.Fatal("fixture should have different ascenders")
 		}
+	}
+}
+
+func TestTextEditingPreservesCustomSpacing(t *testing.T) {
+	for _, tc := range []struct{ name, content string }{
+		{"word_negative", "BT /F1 16 Tf -.036714 Tw 30 140 Td (PUBLIC SECRET KEEP) Tj ET"},
+		{"word_positive", "BT /F1 16 Tf 3 Tw 30 140 Td (PUBLIC SECRET KEEP) Tj ET"},
+		{"character_positive", "BT /F1 16 Tf .4 Tc 30 140 Td (PUBLIC SECRET KEEP) Tj ET"},
+		{"character_negative", "BT /F1 16 Tf -.3 Tc 30 140 Td (PUBLIC SECRET KEEP) Tj ET"},
+		{"combined", "BT /F1 16 Tf .4 Tc 2 Tw 30 140 Td (PUBLIC SECRET KEEP) Tj ET"},
+		{"quote", "BT /F1 16 Tf 30 140 Td 2 .4 (PUBLIC SECRET KEEP) \" ET"},
+		{"restore_state", "BT /F1 16 Tf .4 Tc 2 Tw ET q BT .1 Tc -1 Tw ET Q BT 30 140 Td (PUBLIC SECRET KEEP) Tj ET"},
+		{"font_text_scale", "BT /F1 32 Tf .8 Tc 4 Tw .5 0 0 .5 30 140 Tm (PUBLIC SECRET KEEP) Tj ET"},
+		{"ctm_scale", "q .5 0 0 .5 0 0 cm BT /F1 32 Tf .8 Tc 4 Tw 60 280 Td (PUBLIC SECRET KEEP) Tj ET Q"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := probeFixture(tc.content+"\nBT /F1 16 Tf 0 Tc 0 Tw 30 65 Td (SECOND LINE) Tj ET", "")
+			identical := probeCorrect(t, input, 0, "SECRET", "SECRET", 0, 0)
+			probeSameWordPosition(t, input, identical, 0, "SECRET")
+			if !reflect.DeepEqual(probeImage(t, input, 0), probeImage(t, identical, 0)) {
+				t.Fatal("unchanged text lost spacing or rendering fidelity")
+			}
+			for _, value := range []string{"EDIT", "EXPANSION", "EDIT NOW", ""} {
+				dy := float64(0)
+				if value == "EXPANSION" || value == "EDIT NOW" {
+					dy = 30
+				}
+				output := probeCorrect(t, input, 0, "SECRET", value, 0, dy)
+				for _, word := range []string{"PUBLIC", "KEEP", "SECOND LINE"} {
+					probeSameWordPosition(t, input, output, 0, word)
+				}
+				actual := extractedText(t, output)
+				if strings.Contains(actual, "SECRET") {
+					t.Fatal("original text survived")
+				}
+				if value != "" && !strings.Contains(actual, value) {
+					t.Fatalf("replacement missing: %q", actual)
+				}
+			}
+			// The generated Form must remain editable even when surrounding source text
+			// retains nonzero spacing after the first edit.
+			output := probeCorrect(t, input, 0, "SECRET", "EDIT", 0, 0)
+			output = probeCorrect(t, output, 0, "EDIT", "NEXT", 5, 0)
+			probeSameWordPosition(t, input, output, 0, "KEEP")
+		})
+	}
+}
+
+func TestTextEditingAllowsSpacingElsewhereOnPage(t *testing.T) {
+	input := probeFixture("BT /F1 16 Tf 30 140 Td (SECRET) Tj ET\nBT /F1 16 Tf .4 Tc 3 Tw 30 65 Td (PUBLIC KEEP) Tj ET", "")
+	output := probeCorrect(t, input, 0, "SECRET", "EDIT", 0, 0)
+	probeSameWordPosition(t, input, output, 0, "PUBLIC KEEP")
+}
+
+func TestTextEditingRejectsMixedSpacingWithinSelection(t *testing.T) {
+	input := probeFixture("BT /F1 16 Tf .2 Tc 30 140 Td (SEC) Tj .4 Tc (RET KEEP) Tj ET", "")
+	_, start, count := probeRange(t, input, 0, "SECRET")
+	output, err := CorrectText(input, 0, start, count, "EDIT", 0, 0)
+	if err == nil || output != nil || !strings.Contains(err.Error(), "Mixed spacing") {
+		t.Fatalf("mixed spacing accepted: %v", err)
+	}
+}
+
+func TestTextEditingAppliesSpacingToReplacementSpaces(t *testing.T) {
+	for _, spacing := range []string{".4 Tc 3 Tw", "-.3 Tc -.036714 Tw", "0 Tc 3 Tw"} {
+		input := probeFixture("BT /F1 16 Tf "+spacing+" 30 140 Td (SECRET) Tj ET", "")
+		reference := probeFixture("BT /F1 16 Tf "+spacing+" 30 140 Td (EDIT NOW) Tj ET", "")
+		output := probeCorrect(t, input, 0, "SECRET", "EDIT NOW", 0, 0)
+		probeSameWordPosition(t, reference, output, 0, "EDIT NOW")
+		reedited := probeCorrect(t, output, 0, "EDIT NOW", "EDIT NOW", 0, 0)
+		probeSameWordPosition(t, reference, reedited, 0, "EDIT NOW")
+		if !reflect.DeepEqual(probeImage(t, reference, 0), probeImage(t, output, 0)) {
+			t.Fatalf("replacement spacing differs from source formatting: %s", spacing)
+		}
+	}
+}
+
+func TestTextEditingSpacingInsideSharedForms(t *testing.T) {
+	input := fixturePDF([]string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 200] /Resources << /XObject << /Shared 4 0 R >> >> /Contents 5 0 R >>",
+		fixtureStream("BT /F1 16 Tf .4 Tc 2 Tw 10 20 Td (SECRET KEEP) Tj ET", "/Type /XObject /Subtype /Form /BBox [0 0 250 50] /Resources << /Font << /F1 6 0 R >> >>"),
+		fixtureStream("q 1 0 0 1 20 120 cm /Shared Do Q q 1 0 0 1 20 40 cm /Shared Do Q", ""),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}, "")
+	output := probeCorrect(t, input, 0, "SECRET", "EDIT", 0, 0)
+	if text := extractedText(t, output); strings.Count(text, "SECRET") != 1 || strings.Count(text, "EDIT") != 1 {
+		t.Fatalf("wrong shared instance changed: %q", text)
+	}
+	before, after := probeImage(t, input, 0), probeImage(t, output, 0)
+	for y := 200; y < before.Bounds().Dy(); y++ {
+		for x := 0; x < before.Bounds().Dx(); x++ {
+			if before.At(x, y) != after.At(x, y) {
+				t.Fatal("other Form instance changed")
+			}
+		}
+	}
+	output = probeCorrect(t, output, 0, "EDIT", "NEXT", 0, 0)
+	if !strings.Contains(extractedText(t, output), "NEXT") {
+		t.Fatal("cannot re-edit Form text")
+	}
+}
+
+func TestTextEditingRejectsInheritedFormSpacing(t *testing.T) {
+	input := fixturePDF([]string{
+		"<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 200] /Resources << /XObject << /Shared 4 0 R >> >> /Contents 5 0 R >>",
+		fixtureStream("BT /F1 16 Tf 10 20 Td (SECRET KEEP) Tj ET", "/Type /XObject /Subtype /Form /BBox [0 0 250 50] /Resources << /Font << /F1 6 0 R >> >>"),
+		fixtureStream("BT .4 Tc ET /Shared Do", ""),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}, "")
+	_, start, count := probeRange(t, input, 0, "SECRET")
+	output, err := CorrectText(input, 0, start, count, "EDIT", 0, 0)
+	if err == nil || output != nil || !strings.Contains(err.Error(), "Inherited Form text spacing") {
+		t.Fatalf("inherited Form spacing accepted: %v", err)
+	}
+}
+
+func TestTextEditingDuplicatesNativeTextWithoutChangingOriginal(t *testing.T) {
+	input := probeFixture("BT /F1 16 Tf .4 Tc 2 Tw 30 140 Td (PUBLIC SECRET KEEP) Tj ET", "")
+	_, start, count := probeRange(t, input, 0, "SECRET")
+	original := bytes.Clone(input)
+	for _, offset := range []float64{0, 30} {
+		output, err := DuplicateText(input, 0, start, count, "SECRET", offset, 0)
+		if !errors.Is(err, ErrTextOverlap) || output != nil {
+			t.Fatalf("overlapping duplicate accepted: %v", err)
+		}
+	}
+	output, err := DuplicateText(input, 0, start, count, "SECRET", 0, 35)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(input, original) {
+		t.Fatal("duplicate changed input")
+	}
+	if err := api.Validate(context.Background(), bytes.NewReader(output), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	text := extractedText(t, output)
+	if strings.Count(text, "SECRET") != 2 {
+		t.Fatalf("missing original or copy: %q", text)
+	}
+	for _, word := range []string{"PUBLIC", "SECRET", "KEEP"} {
+		probeSameWordPosition(t, input, output, 0, word)
+	}
+	layout, err := CorrectionTextLayout(output, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := -1
+	for i, g := range layout.Glyphs {
+		if g.Rune == 'S' && math.Abs((g.Origin.Y-.3)*layout.Height-35) < .05 {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		t.Fatal("duplicate missing at requested position")
+	}
+	edited, err := CorrectText(output, 0, index, 6, "EDIT", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text = extractedText(t, edited)
+	if strings.Count(text, "SECRET") != 1 || strings.Count(text, "EDIT") != 1 {
+		t.Fatalf("copy is not independently editable: %q", text)
 	}
 }

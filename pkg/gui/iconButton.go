@@ -11,6 +11,7 @@ type iconButton struct {
 	widget.Button
 	tooltip        string
 	tooltipSurface *tooltipSurface
+	tooltipHost    *tooltipSurface
 }
 
 func newIconButton(icon fyne.Resource, label string, tapped func()) *iconButton {
@@ -24,12 +25,19 @@ func (b *iconButton) MouseIn(event *desktop.MouseEvent) {
 		return
 	}
 	c := fyne.CurrentApp().Driver().CanvasForObject(b)
-	if c == nil || c.Overlays().Top() != nil {
+	if c == nil {
 		return
 	}
-	surface, ok := c.Content().(*tooltipSurface)
-	if !ok {
-		return
+	surface := b.tooltipHost
+	if surface == nil {
+		if c.Overlays().Top() != nil {
+			return
+		}
+		var ok bool
+		surface, ok = c.Content().(*tooltipSurface)
+		if !ok {
+			return
+		}
 	}
 	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(b)
 	rootPos := fyne.CurrentApp().Driver().AbsolutePositionForObject(surface)

@@ -106,6 +106,10 @@ func TestAnnotationPDFVectorExportAndLayerOrder(t *testing.T) {
 			line.PageWidth = pw
 			line.PageHeight = ph
 			line.Points = []annotations.Point{{X: pw * .2, Y: ph * .5}, {X: pw * .7, Y: ph * .5}}
+			line.Quads = []annotations.Quad{{
+				{X: pw * .2, Y: ph*.5 - 6}, {X: pw * .7, Y: ph*.5 - 6},
+				{X: pw * .7, Y: ph*.5 + 6}, {X: pw * .2, Y: ph*.5 + 6},
+			}}
 			line.Color = color.NRGBA{R: 255, A: 255}
 			line.Opacity = .5
 			a, b, err := line.Artwork()
@@ -168,13 +172,14 @@ func TestAnnotationPDFVectorExportAndLayerOrder(t *testing.T) {
 				t.Fatal(err)
 			}
 			c := color.NRGBAModel.Convert(picture.At(picture.Bounds().Dx()/2, picture.Bounds().Dy()/2)).(color.NRGBA)
-			if c.R < 240 || c.G < 110 || c.G > 145 || c.B < 110 || c.B > 145 {
+			if c.R < 240 || c.G < 170 || c.G > 188 || c.B < 170 || c.B > 188 {
 				t.Fatalf("highlight placement/transparency = %v", c)
 			}
-			// A later opaque stroke must cover the highlight, in preview and export.
+			// A later translucent flat-nib stroke must blend above the highlight,
+			// in both preview and vector PDF export.
 			line.Kind = annotations.Drawing
 			line.Width = 12
-			line.Opacity = 1
+			line.Opacity = .5
 			line.Color = color.NRGBA{B: 255, A: 255}
 			a, b, err = line.Artwork()
 			if err != nil {
@@ -191,7 +196,7 @@ func TestAnnotationPDFVectorExportAndLayerOrder(t *testing.T) {
 				t.Fatal(err)
 			}
 			c = color.NRGBAModel.Convert(picture.At(picture.Bounds().Dx()/2, picture.Bounds().Dy()/2)).(color.NRGBA)
-			if c.B < 240 || c.R > 10 {
+			if c.R < 120 || c.R > 135 || c.G < 80 || c.G > 98 || c.B < 210 || c.B > 224 {
 				t.Fatalf("layer order changed in preview: %v", c)
 			}
 			output, err = doc.Export(ExportOptions{Format: FormatPDF})
@@ -208,7 +213,7 @@ func TestAnnotationPDFVectorExportAndLayerOrder(t *testing.T) {
 				t.Fatal(err)
 			}
 			c = color.NRGBAModel.Convert(picture.At(picture.Bounds().Dx()/2, picture.Bounds().Dy()/2)).(color.NRGBA)
-			if c.B < 240 || c.R > 10 {
+			if c.R < 120 || c.R > 135 || c.G < 80 || c.G > 98 || c.B < 210 || c.B > 224 {
 				t.Fatalf("layer order changed in PDF: %v", c)
 			}
 		})

@@ -72,6 +72,9 @@ func (g *Gui) updateTemporarySelection() {
 		if layer.textGesture {
 			return true
 		}
+		if layer.highlightInput != nil && (layer.highlightInput.active || layer.highlightInput.pending) {
+			return true
+		}
 		if layer.input != nil && layer.input.active {
 			return true
 		}

@@ -683,6 +683,13 @@ func mutateLeaf(v reflect.Value) bool {
 			}
 		}
 		return false
+	case reflect.Array:
+		for i := range v.Len() {
+			if mutateLeaf(v.Index(i)) {
+				return true
+			}
+		}
+		return false
 	case reflect.Pointer:
 		return !v.IsNil() && mutateLeaf(v.Elem())
 	}
@@ -715,6 +722,7 @@ func TestStateComparatorsCoverEveryField(t *testing.T) {
 			fresh: func() any {
 				data := annotations.Default(annotations.Shape)
 				data.Points = []annotations.Point{{X: 10, Y: 10}, {X: 40, Y: 40}}
+				data.Quads = []annotations.Quad{{{X: 10, Y: 10}, {X: 40, Y: 10}, {X: 40, Y: 20}, {X: 10, Y: 20}}}
 				return &data
 			},
 			equal: func(a, b any) bool {

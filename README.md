@@ -24,7 +24,9 @@ Proview is an independent project and is not affiliated with, sponsored by, or e
 
 Drag files onto any Proview window to open them on Linux, Windows and macOS.
 An empty window opens the first file; additional files, or files dropped onto an
-occupied window, open in separate windows and preserve your current work.
+occupied window, retain documents in the same window with a sidebar selector.
+Opening a PDF while viewing a PDF offers a new window or appending its pages.
+See [Document workspace](docs/document-workspace.md) for the current local behavior.
 
 ### Image viewing and basic editing
 
@@ -49,6 +51,10 @@ Proview also opens ASCII and binary STL files, letting you inspect 3D models wit
 ### PDF markup and organization
 
 For PDF documents, Proview also lets you highlight text, redact sensitive content, and add, remove, reorder or rotate pages.
+
+Highlight follows words and lines at a fixed 30% opacity, using native PDF text
+or recognized text in images. Draw offers round and flat freehand tips, dashed
+and dotted strokes, and adjustable opacity.
 You can also combine multiple PDFs into one document, or split a PDF into separate files.
 
 All PDF operations preserve native PDF content: added text, ordinary shapes and vector signatures are exported as vector content rather than flattening the whole page into a bitmap.

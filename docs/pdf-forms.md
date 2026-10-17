@@ -1,11 +1,12 @@
 # PDF forms: implementation and session handoff
 
-Branch: `prototype/pdf-forms`. Last updated: 2026-10-16.
+Integrated into `develop` on 2026-10-17 after manual acceptance.
+The `prototype/pdf-forms` branch has been deleted.
 
 Start here when continuing PDF form work. This is the current status and decision
 record; update it whenever behavior, verification or remaining work changes.
 `AGENTS.md` and `agent.md` link here. The prototype, fixtures and manual demo
-are committed together on this branch. No release or packaging was requested.
+were committed together on the prototype branch and merged into `develop`. No release or packaging was requested.
 
 ## Completed
 

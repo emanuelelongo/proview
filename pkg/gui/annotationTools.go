@@ -56,6 +56,7 @@ func (g *Gui) queueAnnotation(work func() func()) {
 					g.dispatchAnnotationJob()
 					if g.annotationPending == 0 {
 						g.working = false
+						defer g.processPendingFiles()
 						after := g.annotationAfterIdle
 						g.annotationAfterIdle = nil
 						for _, action := range after {
@@ -97,7 +98,15 @@ func (g *Gui) bindAnnotationLayer(layer *signatureLayer) {
 		layer.input = newAnnotationInput(layer)
 	}
 	tool := g.effectiveAnnotationTool()
-	layer.input.SetVisible(tool != toolSelect && tool != toolRedact)
+	layer.input.SetVisible(tool != toolSelect && tool != toolRedact && tool != toolHighlight)
+	if layer.highlightInput == nil {
+		layer.highlightInput = newHighlightInput(layer)
+	}
+	if tool == toolHighlight {
+		layer.highlightInput.Show()
+	} else {
+		layer.highlightInput.Hide()
+	}
 	if layer.document != nil && layer.document.Format() == document.FormatPDF {
 		if layer.redactInput == nil {
 			layer.redactInput = newRedactionInput(layer)
@@ -137,6 +146,9 @@ func (g *Gui) setAnnotationTool(tool annotationTool) {
 		layer.hideRedactionReveals()
 		if layer.input != nil {
 			layer.input.cancel()
+		}
+		if layer.highlightInput != nil {
+			layer.highlightInput.cancel()
 		}
 		if layer.redactInput != nil {
 			layer.redactInput.cancel()
@@ -304,7 +316,7 @@ func (g *Gui) refreshAnnotationControls() {
 			wrap(44, selector)
 			if data.Shape == annotations.Magnifier {
 				row.Add(g.annotationSlider(1, 8, .1, data.Magnification, func(v float64) { data.Magnification = v }, publish))
-			} else {
+			} else if data.Shape != annotations.Line && data.Shape != annotations.Arrow {
 				var fill *iconButton
 				refreshFill := func() {
 					if data.Filled {
@@ -321,20 +333,13 @@ func (g *Gui) refreshAnnotationControls() {
 			}
 		}
 		widths := []float64{.5, 1, 1.5, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40}
-		if data.Kind == annotations.Highlight {
-			widths = []float64{2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 60, 80}
-		}
-		if data.Kind != annotations.Shape || data.Shape != annotations.Magnifier {
-			if data.Kind == annotations.Drawing || data.Kind == annotations.Shape {
-				wrap(36, strokeStyleButton(&data, publish))
-			} else {
-				wrap(36, widget.NewIcon(tablerIcon("stroke-straight")))
-			}
+		if data.Kind != annotations.Highlight && (data.Kind != annotations.Shape || data.Shape != annotations.Magnifier) {
+			wrap(36, strokeStyleButton(&data, publish))
 			wrap(85, numberSelect(widths, data.Width, "", func(v float64) { data.Width = v; publish(true) }))
 		}
-		if data.Kind == annotations.Highlight {
-			wrap(36, widget.NewIcon(tablerIcon("exposure")))
-			wrap(90, numberSelect([]float64{5, 10, 15, 20, 25, 35, 50, 65, 75, 90, 100}, data.Opacity*100, "%", func(v float64) { data.Opacity = v / 100; publish(true) }))
+		if data.Kind == annotations.Drawing {
+			wrap(36, widget.NewIcon(tablerIcon("brightness-up")))
+			wrap(90, numberSelect([]float64{5, 10, 15, 20, 25, 30, 35, 50, 65, 75, 90, 100}, data.Opacity*100, "%", func(v float64) { data.Opacity = v / 100; publish(true) }))
 		}
 	}
 	var swatch *colorSwatch
@@ -621,13 +626,25 @@ func equalAnnotationProperties(a, b annotations.Data) bool {
 
 func strokeStyleButton(data *annotations.Data, publish func(bool)) *iconButton {
 	styles := []annotations.StrokeStyle{annotations.StrokeSolid, annotations.StrokeDashed, annotations.StrokeDotted}
-	icons := map[annotations.StrokeStyle]string{annotations.StrokeSolid: "stroke-straight", annotations.StrokeDashed: "line-dashed", annotations.StrokeDotted: "line-dotted"}
-	labels := map[annotations.StrokeStyle]string{annotations.StrokeSolid: "Solid line", annotations.StrokeDashed: "Dashed line", annotations.StrokeDotted: "Dotted line"}
+	if data.Kind == annotations.Drawing {
+		styles = append([]annotations.StrokeStyle{annotations.StrokeRound}, styles...)
+	}
+	icons := map[annotations.StrokeStyle]string{annotations.StrokeSolid: "stroke-straight", annotations.StrokeDashed: "line-dashed", annotations.StrokeDotted: "line-dotted", annotations.StrokeRound: "circle-filled"}
+	labels := map[annotations.StrokeStyle]string{annotations.StrokeSolid: "Solid line", annotations.StrokeDashed: "Dashed line", annotations.StrokeDotted: "Dotted line", annotations.StrokeRound: "Round tip"}
+	if data.Kind == annotations.Drawing && data.StrokeStyle == annotations.StrokeSolid {
+		labels[annotations.StrokeSolid] = "Flat tip"
+	}
 	if data.StrokeStyle == "" {
-		data.StrokeStyle = annotations.StrokeSolid
+		data.StrokeStyle = styles[0]
 	}
 	var button *iconButton
-	refresh := func() { button.SetIcon(tablerIcon(icons[data.StrokeStyle])); button.tooltip = labels[data.StrokeStyle] }
+	refresh := func() {
+		button.SetIcon(tablerIcon(icons[data.StrokeStyle]))
+		button.tooltip = labels[data.StrokeStyle]
+		if data.Kind == annotations.Drawing && data.StrokeStyle == annotations.StrokeSolid {
+			button.tooltip = "Flat tip"
+		}
+	}
 	button = newIconButton(nil, "", func() {
 		for i, style := range styles {
 			if data.StrokeStyle == style {
@@ -673,12 +690,22 @@ func (g *Gui) waitAnnotationChanges(action func()) bool {
 		}
 	}
 	for _, layer := range g.signatureLayers {
+		if layer.highlightInput != nil {
+			layer.highlightInput.released = true
+			layer.highlightInput.finish()
+			if layer.highlightInput.pending {
+				layer.highlightInput.cancel()
+			}
+		}
 		if layer.redactInput != nil {
 			layer.redactInput.released = true
 			layer.redactInput.finish()
 		}
 		if layer.input != nil {
 			layer.input.finish()
+		}
+		for _, object := range layer.widgets {
+			object.finishChange()
 		}
 	}
 	if g.annotationPreviewTimer != nil {

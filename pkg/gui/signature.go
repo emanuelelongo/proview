@@ -95,7 +95,7 @@ func (g *Gui) deleteSelectedSignature() {
 	}
 	page := g.selectedSignaturePage
 	if err := g.document.RemoveSignature(g.selectedSignature); err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("preview", err)
 		return
 	}
 	g.clearSignatureSelection()
@@ -157,7 +157,7 @@ func (g *Gui) promptSignatureStroke() {
 			page := g.selectedSignaturePage
 			id := g.selectedSignature
 			if err := g.document.SetSignatureStroke(id, int(math.Round(slider.Value))); err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("preview", err)
 				return
 			}
 			if layer := g.signatureLayers[page]; layer != nil {
@@ -171,6 +171,7 @@ func (g *Gui) promptSignatureStroke() {
 }
 
 func (g *Gui) activatePDFPage(page int) {
+	g.activateEditor()
 	if g.document == nil || g.document.Format() != document.FormatPDF {
 		return
 	}
@@ -282,7 +283,7 @@ func (g *Gui) loadPDFThumbnail(page int) {
 			}
 			g.pdfThumbLoading[page] = false
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("preview", err)
 				return
 			}
 			if g.pdfThumbLoaded[page] {
@@ -312,7 +313,7 @@ func (g *Gui) loadPDFPage(page int) {
 			}
 			g.pdfPageLoading[page] = false
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("preview", err)
 				return
 			}
 			g.pdfPageImages[page].Image = preview
@@ -352,7 +353,7 @@ func (g *Gui) refreshPagePreview(page int) {
 				return
 			}
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("preview", err)
 				return
 			}
 			g.pdfThumbImages[page].Image = preview

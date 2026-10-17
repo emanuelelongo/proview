@@ -21,6 +21,14 @@ import (
 )
 
 type Gui struct {
+	editors                           *editorGroup
+	externalOpenPauses                int
+	documents                         []*editorDocument
+	activeDocument                    *editorDocument
+	documentList                      *fyne.Container
+	pendingFiles                      []string
+	openingFiles                      bool
+	pdfOpenDialog                     *dialog.CustomDialog
 	formPulse                         *fyne.Animation
 	formPulseSerial                   uint64
 	formsActive                       bool
@@ -136,6 +144,7 @@ type Gui struct {
 	annotationWork                    []func() func()
 	annotationRunning                 bool
 	annotationPending                 int
+	highlightWork                     chan struct{}
 	annotationPropertyGeneration      uint64
 	annotationPreviewTimer            *time.Timer
 	annotationPreviewWork             func()
@@ -168,6 +177,7 @@ func NewGui() *Gui {
 
 func newGui(application fyne.App) *Gui {
 	g := &Gui{zoom: 1, fitZoom: 1, app: application, tipsEnabled: application.Preferences().BoolWithFallback(tipsPreferenceKey, true)}
+	g.editors = &editorGroup{windows: []*Gui{g}, active: g}
 	g.app.SetIcon(fyne.NewStaticResource("app-icon.png", assets.AppIcon))
 	if _, ok := g.app.Settings().Theme().(largerIconTheme); !ok {
 		g.app.Settings().SetTheme(largerIconTheme{Theme: g.app.Settings().Theme()})
@@ -185,6 +195,7 @@ func newGui(application fyne.App) *Gui {
 	g.pdfScroll.Hide()
 
 	g.thumbList = container.NewVBox()
+	g.documentList = container.NewVBox()
 
 	g.sidebar = NewSidebar(g)
 	g.sidebar.container.OnScrolled = func(fyne.Position) { g.loadVisiblePDFThumbnails() }
@@ -255,7 +266,7 @@ func newGui(application fyne.App) *Gui {
 	contentArea := container.NewStack(g.imageScroll, g.pdfScroll,
 		newZoomScrollSurface(g, g.imageScroll), newZoomScrollSurface(g, g.pdfScroll), g.modelPanel)
 
-	g.sidebarSplit = newFixedSidebarSplit(g.sidebar.container, contentArea, defaultSidebarWidth, g.updatePDFThumbnailSizes)
+	g.sidebarSplit = newFixedSidebarSplit(g.sidebar.panel, contentArea, defaultSidebarWidth, g.updatePDFThumbnailSizes)
 	g.mainSplit = g.sidebarSplit
 
 	properties := container.NewHScroll(g.annotationControls)
@@ -304,7 +315,7 @@ func (g *Gui) Run() {
 	g.RunWithFiles(nil)
 }
 
-// RunWithFiles starts the application and opens each path in its own editor window.
+// RunWithFiles starts the application and queues paths in the document workspace.
 func (g *Gui) RunWithFiles(paths []string) {
 	// Showing the first window runs the native macOS launch event loop.
 	// Capture document requests before AppKit starts processing them.

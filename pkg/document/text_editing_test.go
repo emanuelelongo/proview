@@ -207,3 +207,36 @@ func TestTextCorrectionRejectsStalePreparationAndRedactions(t *testing.T) {
 		t.Fatal("redacted content exposed for correction")
 	}
 }
+
+func TestTextDuplicationHistoryAndIndependentSource(t *testing.T) {
+	d := redactionDocument(t)
+	original := bytes.Clone(d.Original())
+	start, count := correctionRange(t, d, 0, "SECRET")
+	prepared, err := d.RenderingSnapshot().PrepareTextDuplication(0, start, count, "EDIT", 0, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	if d.Dirty() {
+		t.Fatal("duplication preparation changed document")
+	}
+	if err := d.ApplyTextCorrection(prepared); err != nil {
+		t.Fatal(err)
+	}
+	text := correctedPageText(t, d, 0)
+	if strings.Count(text, "SECRET") != 1 || strings.Count(text, "EDIT") != 1 || !bytes.Equal(original, d.Original()) {
+		t.Fatal("duplication changed original text or bytes")
+	}
+	if !d.Undo() || d.Dirty() || d.CanUndo() {
+		t.Fatal("duplication is not one Undo step")
+	}
+	if !d.Redo() || !strings.Contains(correctedPageText(t, d, 0), "EDIT") {
+		t.Fatal("duplicate lost source after Redo")
+	}
+	d.MarkSaved()
+	start, count = correctionRange(t, d, 0, "SECRET")
+	failed, err := d.RenderingSnapshot().PrepareTextDuplication(0, start, count, "SECRET", 0, 0)
+	if err == nil || failed != nil || d.Dirty() {
+		t.Fatal("overlapping duplicate changed document")
+	}
+}

@@ -96,7 +96,7 @@ func (p *annotationInput) Tapped(event *fyne.PointEvent) {
 func (p *annotationInput) MouseDown(event *desktop.MouseEvent) {
 	g := p.layer.editor
 	tool := g.effectiveAnnotationTool()
-	if event.Button != desktop.MouseButtonPrimary || g.document == nil || tool == toolText || tool == toolSelect || g.working && g.annotationPending == 0 {
+	if event.Button != desktop.MouseButtonPrimary || g.document == nil || tool == toolText || tool == toolSelect || tool == toolHighlight || g.working && g.annotationPending == 0 {
 		return
 	}
 	point, ok := p.point(event.Position, false)
@@ -229,6 +229,10 @@ func (p *annotationInput) finish() {
 // Paint an antialiased capsule into a mask, using maximum alpha rather than
 // repeated blending. Each stroke has uniform opacity, including intersections.
 func (p *annotationInput) paint(a, b annotations.Point) {
+	if p.data.Kind == annotations.Drawing && p.data.StrokeStyle == annotations.StrokeSolid {
+		p.paintFlat(a, b)
+		return
+	}
 	frame := p.frame
 	sx := float64(frame.Bounds().Dx()) / p.data.PageWidth
 	sy := float64(frame.Bounds().Dy()) / p.data.PageHeight
@@ -313,4 +317,40 @@ func (p *annotationInput) previewShape() {
 	p.live.Image = picture
 	p.live.Refresh()
 	p.Refresh()
+}
+
+// Rasterize the same swept nib used by vector export, blending each stroke only
+// once even when the pointer retraces earlier segments.
+func (p *annotationInput) paintFlat(a, b annotations.Point) {
+	frame := p.frame
+	sx, sy := float64(frame.Bounds().Dx())/p.data.PageWidth, float64(frame.Bounds().Dy())/p.data.PageHeight
+	polygon := annotations.MarkerHull(a, b, p.data.Width)
+	x0, y0, x1, y1 := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+	for i, v := range polygon {
+		polygon[i] = annotations.Point{X: v.X * sx, Y: v.Y * sy}
+		v = polygon[i]
+		x0 = math.Min(x0, v.X)
+		y0 = math.Min(y0, v.Y)
+		x1 = math.Max(x1, v.X)
+		y1 = math.Max(y1, v.Y)
+	}
+	for y := max(0, int(math.Floor(y0-1))); y < min(frame.Bounds().Dy(), int(math.Ceil(y1+1))); y++ {
+		for x := max(0, int(math.Floor(x0-1))); x < min(frame.Bounds().Dx(), int(math.Ceil(x1+1))); x++ {
+			distance := math.Inf(1)
+			for i, v := range polygon {
+				w := polygon[(i+1)%len(polygon)]
+				dx, dy := w.X-v.X, w.Y-v.Y
+				length := math.Hypot(dx, dy)
+				if length > 0 {
+					distance = math.Min(distance, (dx*(float64(y)+.5-v.Y)-dy*(float64(x)+.5-v.X))/length)
+				}
+			}
+			alpha := uint8(clampFloat64(distance+.5, 0, 1) * p.data.Opacity * 255)
+			if alpha > frame.NRGBAAt(x, y).A {
+				c := p.data.Color
+				c.A = alpha
+				frame.SetNRGBA(x, y, c)
+			}
+		}
+	}
 }

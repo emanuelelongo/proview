@@ -211,7 +211,9 @@ verifies the signature. It then deletes the standalone intermediate executable.
 Copy `Proview.app` into `/Applications` to install it. macOS may take a short
 while to refresh the Open With list. Opening one or more files through Finder
 reuses an empty Proview window when possible and opens additional files in
-separate windows; existing documents are left untouched. The package does not
+the shared document workspace; existing documents are retained. PDF-to-PDF
+opening offers a new window or appending pages. See
+[Document workspace](document-workspace.md) for local implementation status. The package does not
 change the user's default applications. After rebuilding, replace any previously
 installed copy.
 
@@ -406,3 +408,9 @@ PDF export. It reconstructs ink outlines rather than editable pen strokes.
 The current prototype handles light paper, modest shading and transparent PNGs;
 blur, ruled paper and overlapping printed text still need careful manual cropping.
 Details and evaluation commands are in [the prototype notes](signature-vectorization.md).
+
+## Troubleshooting logs
+
+Use **Help → Open logs folder** for local rotating diagnostic logs and Go crash
+reports. See [Diagnostic logs](logging.md) for paths, retention and performance.
+`task run` continues to show the same application logs in the terminal.

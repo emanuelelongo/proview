@@ -1,6 +1,6 @@
 //go:build cgo && !nocgo && !extlib
 
-/* Native correction prototype. MuPDF exceptions never cross Go frames. */
+/* Native text editing prototype. MuPDF exceptions never cross Go frames. */
 #include "textedit.h"
 #include "mupdf/fitz.h"
 #include "mupdf/pdf.h"
@@ -11,12 +11,24 @@
 
 typedef struct pv_text_filter_state pv_text_filter_state;
 typedef struct {
+    float character, word, font_size;
+    int single_byte_space;
+} pv_text_spacing;
+typedef struct {
     fz_stext_char **chars;
     int *seen;
     int count, pending, inserted;
     pv_text_filter_state *filters;
     pdf_obj *replacement;
     fz_matrix page_ctm;
+    fz_rect page_box;
+    const int *replacement_codes;
+    int replacement_count, have_spacing;
+    float dx, dy, character_spacing, word_spacing;
+    pdf_obj *form_spacing;
+    int duplicate, obstacle_count;
+    fz_rect *obstacles;
+    fz_point *obstacle_origins;
 } pv_text_target;
 
 struct pv_text_filter_state {
@@ -24,7 +36,16 @@ struct pv_text_filter_state {
     pv_text_target *target;
     pdf_sanitize_filter_options options;
     pdf_processor *processor;
-    int kept;
+    int kept, spacing_depth, has_saved_spacing;
+    float saved_font_size,saved_character,saved_word;
+    pv_text_spacing spacing, spacing_stack[64];
+    void (*original_Tc)(fz_context *, pdf_processor *, float);
+    void (*original_Tw)(fz_context *, pdf_processor *, float);
+    void (*original_Tf)(fz_context *, pdf_processor *, const char *, pdf_font_desc *, float);
+    void (*original_q)(fz_context *, pdf_processor *);
+    void (*original_Q)(fz_context *, pdf_processor *);
+    void (*original_dquote)(fz_context *, pdf_processor *, float, float, char *, size_t);
+    void (*original_Do_form)(fz_context *, pdf_processor *, const char *, pdf_obj *);
 };
 
 static void pv_text_silent(void *opaque, const char *message)
@@ -54,6 +75,75 @@ static void pv_text_save(fz_context *ctx, pdf_document *doc, pv_result *result)
     fz_catch(ctx) { fz_rethrow(ctx); }
 }
 
+/* Wrap only public processor callbacks. Context-local lookup keeps concurrent
+ * edits isolated without relying on MuPDF's private sanitize-processor layout. */
+static pv_text_filter_state *pv_spacing_state(fz_context *ctx, pdf_processor *processor)
+{
+    pv_text_target *target = fz_user_context(ctx);
+    for (pv_text_filter_state *state = target->filters; state; state = state->next)
+        if (state->processor == processor) return state;
+    fz_throw(ctx, FZ_ERROR_GENERIC, "Missing text spacing filter state");
+}
+static void pv_spacing_Tc(fz_context *ctx,pdf_processor *proc,float value)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    state->spacing.character=value;
+    state->original_Tc(ctx,proc,value);
+}
+static void pv_spacing_Tw(fz_context *ctx,pdf_processor *proc,float value)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    state->spacing.word=value;
+    state->original_Tw(ctx,proc,value);
+}
+static void pv_spacing_Tf(fz_context *ctx,pdf_processor *proc,const char *name,pdf_font_desc *font,float size)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    state->spacing.font_size=size;
+    state->spacing.single_byte_space=0;
+    /* PDF word spacing applies only to the single-byte character code 32,
+     * not to a two-byte CID that happens to map to a Unicode space. */
+    if (font && font->encoding)
+        for (int i=0;i<font->encoding->codespace_len;++i)
+            if (font->encoding->codespace[i].n==1 && font->encoding->codespace[i].low<=32 && font->encoding->codespace[i].high>=32)
+                state->spacing.single_byte_space=1;
+    state->original_Tf(ctx,proc,name,font,size);
+}
+static void pv_spacing_q(fz_context *ctx,pdf_processor *proc)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    if(state->spacing_depth==64) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Text graphics state nesting is too deep for text editing");
+    state->spacing_stack[state->spacing_depth++]=state->spacing;
+    state->original_q(ctx,proc);
+}
+static void pv_spacing_Q(fz_context *ctx,pdf_processor *proc)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    if(state->spacing_depth) state->spacing=state->spacing_stack[--state->spacing_depth];
+    state->original_Q(ctx,proc);
+}
+static void pv_spacing_dquote(fz_context *ctx,pdf_processor *proc,float word,float character,char *text,size_t length)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    state->spacing.word=word;state->spacing.character=character;
+    state->original_dquote(ctx,proc,word,character,text,length);
+}
+static void pv_spacing_Do_form(fz_context *ctx,pdf_processor *proc,const char *name,pdf_obj *form)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    /* MuPDF 1.24.9 filters each Form with a fresh text state. Do not pretend
+     * inherited spacing has been preserved across that boundary. Local Form
+     * spacing is supported, and the parent's state remains unchanged. */
+    if (state->spacing.character!=0 || state->spacing.word!=0)
+        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Inherited Form text spacing is not supported for text editing");
+    pv_text_target *target=state->target;
+    pdf_obj *previous=target->form_spacing;
+    target->form_spacing=pdf_dict_gets(ctx,form,"ProviewTextSpacing");
+    fz_try(ctx) {state->original_Do_form(ctx,proc,name,form);}
+    fz_always(ctx) {target->form_spacing=previous;}
+    fz_catch(ctx) {fz_rethrow(ctx);}
+}
+
 static int pv_text_remove(fz_context *ctx, void *opaque, int *ucs, int len,
     fz_matrix trm, fz_matrix ctm, fz_rect bbox)
 {
@@ -73,12 +163,28 @@ static int pv_text_remove(fz_context *ctx, void *opaque, int *ucs, int len,
         if (fabsf(matrix.a - ch->size) > 0.02f || fabsf(matrix.d + ch->size) > 0.02f ||
             fabsf(matrix.b) > 0.02f || fabsf(matrix.c) > 0.02f)
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "Scaled or skewed text is not supported");
+        float character=0,word=0;
+        if (state->has_saved_spacing) {
+            float scale=matrix.a/state->saved_font_size;
+            character=state->saved_character*scale;word=state->saved_word*scale;
+        } else if (state->spacing.character!=0 || state->spacing.word!=0) {
+            if (!isfinite(state->spacing.font_size) || fabsf(state->spacing.font_size)<.000001f)
+                fz_throw(ctx,FZ_ERROR_ARGUMENT,"Cannot determine text spacing scale");
+            float scale=matrix.a/state->spacing.font_size;
+            character=state->spacing.character*scale;
+            if(state->spacing.single_byte_space) word=state->spacing.word*scale;
+        }
+        if (!isfinite(character) || !isfinite(word))
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Invalid text spacing");
+        if (target->have_spacing && (fabsf(character-target->character_spacing)>.00001f || fabsf(word-target->word_spacing)>.00001f))
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Mixed spacing within selected text is not supported for text editing");
+        target->character_spacing=character;target->word_spacing=word;target->have_spacing=1;
         /* Preflight guarantees no live path at BT. If no previous glyph was
          * retained, flush the pending CTM before MuPDF can elide this whole BT.
          * n is emitted before the still-pending BT, with an empty path. */
         if (!state->kept) { state->processor->op_n(ctx,state->processor); state->kept = 1; }
         target->pending = 1;
-        return 1;
+        return target->duplicate ? 0 : 1;
     }
     state->kept = 1;
     return 0;
@@ -126,20 +232,16 @@ static void pv_guard_drop(fz_context *ctx,pdf_processor *proc)
     while(g->depth) pdf_drop_obj(ctx,g->resources[--g->depth]);
 }
 static void pv_guard_render(fz_context *ctx,pdf_processor *proc,int mode)
-{ (void)proc; if(mode!=0) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Only filled visible text is supported for correction"); }
+{ (void)proc; if(mode!=0) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Only filled visible text is supported for text editing"); }
 static void pv_guard_scale(fz_context *ctx,pdf_processor *proc,float value)
-{ (void)proc; if(fabsf(value-100)>.001f) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Horizontal text scaling is not supported for correction"); }
-static void pv_guard_spacing(fz_context *ctx,pdf_processor *proc,float value)
-{ (void)proc; if(fabsf(value)>.001f) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Custom character or word spacing is not supported for correction"); }
-static void pv_guard_dquote(fz_context *ctx,pdf_processor *proc,float word,float character,char *str,size_t length)
-{ (void)str;(void)length;pv_guard_spacing(ctx,proc,word);pv_guard_spacing(ctx,proc,character); }
+{ (void)proc; if(fabsf(value-100)>.001f) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Horizontal text scaling is not supported for text editing"); }
 static void pv_guard_font(fz_context *ctx,pdf_processor *proc,const char *name,pdf_font_desc *font,float size)
 {
     (void)proc;(void)name;(void)size;
     if (!font || !font->font) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Missing text font");
     fz_font_flags_t *flags=fz_font_flags(font->font);
     if (fz_font_t3_procs(ctx,font->font) || flags->fake_bold || flags->fake_italic || flags->ft_substitute)
-        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Type 3, substituted or synthetic fonts are not supported for correction");
+        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Type 3, substituted or synthetic fonts are not supported for text editing");
 }
 static void pv_guard_gs(fz_context *ctx,pdf_processor *proc,const char *name,pdf_obj *gs)
 {
@@ -169,7 +271,7 @@ static void pv_guard_tags(fz_context *ctx,pdf_processor *proc,const char *tag,pd
 {
     (void)proc;(void)tag;(void)raw;
     if(pdf_dict_get(ctx,cooked,PDF_NAME(ActualText)) || pdf_dict_get(ctx,cooked,PDF_NAME(Alt)))
-        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Alternative text is not supported for correction");
+        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Alternative text is not supported for text editing");
 }
 static void pv_check_text_page(fz_context *ctx,pdf_document *doc,pdf_page *page)
 {
@@ -179,8 +281,6 @@ static void pv_check_text_page(fz_context *ctx,pdf_document *doc,pdf_page *page)
     proc->drop_processor=pv_guard_drop;
     proc->push_resources=pv_guard_push;proc->pop_resources=pv_guard_pop;
     proc->op_Tr=pv_guard_render;proc->op_Tz=pv_guard_scale;
-    proc->op_Tc=pv_guard_spacing;proc->op_Tw=pv_guard_spacing;
-    proc->op_dquote=pv_guard_dquote;
     proc->op_Tf=pv_guard_font;proc->op_gs_begin=pv_guard_gs;
     proc->op_Do_form=pv_guard_form;proc->op_BDC=pv_guard_tags;
     proc->op_BT=pv_guard_BT;proc->op_ET=pv_guard_ET;
@@ -198,6 +298,122 @@ static void pv_check_text_page(fz_context *ctx,pdf_document *doc,pdf_page *page)
     fz_catch(ctx) {fz_rethrow(ctx);}
 }
 
+/* Compare actual glyph bounds instead of full ascender/descender line boxes,
+ * which can intersect in normally spaced paragraphs. Keep a separate origin
+ * check because coincident source origins are ambiguous even for disjoint ink. */
+static void pv_text_obstacles(fz_context *ctx,pv_text_target *target,fz_stext_page *layout,int start,int count)
+{
+    int total=0,index=0;
+    for(fz_stext_block *b=layout->first_block;b;b=b->next)
+        if(b->type==FZ_STEXT_BLOCK_TEXT)
+            for(fz_stext_line *l=b->u.t.first_line;l;l=l->next)
+                for(fz_stext_char *ch=l->first_char;ch;ch=ch->next) ++total;
+    target->obstacles=fz_malloc_array(ctx,total,fz_rect);
+    target->obstacle_origins=fz_malloc_array(ctx,total,fz_point);
+    for(fz_stext_block *b=layout->first_block;b;b=b->next) {
+        if(b->type!=FZ_STEXT_BLOCK_TEXT) continue;
+        for(fz_stext_line *l=b->u.t.first_line;l;l=l->next) {
+            for(fz_stext_char *ch=l->first_char;ch;ch=ch->next,++index) {
+                if(!target->duplicate && index>=start && index-start<count) continue;
+                if(ch->c<=32 || ch->c==160) continue;
+                fz_rect box=fz_rect_from_quad(ch->quad);
+                int gid=fz_encode_character(ctx,ch->font,ch->c);
+                if(gid && !l->wmode && fabsf(l->dir.x-1)<.001f && fabsf(l->dir.y)<.001f) {
+                    fz_matrix pen=fz_scale(ch->size,-ch->size);
+                    pen.e=ch->origin.x;pen.f=ch->origin.y;
+                    box=fz_bound_glyph(ctx,ch->font,gid,pen);
+                }
+                target->obstacles[target->obstacle_count]=box;
+                target->obstacle_origins[target->obstacle_count++]=ch->origin;
+            }
+        }
+    }
+}
+
+static void pv_text_check_overlap(fz_context *ctx,pv_text_target *target,fz_rect box,fz_point origin)
+{
+    for(int i=0;i<target->obstacle_count;++i) {
+        fz_rect overlap=fz_intersect_rect(box,target->obstacles[i]);
+        if ((overlap.x1-overlap.x0>.02f && overlap.y1-overlap.y0>.02f) ||
+            (fabsf(origin.x-target->obstacle_origins[i].x)<=.02f && fabsf(origin.y-target->obstacle_origins[i].y)<=.02f))
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Text edit would overlap existing text");
+    }
+}
+
+static void pv_text_replacement(fz_context *ctx,pdf_document *doc,pv_text_target *target)
+{
+    fz_text *text=NULL;
+    fz_device *device=NULL;
+    fz_buffer *content=NULL;
+    pdf_obj *resources=NULL,*form=NULL,*form_ref=NULL;
+    fz_var(text);fz_var(device);fz_var(content);fz_var(resources);fz_var(form);fz_var(form_ref);
+    fz_try(ctx) {
+        fz_stext_char *first = target->chars[0];
+        if (fz_font_t3_procs(ctx, first->font))
+            fz_throw(ctx, FZ_ERROR_ARGUMENT, "Type 3 font not supported by text editing");
+        if (!pdf_font_writing_supported(ctx, first->font))
+            fz_throw(ctx, FZ_ERROR_ARGUMENT, "Original font cannot be written by text editing");
+        /* Isolate emitted font resource names from the original page resources. */
+        resources = pdf_new_dict(ctx, doc, 2);
+        content = fz_new_buffer(ctx, 256);
+        /* Reset inherited text spacing in the isolated replacement Form.
+         * The explicit glyph origins already include the effective spacing. */
+        fz_append_string(ctx,content,"q\nBT 0 Tc 0 Tw ET\n");
+        device = pdf_new_pdf_device(ctx, doc, fz_invert_matrix(target->page_ctm), resources, content);
+        float rgb[] = {((first->color >> 16) & 255) / 255.f, ((first->color >> 8) & 255) / 255.f, (first->color & 255) / 255.f};
+        fz_matrix pen = fz_scale(first->size, -first->size);
+        pen.e = first->origin.x + target->dx; pen.f = first->origin.y + target->dy;
+        for (int i = 0; i < target->replacement_count; ++i) {
+            if ((target->replacement_codes[i] > 0x024f && target->replacement_codes[i] != 0x20ac) || target->replacement_codes[i] < 32)
+                fz_throw(ctx,FZ_ERROR_ARGUMENT,"Only simple Latin replacement text is supported");
+            int gid = fz_encode_character(ctx, first->font, target->replacement_codes[i]);
+            if (!gid)
+                fz_throw(ctx, FZ_ERROR_ARGUMENT, "Original font lacks replacement glyph U+%04X", target->replacement_codes[i]);
+            /* Subsets can retain a Unicode cmap entry for a removed glyph.
+             * A nonzero GID alone is therefore not evidence of usable artwork. */
+            fz_rect glyph_box = fz_bound_glyph(ctx, first->font, gid, fz_identity);
+            /* MuPDF caches empty glyph bounds as a 1e-7 by 1e-7 rectangle. */
+            if (target->replacement_codes[i] != 32 && (fz_is_empty_rect(glyph_box) ||
+                (glyph_box.x1 - glyph_box.x0 < 0.000001f && glyph_box.y1 - glyph_box.y0 < 0.000001f)))
+                fz_throw(ctx, FZ_ERROR_ARGUMENT, "Original font lacks replacement outline U+%04X", target->replacement_codes[i]);
+            /* One positioned span per glyph avoids MuPDF's integer TJ
+             * rounding of fractional spacing between glyphs. */
+            if(target->replacement_codes[i]!=32)
+                pv_text_check_overlap(ctx,target,fz_bound_glyph(ctx,first->font,gid,pen),(fz_point){pen.e,pen.f});
+            text=fz_new_text(ctx);
+            fz_show_glyph(ctx, text, first->font, pen, gid, target->replacement_codes[i], 0, 0, FZ_BIDI_NEUTRAL, FZ_LANG_UNSET);
+            fz_fill_text(ctx,device,text,fz_identity,fz_device_rgb(ctx),rgb,1,fz_default_color_params);
+            fz_drop_text(ctx,text);text=NULL;
+            pen.e += first->size * fz_advance_glyph(ctx, first->font, gid, 0) + target->character_spacing;
+            if (target->replacement_codes[i]==32) pen.e += target->word_spacing;
+        }
+        fz_close_device(ctx, device);
+        fz_drop_device(ctx, device); device = NULL;
+        fz_append_string(ctx,content,"Q\n");
+        form = pdf_new_dict(ctx, doc, 5);
+        pdf_dict_put(ctx, form, PDF_NAME(Type), PDF_NAME(XObject));
+        pdf_dict_put(ctx, form, PDF_NAME(Subtype), PDF_NAME(Form));
+        pdf_dict_put_rect(ctx, form, PDF_NAME(BBox), target->page_box);
+        pdf_dict_put(ctx, form, PDF_NAME(Resources), resources);
+        /* Glyph positions encode the appearance explicitly. Retain the
+         * intended spacing for later Proview edits, including word spacing
+         * after the emitted font has become a multibyte CID font. */
+        pdf_obj *spacing=pdf_new_array(ctx,doc,3);
+        pdf_dict_puts_drop(ctx,form,"ProviewTextSpacing",spacing);
+        pdf_array_push_real(ctx,spacing,first->size);
+        pdf_array_push_real(ctx,spacing,target->character_spacing);
+        pdf_array_push_real(ctx,spacing,target->word_spacing);
+        form_ref = pdf_add_stream(ctx, doc, content, form, 0);
+        target->replacement = form_ref;form_ref=NULL;
+
+    }
+    fz_always(ctx) {
+        fz_drop_device(ctx,device);fz_drop_text(ctx,text);fz_drop_buffer(ctx,content);
+        pdf_drop_obj(ctx,resources);pdf_drop_obj(ctx,form);pdf_drop_obj(ctx,form_ref);
+    }
+    fz_catch(ctx) {fz_rethrow(ctx);}
+}
+
 /* The sanitize filter wraps this callback in q/Q after the source ET.
  * Keep the current clip and paint order, while undoing the local CTM because
  * the replacement Form is expressed in page PDF coordinates. */
@@ -210,6 +426,7 @@ static void pv_text_insert(fz_context *ctx, void *opaque, pdf_document *doc,
     if (target->inserted) fz_throw(ctx, FZ_ERROR_ARGUMENT, "Text spans multiple text objects");
     for (int i = 0; i < target->count; ++i)
         if (target->seen[i] != 1) fz_throw(ctx, FZ_ERROR_ARGUMENT, "Selection spans multiple text objects");
+    pv_text_replacement(ctx,doc,target);
     pdf_obj *resources = pdf_processor_pop_resources(ctx, chain);
     /* Put it straight back before any throwing operation. */
     pdf_processor_push_resources(ctx, chain, resources);
@@ -222,6 +439,11 @@ static void pv_text_insert(fz_context *ctx, void *opaque, pdf_document *doc,
     pdf_dict_puts(ctx, xobjects, name, target->replacement);
     fz_matrix inverse = fz_invert_matrix(ctm);
     chain->op_cm(ctx, chain, inverse.a, inverse.b, inverse.c, inverse.d, inverse.e, inverse.f);
+    /* The surrounding q/Q isolates these resets from later source text. Keep
+     * the invocation state explicit so subsequent edits do not inherit Tc/Tw. */
+    chain->op_BT(ctx,chain);
+    chain->op_Tc(ctx,chain,0);chain->op_Tw(ctx,chain,0);
+    chain->op_ET(ctx,chain);
     chain->op_Do_form(ctx, chain, name, target->replacement);
     target->pending = 0;
     state->kept = 0;
@@ -235,32 +457,52 @@ static pdf_processor *pv_make_text_filter(fz_context *ctx,pdf_document *doc,pdf_
     pv_text_target *target=opaque;
     pv_text_filter_state *state=fz_malloc_struct(ctx,pv_text_filter_state);
     state->target=target;state->next=target->filters;target->filters=state;
+    if (target->form_spacing) {
+        pdf_obj *saved=target->form_spacing;
+        if (!pdf_is_array(ctx,saved) || pdf_array_len(ctx,saved)!=3)
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Invalid saved text spacing");
+        for(int i=0;i<3;++i)
+            if(!pdf_is_number(ctx,pdf_array_get(ctx,saved,i))) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Invalid saved text spacing");
+        state->saved_font_size=pdf_array_get_real(ctx,saved,0);
+        state->saved_character=pdf_array_get_real(ctx,saved,1);state->saved_word=pdf_array_get_real(ctx,saved,2);
+        if(!isfinite(state->saved_font_size) || state->saved_font_size<=0 || !isfinite(state->saved_character) || !isfinite(state->saved_word))
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Invalid saved text spacing");
+        state->has_saved_spacing=1;
+    }
     state->options.opaque=state;
     state->options.text_filter=pv_text_remove;
     state->options.after_text_object=pv_text_insert;
     state->processor=pdf_new_sanitize_filter(ctx,doc,chain,struct_parents,transform,options,&state->options);
-    return state->processor;
+    pdf_processor *p=state->processor;
+    state->original_Tc=p->op_Tc;p->op_Tc=pv_spacing_Tc;
+    state->original_Tw=p->op_Tw;p->op_Tw=pv_spacing_Tw;
+    state->original_Tf=p->op_Tf;p->op_Tf=pv_spacing_Tf;
+    state->original_q=p->op_q;p->op_q=pv_spacing_q;
+    state->original_Q=p->op_Q;p->op_Q=pv_spacing_Q;
+    state->original_dquote=p->op_dquote;p->op_dquote=pv_spacing_dquote;
+    state->original_Do_form=p->op_Do_form;p->op_Do_form=pv_spacing_Do_form;
+    return p;
 }
 
-void pv_correct_text(const unsigned char *data, size_t length, int number,
+static void pv_edit_text(const unsigned char *data, size_t length, int number,
     int start, int count, const int *replacement, int replacement_count,
-    float dx, float dy, pv_result *result)
+    float dx, float dy, int duplicate, pv_result *result)
 {
     fz_context *ctx = fz_new_context(NULL, NULL, FZ_STORE_DEFAULT);
     pdf_document *doc = NULL;
     fz_stream *input = NULL;
     pdf_page *page = NULL;
     fz_stext_page *layout = NULL;
-    fz_text *text = NULL;
     fz_device *device = NULL;
-    fz_buffer *content = NULL, *append = NULL;
-    pdf_obj *resources = NULL, *form = NULL, *form_ref = NULL;
+    fz_buffer *append = NULL;
     pv_text_target target = {0};
-    fz_var(doc); fz_var(input); fz_var(page); fz_var(layout); fz_var(text);
-    fz_var(device); fz_var(content); fz_var(append);
-    fz_var(resources); fz_var(form); fz_var(form_ref);
+    fz_var(doc); fz_var(input); fz_var(page); fz_var(layout);
+    fz_var(device); fz_var(append);
     fz_var(target);
+    target.duplicate=duplicate;
+    target.replacement_codes=replacement;target.replacement_count=replacement_count;target.dx=dx;target.dy=dy;
     if (!ctx) { snprintf(result->error, sizeof(result->error), "Cannot create probe context"); return; }
+    fz_set_user_context(ctx,&target);
     fz_set_error_callback(ctx, pv_text_silent, NULL);
     fz_set_warning_callback(ctx, pv_text_silent, NULL);
     fz_try(ctx) {
@@ -272,6 +514,7 @@ void pv_correct_text(const unsigned char *data, size_t length, int number,
         if (count > 0) pv_check_text_page(ctx,doc,page);
         fz_rect box;
         pdf_page_transform(ctx, page, &box, &target.page_ctm);
+        target.page_box=box;
         /* Contents only: widget/annotation appearances are not editable source text. */
         fz_stext_options st = {0};
         layout = fz_new_stext_page(ctx, fz_bound_page(ctx, &page->super));
@@ -289,7 +532,7 @@ void pv_correct_text(const unsigned char *data, size_t length, int number,
                     for (fz_stext_char *ch = l->first_char; ch; ch = ch->next) ++n;
             }
             result->glyphs = calloc(n ? n : 1, sizeof(pv_glyph));
-            if (!result->glyphs) fz_throw(ctx, FZ_ERROR_SYSTEM, "Cannot allocate correction layout");
+            if (!result->glyphs) fz_throw(ctx, FZ_ERROR_SYSTEM, "Cannot allocate text editing layout");
             int line = 0;
             for (fz_stext_block *b = layout->first_block; b; b = b->next) {
                 if (b->type != FZ_STEXT_BLOCK_TEXT) continue;
@@ -320,7 +563,7 @@ void pv_correct_text(const unsigned char *data, size_t length, int number,
                         fz_throw(ctx, FZ_ERROR_ARGUMENT, "Text editing requires one horizontal line");
                     selected_line = l;
                     if (ch->bidi & 1 || (ch->c > 0x024f && ch->c != 0x20ac))
-                        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Only simple Latin source text is supported for correction");
+                        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Only simple Latin source text is supported for text editing");
                     if (selected && (ch->font != target.chars[0]->font || ch->size != target.chars[0]->size || ch->color != target.chars[0]->color))
                         fz_throw(ctx, FZ_ERROR_ARGUMENT, "Text editing requires one style");
                     target.chars[selected++] = ch;
@@ -329,45 +572,7 @@ void pv_correct_text(const unsigned char *data, size_t length, int number,
         }
         if (selected != count)
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "Text editing range is out of bounds");
-        fz_stext_char *first = target.chars[0];
-        if (fz_font_t3_procs(ctx, first->font))
-            fz_throw(ctx, FZ_ERROR_ARGUMENT, "Type 3 font not supported by text editing");
-        if (!pdf_font_writing_supported(ctx, first->font))
-            fz_throw(ctx, FZ_ERROR_ARGUMENT, "Original font cannot be written by text editing");
-        text = fz_new_text(ctx);
-        fz_matrix pen = fz_scale(first->size, -first->size);
-        pen.e = first->origin.x + dx; pen.f = first->origin.y + dy;
-        for (int i = 0; i < replacement_count; ++i) {
-            if ((replacement[i] > 0x024f && replacement[i] != 0x20ac) || replacement[i] < 32)
-                fz_throw(ctx,FZ_ERROR_ARGUMENT,"Only simple Latin replacement text is supported");
-            int gid = fz_encode_character(ctx, first->font, replacement[i]);
-            if (!gid)
-                fz_throw(ctx, FZ_ERROR_ARGUMENT, "Original font lacks replacement glyph U+%04X", replacement[i]);
-            /* Subsets can retain a Unicode cmap entry for a removed glyph.
-             * A nonzero GID alone is therefore not evidence of usable artwork. */
-            fz_rect glyph_box = fz_bound_glyph(ctx, first->font, gid, fz_identity);
-            /* MuPDF caches empty glyph bounds as a 1e-7 by 1e-7 rectangle. */
-            if (replacement[i] != 32 && (fz_is_empty_rect(glyph_box) ||
-                (glyph_box.x1 - glyph_box.x0 < 0.000001f && glyph_box.y1 - glyph_box.y0 < 0.000001f)))
-                fz_throw(ctx, FZ_ERROR_ARGUMENT, "Original font lacks replacement outline U+%04X", replacement[i]);
-            fz_show_glyph(ctx, text, first->font, pen, gid, replacement[i], 0, 0, FZ_BIDI_NEUTRAL, FZ_LANG_UNSET);
-            pen.e += first->size * fz_advance_glyph(ctx, first->font, gid, 0);
-        }
-        /* Isolate emitted font resource names from the original page resources. */
-        resources = pdf_new_dict(ctx, doc, 2);
-        content = fz_new_buffer(ctx, 256);
-        device = pdf_new_pdf_device(ctx, doc, fz_invert_matrix(target.page_ctm), resources, content);
-        float rgb[] = {((first->color >> 16) & 255) / 255.f, ((first->color >> 8) & 255) / 255.f, (first->color & 255) / 255.f};
-        fz_fill_text(ctx, device, text, fz_identity, fz_device_rgb(ctx), rgb, 1, fz_default_color_params);
-        fz_close_device(ctx, device);
-        fz_drop_device(ctx, device); device = NULL;
-        form = pdf_new_dict(ctx, doc, 5);
-        pdf_dict_put(ctx, form, PDF_NAME(Type), PDF_NAME(XObject));
-        pdf_dict_put(ctx, form, PDF_NAME(Subtype), PDF_NAME(Form));
-        pdf_dict_put_rect(ctx, form, PDF_NAME(BBox), box);
-        pdf_dict_put(ctx, form, PDF_NAME(Resources), resources);
-        form_ref = pdf_add_stream(ctx, doc, content, form, 0);
-        target.replacement = form_ref;
+        pv_text_obstacles(ctx,&target,layout,start,count);
         /* The filter rewrites a stream object in place: detach shared Contents. */
         pdf_obj *original_contents = pdf_page_contents(ctx, page);
         if (pdf_is_stream(ctx, original_contents)) {
@@ -389,9 +594,10 @@ void pv_correct_text(const unsigned char *data, size_t length, int number,
     fz_always(ctx) {
         while(target.filters) {pv_text_filter_state *next=target.filters->next;fz_free(ctx,target.filters);target.filters=next;}
         fz_free(ctx, target.chars); fz_free(ctx, target.seen);
-        fz_drop_device(ctx, device); fz_drop_text(ctx, text); fz_drop_stext_page(ctx, layout);
-        pdf_drop_obj(ctx, form_ref); pdf_drop_obj(ctx, form); pdf_drop_obj(ctx, resources);
-        fz_drop_buffer(ctx, append); fz_drop_buffer(ctx, content);
+        fz_free(ctx,target.obstacles);fz_free(ctx,target.obstacle_origins);
+        fz_drop_device(ctx, device); fz_drop_stext_page(ctx, layout);
+        pdf_drop_obj(ctx, target.replacement);
+        fz_drop_buffer(ctx, append);
         pdf_drop_page(ctx, page); pdf_drop_document(ctx, doc); fz_drop_stream(ctx, input);
     }
     fz_catch(ctx) {
@@ -400,3 +606,11 @@ void pv_correct_text(const unsigned char *data, size_t length, int number,
     }
     fz_drop_context(ctx);
 }
+
+void pv_correct_text(const unsigned char *data,size_t length,int number,
+    int start,int count,const int *replacement,int replacement_count,float dx,float dy,pv_result *result)
+{ pv_edit_text(data,length,number,start,count,replacement,replacement_count,dx,dy,0,result); }
+
+void pv_duplicate_text(const unsigned char *data,size_t length,int number,
+    int start,int count,const int *replacement,int replacement_count,float dx,float dy,pv_result *result)
+{ pv_edit_text(data,length,number,start,count,replacement,replacement_count,dx,dy,1,result); }

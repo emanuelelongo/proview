@@ -11,26 +11,25 @@ import (
 )
 
 func (g *Gui) requestOpen() {
+	g.activateEditor()
 	if g.waitAnnotationChanges(g.requestOpen) {
 		return
 	}
 	if g.working {
 		return
 	}
-	g.confirmDiscard(func() {
-		g.chooseFile("Open file", openFileExtensions(), BuildOpenFileCallback(g))
-	})
+	g.chooseFile("Open file", openFileExtensions(), BuildOpenFileCallback(g))
 }
 
 func (g *Gui) requestClose() {
 	if g.waitAnnotationChanges(g.requestClose) {
 		return
 	}
-	if g.working {
+	if g.working || g.pdfOpenDialog != nil {
 		dialog.ShowInformation("Operation in progress", "Wait for the current operation to finish before closing.", g.window)
 		return
 	}
-	g.confirmUnsavedChanges("Save changes before closing?", g.closeWindow)
+	g.confirmWindowDocuments(g.closeWindow)
 }
 
 func (g *Gui) requestCloseDocument() {
@@ -44,6 +43,8 @@ func (g *Gui) requestCloseDocument() {
 }
 
 func (g *Gui) closeDocument() {
+	g.logEvent("document_closed", "")
+	g.removeActiveDocument()
 	g.closeSearch()
 	g.stopFormPulse()
 	if g.showingModel() {
@@ -51,6 +52,7 @@ func (g *Gui) closeDocument() {
 		g.panModifierDown = false
 		g.imageScroll.Show()
 		g.updateHistoryActions()
+		g.restoreRemainingDocument()
 		return
 	}
 	g.window.Canvas().Focus(nil)
@@ -99,13 +101,22 @@ func (g *Gui) closeDocument() {
 	if doc != nil {
 		go doc.Close()
 	}
+	g.restoreRemainingDocument()
 }
 
 func (g *Gui) closeWindow() {
+	g.logEvent("window_closed", "documents=%d", len(g.documents))
 	g.setTextEditing(false)
 	g.closeSearch()
 	g.stopFormPulse()
+	for _, layer := range g.signatureLayers {
+		if layer.highlightInput != nil {
+			layer.highlightInput.cancel()
+		}
+	}
+	g.closeRetainedDocuments()
 	g.closed = true
+	g.unregisterEditor()
 	g.hideObjectOrderMenu()
 	g.clearModel()
 	g.stopOCR()
@@ -149,6 +160,7 @@ func (g *Gui) confirmUnsavedChanges(message string, action func()) {
 	}
 	doc := g.document
 	prompt := dialog.NewCustomWithoutButtons("Unsaved changes", widget.NewLabel(message), g.window)
+	g.pauseExternalOpening(prompt)
 	save := widget.NewButton("Save", func() {
 		prompt.Hide()
 		g.saveWithCompletion(func() {
@@ -185,6 +197,7 @@ func (g *Gui) updateTitle() {
 func (g *Gui) installKeyHandler() {
 	previous := g.window.Canvas().OnTypedKey()
 	g.window.Canvas().SetOnTypedKey(func(event *fyne.KeyEvent) {
+		g.activateEditor()
 		if g.handleModelKey(event.Name) {
 			return
 		}
@@ -275,6 +288,9 @@ func (g *Gui) cancelCurrentOperation() bool {
 		}
 	}
 	for _, layer := range g.signatureLayers {
+		if layer.highlightInput != nil && layer.highlightInput.cancel() {
+			return true
+		}
 		if layer.redactInput != nil && layer.redactInput.cancel() {
 			return true
 		}

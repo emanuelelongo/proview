@@ -183,6 +183,7 @@ func TestShapesPreviewAndIndependentResize(t *testing.T) {
 			old := w.rect
 			w.resize(signatureBottomRight, fyne.Delta{DX: 60, DY: 0})
 			w.finishChange()
+			finishAnnotationJobs(t, g)
 			newRect := g.document.Overlays()[0].Rect
 			if newRect.Width <= old.Width || math.Abs(newRect.Height-old.Height) > 1e-6 {
 				t.Fatalf("shape axes could not resize independently: old=%+v new=%+v", old, newRect)

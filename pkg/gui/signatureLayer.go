@@ -38,6 +38,7 @@ type signatureLayer struct {
 	editor           *Gui
 	input            *annotationInput
 	redactInput      *redactionInput
+	highlightInput   *highlightInput
 	redactionWidgets []*redactionWidget
 	selectionBox     *canvas.Rectangle
 	textHighlight    *canvas.Raster
@@ -107,6 +108,10 @@ func (l *signatureLayer) SetZoom(zoom float32) {
 }
 
 func (l *signatureLayer) SetDocument(doc *document.Document, page int, size image.Point) {
+	if l.highlightInput != nil {
+		l.highlightInput.cancel()
+		l.highlightInput.geometry = nil
+	}
 	if l.redactInput != nil {
 		l.redactInput.cancel()
 		l.redactInput.geometry = nil
@@ -237,6 +242,9 @@ func (r *signatureLayerRenderer) Layout(fyne.Size) {
 	if r.layer.redactInput != nil {
 		r.layer.redactInput.Resize(r.layer.Size())
 	}
+	if r.layer.highlightInput != nil {
+		r.layer.highlightInput.Resize(r.layer.Size())
+	}
 	for _, mark := range r.layer.redactionWidgets {
 		position, size := r.layer.widgetRect(mark.rect)
 		mark.Move(position)
@@ -268,6 +276,9 @@ func (r *signatureLayerRenderer) Objects() []fyne.CanvasObject {
 	if r.layer.redactInput != nil {
 		objects = append(objects, r.layer.redactInput)
 	}
+	if r.layer.highlightInput != nil {
+		objects = append(objects, r.layer.highlightInput)
+	}
 	if r.layer.selectionBox != nil {
 		objects = append(objects, r.layer.selectionBox)
 	}
@@ -289,18 +300,20 @@ func (r *signatureLayerRenderer) Refresh() {
 
 type signatureWidget struct {
 	widget.BaseWidget
-	layer           *signatureLayer
-	id              document.SignatureID
-	rect            document.NormalizedRect
-	preview         image.Image
-	selected        bool
-	image           *canvas.Image
-	border          *canvas.Rectangle
-	handles         []*signatureResizeHandle
-	editActive      bool
-	editInitialRect document.NormalizedRect
-	areaDrag        bool
-	annotation      *annotations.Data
+	layer              *signatureLayer
+	id                 document.SignatureID
+	rect               document.NormalizedRect
+	preview            image.Image
+	selected           bool
+	image              *canvas.Image
+	border             *canvas.Rectangle
+	handles            []*signatureResizeHandle
+	editActive         bool
+	editInitialRect    document.NormalizedRect
+	areaDrag           bool
+	annotation         *annotations.Data
+	shapeResizeRunning bool
+	shapeResizeFinish  bool
 }
 
 func newSignatureWidget(layer *signatureLayer, signature document.SignatureOverlay) *signatureWidget {
@@ -411,7 +424,7 @@ func (w *signatureWidget) setSelected(selected bool) {
 }
 
 func (w *signatureWidget) resize(kind signatureHandleKind, dragged fyne.Delta) {
-	if w.layer.editor != nil && w.layer.editor.working {
+	if w.layer.editor != nil && w.layer.editor.working && !(w.editActive && w.shapeResizeRunning) {
 		return
 	}
 	origin, displaySize := w.layer.displayRect()
@@ -458,7 +471,11 @@ func (w *signatureWidget) resize(kind signatureHandleKind, dragged fyne.Delta) {
 		w.resizeShape(kind, dragged, position, size, origin, displaySize)
 		return
 	}
-	newWidth := clampFloat32(size.Width+deltaWidth, minSignatureSize, maxWidth)
+	minimumWidth := minSignatureSize
+	if w.annotation != nil && w.annotation.Kind == annotations.Shape && (w.annotation.Shape == annotations.Line || w.annotation.Shape == annotations.Arrow) {
+		minimumWidth = min(minimumWidth, size.Width)
+	}
+	newWidth := clampFloat32(size.Width+deltaWidth, minimumWidth, maxWidth)
 	newHeight := newWidth / aspect
 	var newPosition fyne.Position
 	switch kind {
@@ -477,7 +494,7 @@ func (w *signatureWidget) resize(kind signatureHandleKind, dragged fyne.Delta) {
 	width := clampFloat64(float64(newWidth/displaySize.Width), 0, 1-x)
 	height := clampFloat64(float64(newHeight/displaySize.Height), 0, 1-y)
 	next := document.NormalizedRect{X: x, Y: y, Width: width, Height: height}
-	if w.annotation != nil {
+	if w.annotation != nil && w.annotation.Kind != annotations.Shape {
 		initialWidth := w.rect.Width
 		if w.editActive {
 			initialWidth = w.editInitialRect.Width
@@ -497,6 +514,9 @@ func (w *signatureWidget) resize(kind signatureHandleKind, dragged fyne.Delta) {
 		return
 	}
 	w.rect = next
+	if w.annotation != nil && w.annotation.Kind == annotations.Shape {
+		w.scheduleShapeResize()
+	}
 	if w.layer.editor != nil {
 		w.layer.editor.scheduleLensPreviews(w.layer)
 	}
@@ -509,6 +529,11 @@ func constrainShapeProportions(modifiers fyne.KeyModifier) bool {
 
 func (w *signatureWidget) finishChange() {
 	if !w.editActive {
+		return
+	}
+	if w.annotation != nil && w.annotation.Kind == annotations.Shape && w.layer.editor != nil && (w.rect.Width != w.editInitialRect.Width || w.rect.Height != w.editInitialRect.Height) {
+		w.shapeResizeFinish = true
+		w.scheduleShapeResize()
 		return
 	}
 	if w.layer.finishChange(w.id) {
@@ -676,10 +701,16 @@ func (w *signatureWidget) resizeShape(kind signatureHandleKind, d fyne.Delta, po
 		right += d.DX
 		bottom += d.DY
 	}
-	left = clampFloat32(left, origin.X, right-minSignatureSize)
-	right = clampFloat32(right, left+minSignatureSize, origin.X+display.Width)
-	top = clampFloat32(top, origin.Y, bottom-minSignatureSize)
-	bottom = clampFloat32(bottom, top+minSignatureSize, origin.Y+display.Height)
+	minWidth, minHeight := minSignatureSize, minSignatureSize
+	if w.annotation.Shape == annotations.Line || w.annotation.Shape == annotations.Arrow {
+		// A horizontal/vertical segment's frame can be only a stroke thick.
+		// Resizing its length must not force that thin axis into a diagonal.
+		minWidth, minHeight = min(minWidth, size.Width), min(minHeight, size.Height)
+	}
+	left = clampFloat32(left, origin.X, right-minWidth)
+	right = clampFloat32(right, left+minWidth, origin.X+display.Width)
+	top = clampFloat32(top, origin.Y, bottom-minHeight)
+	bottom = clampFloat32(bottom, top+minHeight, origin.Y+display.Height)
 	next := document.NormalizedRect{X: float64((left - origin.X) / display.Width), Y: float64((top - origin.Y) / display.Height), Width: float64((right - left) / display.Width), Height: float64((bottom - top) / display.Height)}
 	if next == w.rect || !next.Valid() {
 		return
@@ -690,6 +721,7 @@ func (w *signatureWidget) resizeShape(kind signatureHandleKind, d fyne.Delta, po
 	}
 	if w.editActive && w.layer.updateSignature(w.id, next) {
 		w.rect = next
+		w.scheduleShapeResize()
 		w.layer.Refresh()
 	}
 }
