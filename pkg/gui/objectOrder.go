@@ -4,7 +4,6 @@ import (
 	"emanuelelongo/proview/pkg/document"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -75,7 +74,7 @@ func (g *Gui) reorderObject(doc *document.Document, page int, id document.Overla
 		return
 	}
 	if err := doc.ReorderOverlay(id, order); err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("object_order", err)
 		return
 	}
 	layer := g.signatureLayers[page]

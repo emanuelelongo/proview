@@ -17,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -32,7 +33,8 @@ func BuildMenu(g *Gui) {
 	clipboardItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: toolModifier}
 	openTogetherItem := fyne.NewMenuItem("Open PDFs Together", func() { g.openPDFCollection(false) })
 	appendItem := fyne.NewMenuItem("Append PDFs", func() { g.openPDFCollection(true) })
-	deletePageItem := fyne.NewMenuItem("Delete Page", func() { g.deletePDFPage(g.activePDFPage) })
+	deletePageItem := fyne.NewMenuItem("Delete Pages", func() { g.deletePDFPages(g.selectedPDFPages()) })
+	duplicatePageItem := fyne.NewMenuItem("Duplicate Pages", func() { g.duplicatePDFPages(g.selectedPDFPages()) })
 	saveItem := fyne.NewMenuItem("Save", g.save)
 	saveItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: shortcutModifier}
 	saveAsItem := fyne.NewMenuItem("Save As", g.saveAs)
@@ -42,7 +44,7 @@ func BuildMenu(g *Gui) {
 	exitItem := fyne.NewMenuItem("Exit", g.requestClose)
 	exitItem.IsQuit = true
 	fileMenu := fyne.NewMenu("File",
-		openItem, blankItem, clipboardItem, openTogetherItem, appendItem, deletePageItem,
+		openItem, blankItem, clipboardItem, openTogetherItem, appendItem, duplicatePageItem, deletePageItem,
 		saveItem, saveAsItem, closeItem, fyne.NewMenuItemSeparator(),
 		exitItem,
 	)
@@ -126,7 +128,7 @@ func BuildMenu(g *Gui) {
 	g.redoItem = redoItem
 	g.menuDocumentItems = []*fyne.MenuItem{
 		findItem, nextMatchItem, previousMatchItem,
-		openTogetherItem, appendItem, deletePageItem, saveItem, saveAsItem, closeItem,
+		openTogetherItem, appendItem, duplicatePageItem, deletePageItem, saveItem, saveAsItem, closeItem,
 		zoomInItem, zoomOutItem, resetZoomItem,
 		copyItem, pasteItem, selectItem, cropItem, drawItem, highlightItem, shapesItem, textItem, redactItem,
 	}
@@ -282,6 +284,8 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.clearAreaSelection()
 	g.cancelThumbnailDrag()
 	g.pdfThumbDropIndicators = nil
+	g.thumbnailSelectionDocument = nil
+	g.thumbnailSelection = nil
 	g.pdfGeneration++
 	g.deactivatePDFCrops()
 	g.pdfCrops = nil
@@ -304,6 +308,7 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.imageSignatureLayer.SetZoom(1)
 	g.imageSignatureLayer.Show()
 	g.pdfThumbImages = nil
+	g.pdfThumbPlaceholders = nil
 	g.pdfThumbBorders = nil
 	g.pdfThumbLoaded = nil
 	g.pdfThumbLoading = nil
@@ -326,12 +331,16 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.image.SetMinSize(fyne.NewSize(float32(g.image.Image.Bounds().Dx()), float32(g.image.Image.Bounds().Dy())))
 	g.image.Refresh()
 	g.setDocument(loadedDocument)
+	g.refreshThumbnailSelection()
 	g.resetZoom()
 	g.updateTitle()
 	g.updateHistoryActions()
 }
 
 func (g *Gui) showPDF(loadedDocument *document.Document) {
+	frozen := g.thumbnailSelectionFrozen
+	g.thumbnailSelectionFrozen = true
+	defer func() { g.thumbnailSelectionFrozen = frozen }()
 	g.clearAreaSelection()
 	g.cancelThumbnailDrag()
 	g.pdfGeneration++
@@ -339,11 +348,13 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	g.deactivatePDFCrops()
 	g.pdfCrops = make(map[int]*cropOverlay)
 	g.pdfPageIDs = loadedDocument.PageIDs()
+	g.prepareThumbnailSelection(loadedDocument)
 	objects := make([]fyne.CanvasObject, 0, loadedDocument.PageCount())
 	pageContainers := make([]fyne.CanvasObject, 0, loadedDocument.PageCount())
 	thumbs := make([]fyne.CanvasObject, 0, loadedDocument.PageCount())
 	indicators := make([]*thumbnailDropIndicator, 0, loadedDocument.PageCount())
 	thumbImages := make([]*canvas.Image, 0, loadedDocument.PageCount())
+	thumbPlaceholders := make([]fyne.CanvasObject, 0, loadedDocument.PageCount())
 	thumbBorders := make([]*canvas.Rectangle, 0, loadedDocument.PageCount())
 	thumbLoaded := make([]bool, loadedDocument.PageCount())
 	thumbLoading := make([]bool, loadedDocument.PageCount())
@@ -420,14 +431,19 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		thumbBorders = append(thumbBorders, thumbBorder)
 
 		index := page
-		goToPage := newThumbnailTap(func() {
+		goToPage := newThumbnailTap(nil)
+		goToPage.onSelect = func(modifiers fyne.KeyModifier) {
 			if g.working {
 				return
 			}
+			frozen := g.thumbnailSelectionFrozen
+			g.thumbnailSelectionFrozen = true
+			defer func() { g.thumbnailSelectionFrozen = frozen }()
+			g.selectThumbnail(index, modifiers)
 			g.loadPDFPage(index)
 			g.activatePDFPage(index)
 			g.pdfScroll.ScrollToOffset(fyne.NewPos(g.pdfScroll.Offset.X, g.pdfPageTop(index)))
-		})
+		}
 
 		goToPage.onDrag = func(event *fyne.DragEvent) { g.dragThumbnail(index, loadedDocument, generation, event) }
 		goToPage.onMouseDown = func(event *desktop.MouseEvent) { g.pressThumbnail(index, loadedDocument, generation, event) }
@@ -437,11 +453,15 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		goToPage.onSecondary = func(event *fyne.PointEvent) { g.thumbnailContextMenu(index, event) }
 		indicator := newThumbnailDropIndicator()
 		indicators = append(indicators, indicator)
-		card := container.NewVBox(
-			container.NewStack(canvas.NewRectangle(color.White), thumbImage, thumbBorder),
-			widget.NewLabel(fmt.Sprintf("Page %d", page+1)),
-		)
-		thumbs = append(thumbs, container.NewStack(card, indicator, goToPage))
+		loading := canvas.NewText("Loading…", color.Gray{Y: 128})
+		loading.TextSize = theme.TextSize()
+		placeholder := container.NewCenter(loading)
+		if preview != nil {
+			placeholder.Hide()
+		}
+		thumbPlaceholders = append(thumbPlaceholders, placeholder)
+		card := container.NewStack(canvas.NewRectangle(color.White), thumbImage, placeholder, thumbBorder, newThumbnailBadge(page+1))
+		thumbs = append(thumbs, container.New(layout.NewCustomPaddedLayout(0, 6, 0, 0), container.NewStack(card, indicator, goToPage)))
 	}
 
 	g.clearSignatureSelection()
@@ -450,6 +470,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	g.panOverlays = panOverlays
 	g.pdfThumbDropIndicators = indicators
 	g.pdfThumbImages = thumbImages
+	g.pdfThumbPlaceholders = thumbPlaceholders
 	g.pdfThumbBorders = thumbBorders
 	g.pdfThumbLoaded = thumbLoaded
 	g.pdfThumbLoading = thumbLoading
@@ -472,6 +493,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	g.sidebar.container.Show()
 	g.pdfScroll.ScrollToTop()
 	g.setDocument(loadedDocument)
+	g.refreshThumbnailSelection()
 	g.resetZoom()
 	g.loadVisiblePDFPages()
 	g.loadVisiblePDFThumbnails()
@@ -480,6 +502,9 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 }
 
 func (g *Gui) setDocument(doc *document.Document) {
+	if g.textPlacement != nil && g.textPlacement.doc != doc {
+		g.cancelTextPlacement()
+	}
 	g.stopFormPulse()
 	previous := g.document
 	if previous != doc && g.activeDocument != nil && (g.activeDocument.doc == previous && previous != nil || g.activeDocument.mesh != nil) {

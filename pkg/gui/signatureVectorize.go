@@ -42,6 +42,7 @@ func (g *Gui) editSignatureScan(scan signatures.Scan, done func(signatures.Entry
 	intensity.Value = 50
 	crop := scan.Image.Bounds()
 	var asset signatures.Asset
+	lastFailure := ""
 	var editor *dialog.CustomDialog
 	closed := false
 	revision := uint64(0)
@@ -83,11 +84,16 @@ func (g *Gui) editSignatureScan(scan signatures.Scan, done func(signatures.Entry
 					if result.err != nil {
 						preview.Image = nil
 						preview.Refresh()
-						status.SetText(result.err.Error())
+						if detail := diagnosticError(result.err); detail != lastFailure {
+							g.operationFailureMessage("signature_trace", result.err)
+							lastFailure = detail
+						}
+						status.SetText(operationErrorMessage("signature_trace", result.err))
 						status.Show()
 						return
 					}
 					asset = result.asset
+					lastFailure = ""
 					preview.Image = result.preview
 					preview.Refresh()
 					status.Hide()

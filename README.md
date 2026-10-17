@@ -53,8 +53,8 @@ Proview also opens ASCII and binary STL files, letting you inspect 3D models wit
 For PDF documents, Proview also lets you highlight text, redact sensitive content, and add, remove, reorder or rotate pages.
 
 Highlight follows words and lines at a fixed 30% opacity, using native PDF text
-or recognized text in images. Draw offers round and flat freehand tips, dashed
-and dotted strokes, and adjustable opacity.
+or recognized text in images. Draw offers round freehand strokes, dashed and
+dotted patterns, and adjustable opacity.
 You can also combine multiple PDFs into one document, or split a PDF into separate files.
 
 All PDF operations preserve native PDF content: added text, ordinary shapes and vector signatures are exported as vector content rather than flattening the whole page into a bitmap.

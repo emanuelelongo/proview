@@ -69,9 +69,13 @@ PDF page combination/reordering/deletion and blank pages.
   PDF points or original image pixels and must remain independent of view zoom.
 - Highlight follows native PDF or recognized image text, merges words per line,
   and records one vector object per gesture with fixed 30% opacity. It has only a
-  color control. Draw has independent opacity and round, flat, dashed and dotted
-  modes. The filled-circle mode retains the round freehand tip; the solid-line
-  mode sweeps a fixed 45-degree flat nib along the freehand path, not a segment.
+  color control. Selected highlights keep their selection border and color editing
+  but never expose resize handles or accept resize gestures. Draw has independent
+  opacity and round, dashed and dotted modes. The filled circle indicates the
+  round freehand tip; there is no flat marker mode. Build round strokes as a
+  compound nonzero-filled path of simple capsules, never through `Settle` on an
+  arbitrary freehand outline. This avoids intersection-solver failures and keeps
+  uniform opacity at retraces, without filling enclosed blank regions.
   See [Drawing and highlighting](docs/annotations.md).
 - PDF crop deliberately creates an independent PNG editor window, including
   visible overlays, at preview resolution (144 DPI). It does not crop the PDF itself.
@@ -115,6 +119,13 @@ PDF page combination/reordering/deletion and blank pages.
 - Reorder PDF pages by dragging sidebar thumbnails, not a separate ordering form.
   Show a faded source, insertion line, vertical resize cursor and edge autoscroll.
   Release outside the sidebar or Escape cancels. Deletion must leave at least one page.
+  PDF thumbnails show an accent-colored circular page number at bottom right,
+  without labels underneath, and keep spacing between cards. Image thumbnails
+  have no labels/badges. Command/Control-click toggles pages; Shift-click selects
+  a range. Track selection by stable page IDs, preserve multiple selections on
+  viewport scrolling/rebuilds, and move/delete/duplicate groups in one Undo step.
+  DuplicatePages inserts ordered copies after the last selected page, retaining
+  immutable sources/artwork but assigning independent page/object/redaction IDs.
 
 ## Visual conventions and asset provenance
 
@@ -183,6 +194,10 @@ PDF page combination/reordering/deletion and blank pages.
   not capture hover/click/drag events or route document zoom through the sidebar.
   Hold **Space** and drag to pan above fit zoom on all desktop platforms; keep
   Space available to text fields and dialog controls. Control does not activate pan.
+  Unmodified arrow keys scroll the image/PDF viewport by 40 view units; Page Up /
+  Page Down activate the previous/next PDF page and reveal its thumbnail. These
+  viewer keys yield to focused controls, dialogs, modifiers, busy work and
+  unfinished editing gestures. They never change document history.
 - Redaction exports strip metadata, attachments, fields/actions/comments and
   alternative/accessibility text. Visible appearances are baked first. Clean
   selected pixels in **every reuse** of an affected shared image, including
@@ -212,6 +227,10 @@ PDF page combination/reordering/deletion and blank pages.
 - PDF previews render lazily at 144 DPI; thumbnails at 72 DPI to stay sharp at
   the sidebar's maximum width. Load thumbnails
   while scrolling, not only when clicked. Avoid eager rendering of the entire PDF.
+  Retry visible-thumbnail loading after the sidebar viewport is laid out/resized,
+  including the first transition from zero height; coalesce deferred callbacks.
+  Pending thumbnails show a static loading label. Log only slow thumbnail loads
+  (at least one second), in addition to errors.
 - Expensive loading, rendering and encoding run outside event callbacks. Apply UI
   changes with `fyne.Do`/`DoAndWait`, retaining document/generation guards against
   stale results. Wait for pending annotation changes before save, close or page edits.
@@ -360,10 +379,20 @@ PDF page combination/reordering/deletion and blank pages.
 - Whole-image transformations apply after the source crop and transform all overlay
   rectangles/orientations in one history operation. Map crop selections back through
   the inverse image transform. Page dimensions must not render the transformed image.
-- Text remains active after insertion and edits the current object. Commit entry
-  edits on focus loss/submission or before another placement without clearing the
-  entry. There is no check button or automatic text cleanup. Empty defaults never
-  create text objects.
+- Text starts with a page click, opening a focused single-line entry at that
+  physical position. Keep the draft outside document history; Enter, another
+  page click, changing tools/pages or Save confirms one vector object and one
+  Undo. Escape or an empty draft creates nothing. Font/size/style controls edit
+  the active draft without committing it when they take focus. A failed creation
+  retains entered text and aborts deferred Save/Close actions. New placements
+  start empty and do not require a toolbar text field. Existing selected text
+  keeps property-bar editing, committed on focus loss/submission. There is no
+  check button. Keep the inline editor correctly positioned/scaled after zoom.
+  Inline text has a transparent background, a thin outline and an empty-field
+  placeholder. Keep frame padding external to the text. Preview the same glyph
+  artwork used for insertion; use its exact bundled font/baseline for keyboard input. Anchor the
+  glyph origin and ink top to the click, excluding padding; share page-edge
+  clamping between preview and commit. Coalesce background preview work.
 - Holding Shift temporarily activates Select from Text, Draw, Highlight or Shapes (including
   Magnifier), highlighting its toolbar icon and restoring the insertion tool on
   release. Keep insertion defaults separate from temporary object property edits.

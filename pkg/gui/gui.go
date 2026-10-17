@@ -64,6 +64,10 @@ type Gui struct {
 	thumbnailDrag                     *thumbnailDragState
 	thumbnailPress                    *thumbnailDragState
 	pdfThumbDropIndicators            []*thumbnailDropIndicator
+	thumbnailSelectionDocument        *document.Document
+	thumbnailSelection                map[uint64]bool
+	thumbnailAnchor                   uint64
+	thumbnailSelectionFrozen          bool
 	pdfGeneration                     uint64
 	pdfPageIDs                        []uint64
 	pdfCrops                          map[int]*cropOverlay
@@ -93,6 +97,7 @@ type Gui struct {
 	imageSignatureLayer               *signatureLayer
 	signatureLayers                   map[int]*signatureLayer
 	pdfThumbImages                    []*canvas.Image
+	pdfThumbPlaceholders              []fyne.CanvasObject
 	pdfThumbBorders                   []*canvas.Rectangle
 	pdfThumbLoaded                    []bool
 	pdfThumbLoading                   []bool
@@ -129,6 +134,7 @@ type Gui struct {
 	signatureCloud                    *signatureCloudService
 	areaSelection                     *areaSelection
 	textEntry                         *annotationEntry
+	textPlacement                     *textPlacement
 	lensGeneration                    uint64
 	annotationTool                    annotationTool
 	temporarySelection                bool
@@ -357,7 +363,7 @@ func (g *Gui) startCrop() {
 			return
 		}
 		if err := g.document.ApplyCrop(rect, g.image.Image.Bounds()); err != nil {
-			dialog.ShowError(err, g.window)
+			g.showOperationError("crop", err)
 			return
 		}
 		cropped := img.Crop(g.image.Image, rect)

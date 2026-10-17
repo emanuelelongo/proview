@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -46,6 +48,7 @@ type signatureCloudService struct {
 	warning        error
 	tokenWarning   func() error
 	stopTokens     func()
+	lastDiagnostic string
 }
 
 func signatureService(app fyne.App) (*signatureCloudService, error) {
@@ -60,6 +63,7 @@ func signatureService(app fyne.App) (*signatureCloudService, error) {
 	}
 	service := &signatureCloudService{app: app, store: store, credentials: cloud.SystemCredentials{}, s3Credentials: cloud.SystemS3Credentials{}}
 	service.coordinator = &cloud.Coordinator{Store: store}
+	service.coordinator.Subscribe(func(status cloud.Status) { service.logCloudFailure(status.Err) })
 	signatureServices.apps[app] = service
 	return service, nil
 }
@@ -112,16 +116,55 @@ func (s *signatureCloudService) restore() {
 	s.coordinator.Connect(s.provider(client))
 }
 func (s *signatureCloudService) setWarning(err error) {
+	s.logCloudFailure(err)
 	s.mu.Lock()
 	s.warning = err
 	s.mu.Unlock()
 	s.coordinator.Report(err)
 }
 
+func (s *signatureCloudService) logCloudFailure(err error) {
+	detail := diagnosticError(err)
+	s.mu.Lock()
+	if detail == s.lastDiagnostic {
+		s.mu.Unlock()
+		return
+	}
+	s.lastDiagnostic = detail
+	s.mu.Unlock()
+	if err != nil {
+		log.Printf("event=operation_failed level=ERROR operation=signature_cloud service=%p error=%q", s, detail)
+	}
+}
+
+func cloudErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	reason := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(reason, "this session"):
+		return "This connection lasts only for this session. Reconnect after restarting Proview."
+	case strings.Contains(reason, "authorization"), strings.Contains(reason, "reconnect"), strings.Contains(reason, "not connected"):
+		if strings.Contains(reason, "s3") {
+			return "Reconnect to S3 to sync signatures."
+		}
+		if strings.Contains(reason, "google") {
+			return "Reconnect to Google Drive to sync signatures."
+		}
+		return "Reconnect to your cloud provider to sync signatures."
+	case strings.Contains(reason, "configuration is missing"):
+		return "Cloud connection is not configured in this build. See the cloud sync setup documentation."
+	default:
+		return operationErrorMessage("signature_cloud", err)
+	}
+}
+
 func (s *signatureCloudService) provider(client *http.Client) *cloud.GoogleDrive {
 	return &cloud.GoogleDrive{Client: client, FolderName: s.app.Preferences().String(driveFolderNameKey), FolderID: s.app.Preferences().String(driveFolderKey), ExplicitFolder: s.app.Preferences().Bool(driveFolderExplicitKey), OnFolder: func(id string) { s.app.Preferences().SetString(driveFolderKey, id) }}
 }
 func (s *signatureCloudService) message(status cloud.Status) string {
+	s.logCloudFailure(status.Err)
 	s.mu.Lock()
 	warning := s.warning
 	providerName := s.activeProvider
@@ -137,7 +180,7 @@ func (s *signatureCloudService) message(status cloud.Status) string {
 	}
 	if !status.Connected {
 		if warning != nil {
-			return warning.Error()
+			return cloudErrorMessage(warning)
 		}
 		return "Cloud sync is off"
 	}
@@ -151,10 +194,10 @@ func (s *signatureCloudService) message(status cloud.Status) string {
 		text += fmt.Sprintf(" · %d pending", status.Pending)
 	}
 	if status.Err != nil {
-		text += "\n" + status.Err.Error()
+		text += "\n" + cloudErrorMessage(status.Err)
 	}
 	if warning != nil {
-		text += "\n" + warning.Error()
+		text += "\n" + cloudErrorMessage(warning)
 	}
 	return text
 }
@@ -454,7 +497,8 @@ func (g *Gui) showSignatureCloud() {
 				updateProvider(provider.Selected)
 				refresh(service.coordinator.Status())
 				if err != nil && !errors.Is(err, context.Canceled) {
-					statusLabel.SetText(err.Error())
+					service.logCloudFailure(err)
+					statusLabel.SetText(cloudErrorMessage(err))
 				}
 				if err == nil {
 					access.SetText("")
@@ -478,7 +522,8 @@ func (g *Gui) showSignatureCloud() {
 				}
 				refresh(service.coordinator.Status())
 				if err != nil {
-					statusLabel.SetText(err.Error())
+					service.logCloudFailure(err)
+					statusLabel.SetText(cloudErrorMessage(err))
 				}
 			})
 		}()

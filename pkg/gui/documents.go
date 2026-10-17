@@ -163,11 +163,7 @@ func (g *Gui) refreshDocumentSidebar() {
 					border.Hide()
 				}
 				card := container.NewStack(preview, border, newThumbnailTap(func() { g.selectDocument(entry) }))
-				if entry.doc.Dirty() {
-					g.documentList.Add(container.NewVBox(card, widget.NewLabel("•")))
-				} else {
-					g.documentList.Add(card)
-				}
+				g.documentList.Add(card)
 				continue
 			}
 			name := ""
@@ -209,7 +205,7 @@ func (g *Gui) refreshDocumentSidebar() {
 	}
 	if g.document != nil && g.document.Format() == document.FormatPDF {
 		g.sidebar.panel.Layout = layout.NewBorderLayout(g.sidebar.documents, nil, nil, nil)
-		g.sidebar.panel.Objects = []fyne.CanvasObject{g.sidebar.documents, g.sidebar.container}
+		g.sidebar.panel.Objects = []fyne.CanvasObject{g.sidebar.documents, g.sidebar.viewport}
 	} else {
 		g.sidebar.panel.Layout = layout.NewStackLayout()
 		g.sidebar.panel.Objects = []fyne.CanvasObject{g.sidebar.documents}

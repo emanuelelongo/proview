@@ -3,8 +3,6 @@ package gui
 import (
 	"emanuelelongo/proview/pkg/document"
 	"slices"
-
-	"fyne.io/fyne/v2/dialog"
 )
 
 func (g *Gui) undo() {
@@ -60,7 +58,7 @@ func (g *Gui) syncDocumentView() {
 
 	preview, err := g.document.RenderBasePage(0)
 	if err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("preview", err)
 		return
 	}
 	g.image.Image = preview

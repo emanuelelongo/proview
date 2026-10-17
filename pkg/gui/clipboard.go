@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"golang.design/x/clipboard"
 	"image"
@@ -122,7 +121,7 @@ func (g *Gui) copyPageArea(page int, rect document.NormalizedRect) {
 				return
 			}
 			if e != nil {
-				dialog.ShowError(fmt.Errorf("Could not copy image: %w", e), g.window)
+				g.showOperationError("clipboard_copy", fmt.Errorf("Could not copy image: %w", e))
 				return
 			}
 			g.showAreaCopied(doc, selection)
@@ -183,7 +182,7 @@ func (g *Gui) pasteImage() {
 						return
 					}
 					if err != nil {
-						dialog.ShowError(fmt.Errorf("Could not paste object: %w", err), g.window)
+						g.showOperationError("clipboard_paste", fmt.Errorf("Could not paste object: %w", err))
 						return
 					}
 					g.insertCopiedObject(doc, layer, page, copied, prepared, payload)
@@ -206,7 +205,7 @@ func (g *Gui) pasteImage() {
 				return
 			}
 			if e != nil {
-				dialog.ShowError(e, g.window)
+				g.showOperationError("clipboard_paste", e)
 				return
 			}
 			scale := math.Min(1, math.Min(float64(pageSize.X)*.8/float64(config.Width), float64(pageSize.Y)*.8/float64(config.Height)))
@@ -214,7 +213,7 @@ func (g *Gui) pasteImage() {
 			r := document.NormalizedRect{X: math.Min(math.Max(centerX-w/2, 0), 1-w), Y: math.Min(math.Max(centerY-h/2, 0), 1-h), Width: w, Height: h}
 			o, e := doc.AddImage(page, r, data)
 			if e != nil {
-				dialog.ShowError(e, g.window)
+				g.showOperationError("clipboard_paste", e)
 				return
 			}
 			g.setAnnotationTool(toolSelect)

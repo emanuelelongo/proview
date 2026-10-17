@@ -9,7 +9,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
@@ -121,7 +120,7 @@ func (g *Gui) deleteSelectedRedaction() {
 	}
 	page := g.selectedRedactionPage
 	if err := g.document.RemoveRedaction(g.selectedRedaction); err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("pdf_redact", err)
 		return
 	}
 	g.clearRedactionSelection()
@@ -185,7 +184,7 @@ func (p *redactionInput) load() {
 			}
 			if err != nil {
 				p.pending = false
-				dialog.ShowError(err, g.window)
+				g.showOperationError("pdf_redact", err)
 				return
 			}
 			p.geometry = &geometry
@@ -306,7 +305,7 @@ func (p *redactionInput) finish() {
 		return
 	}
 	if _, err := p.layer.document.AddRedaction(p.layer.page, quads); err != nil {
-		dialog.ShowError(err, p.layer.editor.window)
+		p.layer.editor.showOperationError("pdf_redact", err)
 		return
 	}
 	p.layer.reload()

@@ -256,6 +256,9 @@ func (r *signatureLayerRenderer) Layout(fyne.Size) {
 		signature.Move(fyne.NewPos(position.X-margin, position.Y-margin))
 		signature.Resize(fyne.NewSize(size.Width+2*margin, size.Height+2*margin))
 	}
+	if g := r.layer.editor; g != nil && g.textPlacement != nil && g.textPlacement.layer == r.layer {
+		g.textPlacement.layout()
+	}
 }
 
 func (r *signatureLayerRenderer) MinSize() fyne.Size {
@@ -287,6 +290,9 @@ func (r *signatureLayerRenderer) Objects() []fyne.CanvasObject {
 	}
 	if r.layer.searchHighlight != nil {
 		objects = append(objects, r.layer.searchHighlight)
+	}
+	if g := r.layer.editor; g != nil && g.textPlacement != nil && g.textPlacement.layer == r.layer {
+		objects = append(objects, g.textPlacement.frame, g.textPlacement.preview, g.textPlacement.field)
 	}
 	return objects
 }
@@ -411,19 +417,27 @@ func (w *signatureWidget) setSelected(selected bool) {
 	w.selected = selected
 	if selected {
 		w.border.Show()
-		for _, handle := range w.handles {
-			handle.Show()
-		}
 	} else {
 		w.border.Hide()
-		for _, handle := range w.handles {
+	}
+	for _, handle := range w.handles {
+		if selected && w.canResize() {
+			handle.Show()
+		} else {
 			handle.Hide()
 		}
 	}
 	w.Refresh()
 }
 
+func (w *signatureWidget) canResize() bool {
+	return w.annotation == nil || w.annotation.Kind != annotations.Highlight
+}
+
 func (w *signatureWidget) resize(kind signatureHandleKind, dragged fyne.Delta) {
+	if !w.canResize() {
+		return
+	}
 	if w.layer.editor != nil && w.layer.editor.working && !(w.editActive && w.shapeResizeRunning) {
 		return
 	}

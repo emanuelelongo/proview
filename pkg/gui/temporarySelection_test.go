@@ -61,7 +61,16 @@ func TestTemporarySelectionMovesAndResizesNewObjects(t *testing.T) {
 			object.finishChange()
 			finishAnnotationJobs(t, g)
 			resized := g.document.Overlays()[0].Rect
-			if resized == original {
+			if scenario.tool == toolHighlight {
+				if resized != original || !object.selected || !object.border.Visible() {
+					t.Fatal("Highlight should remain selected without resizing")
+				}
+				for _, handle := range object.handles {
+					if handle.Visible() {
+						t.Fatal("Highlight exposes a resize handle")
+					}
+				}
+			} else if resized == original {
 				t.Fatal("temporary selection did not resize the object")
 			}
 			object.Dragged(&fyne.DragEvent{Dragged: fyne.Delta{DX: 20, DY: 10}})
@@ -88,7 +97,7 @@ func TestTemporarySelectionMovesAndResizesNewObjects(t *testing.T) {
 			if g.document.Overlays()[0].Rect == resized || !g.document.Undo() || g.document.Overlays()[0].Rect != resized {
 				t.Fatal("move did not create one Undo step")
 			}
-			if !g.document.Undo() || g.document.Overlays()[0].Rect != original {
+			if scenario.tool != toolHighlight && (!g.document.Undo() || g.document.Overlays()[0].Rect != original) {
 				t.Fatal("resize did not create one Undo step")
 			}
 		})
@@ -98,8 +107,7 @@ func TestTemporarySelectionMovesAndResizesNewObjects(t *testing.T) {
 func TestTemporarySelectionPreservesTypingAndDrawingGesture(t *testing.T) {
 	g, layer := annotationTestGui(t)
 	g.setAnnotationTool(toolText)
-	g.window.SetContent(g.annotationControls)
-	g.window.Canvas().Focus(g.textEntry)
+	g.beginTextPlacement(layer, annotations.Point{X: 100, Y: 100})
 	g.handleSelectionShift(desktop.KeyShiftLeft, true)
 	if g.temporarySelection || g.window.Canvas().Focused() != g.textEntry {
 		t.Fatal("Shift interrupted text entry")

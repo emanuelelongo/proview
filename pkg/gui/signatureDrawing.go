@@ -239,7 +239,7 @@ func (g *Gui) editDrawing(drawing signatures.Drawing, editable bool, onSave func
 				}
 				save.Enable()
 				if err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("signature_drawing", err)
 					return
 				}
 				onSave(asset, editor.Hide)

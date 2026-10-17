@@ -85,6 +85,7 @@ func (g *Gui) closeDocument() {
 	g.pdfPageIDs = nil
 	g.pdfThumbDropIndicators = nil
 	g.pdfThumbImages, g.pdfPageImages = nil, nil
+	g.pdfThumbPlaceholders = nil
 	g.pdfThumbBorders, g.pdfPageBorders = nil, nil
 	g.pdfThumbLoaded, g.pdfThumbLoading = nil, nil
 	g.pdfPageLoaded, g.pdfPageLoading = nil, nil
@@ -105,6 +106,7 @@ func (g *Gui) closeDocument() {
 }
 
 func (g *Gui) closeWindow() {
+	g.cancelTextPlacement()
 	g.logEvent("window_closed", "documents=%d", len(g.documents))
 	g.setTextEditing(false)
 	g.closeSearch()
@@ -198,6 +200,9 @@ func (g *Gui) installKeyHandler() {
 	previous := g.window.Canvas().OnTypedKey()
 	g.window.Canvas().SetOnTypedKey(func(event *fyne.KeyEvent) {
 		g.activateEditor()
+		if g.handleDocumentNavigationKey(event.Name) {
+			return
+		}
 		if g.handleModelKey(event.Name) {
 			return
 		}
@@ -243,6 +248,9 @@ func (g *Gui) installKeyHandler() {
 }
 
 func (g *Gui) cancelCurrentOperation() bool {
+	if g.cancelTextPlacement() {
+		return true
+	}
 	if g.correctionDialog != nil {
 		g.correctionDialog.Hide()
 		return true

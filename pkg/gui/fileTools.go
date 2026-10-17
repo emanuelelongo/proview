@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"io"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -89,12 +90,12 @@ func (g *Gui) newBlankImage() {
 	create := widget.NewButton("Create", func() {
 		w, err := strconv.Atoi(width.Text)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("Enter a whole number for width"), g.window)
+			g.showInputError(fmt.Errorf("Enter a whole number for width"))
 			return
 		}
 		h, err := strconv.Atoi(height.Text)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("Enter a whole number for height"), g.window)
+			g.showInputError(fmt.Errorf("Enter a whole number for height"))
 			return
 		}
 		g.runFileWork("Creating image", func() (*document.Document, error) { return document.NewImage("Untitled.png", w, h, background) }, func(doc *document.Document) { form.Hide(); g.openNewImage(doc) })
@@ -235,7 +236,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 						return
 					}
 					if readErr != nil {
-						dialog.ShowError(readErr, g.window)
+						g.showOperationError("open", readErr)
 						return
 					}
 					inputs = append(inputs, added...)
@@ -333,38 +334,47 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 	chooser.Show()
 }
 
-func (g *Gui) deletePDFPage(page int) {
-	if g.waitAnnotationChanges(func() { g.deletePDFPage(page) }) || g.working {
+func (g *Gui) deletePDFPage(page int) { g.deletePDFPages([]int{page}) }
+
+func (g *Gui) deletePDFPages(pages []int) {
+	if g.waitAnnotationChanges(func() { g.deletePDFPages(pages) }) || g.working {
 		return
 	}
 	if g.document == nil || g.document.Format() != document.FormatPDF {
 		dialog.ShowInformation("Pages", "Open a PDF first.", g.window)
 		return
 	}
-	if g.document.PageCount() == 1 {
+	if len(pages) == 0 {
+		return
+	}
+	selected := make(map[int]bool, len(pages))
+	for _, page := range pages {
+		if page < 0 || page >= g.document.PageCount() {
+			return
+		}
+		selected[page] = true
+	}
+	if len(selected) >= g.document.PageCount() {
 		dialog.ShowInformation("Pages", "Keep at least one page.", g.window)
 		return
 	}
-	if page < 0 || page >= g.document.PageCount() {
-		return
-	}
 	g.cancelThumbnailDrag()
-	order := make([]int, 0, g.document.PageCount()-1)
-	for i := 0; i < g.document.PageCount(); i++ {
-		if i != page {
-			order = append(order, i)
+	order := make([]int, 0, g.document.PageCount()-len(selected))
+	active := 0
+	for page := 0; page < g.document.PageCount(); page++ {
+		if !selected[page] {
+			if page < g.activePDFPage {
+				active++
+			}
+			order = append(order, page)
 		}
 	}
-	active := g.activePDFPage
-	if active > page {
-		active--
-	} else if active == page {
-		active = min(page, len(order)-1)
-	}
+	active = min(active, len(order)-1)
 	if err := g.document.SetPageOrder(order); err != nil {
-		g.showOperationError("file_work", err)
+		g.showOperationError("pdf_pages", err)
 		return
 	}
+	g.setThumbnailSelection([]int{active})
 	g.rebuildPDFWithCompletion(active, func() { g.revealThumbnail(active) })
 }
 
@@ -375,6 +385,12 @@ func (g *Gui) rebuildPDFWithCompletion(active int, done func()) {
 	zoom := g.zoom
 	snapshot := doc.RenderingSnapshot()
 	g.runFileWork("Updating pages", func() (*document.Document, error) { _, err := snapshot.Preview(0); return doc, err }, func(doc *document.Document) {
+		frozen := g.thumbnailSelectionFrozen
+		g.thumbnailSelectionFrozen = true
+		defer func() { g.thumbnailSelectionFrozen = frozen }()
+		if len(g.selectedPDFPages()) <= 1 {
+			g.setThumbnailSelection([]int{active})
+		}
 		g.showPDF(doc)
 		g.zoom = zoom
 		g.applyZoom()
@@ -391,14 +407,22 @@ func (g *Gui) rebuildPDFWithCompletion(active int, done func()) {
 	})
 }
 
-func (g *Gui) duplicatePDFPage(page int) {
-	if g.waitAnnotationChanges(func() { g.duplicatePDFPage(page) }) || g.working || g.document == nil {
+func (g *Gui) duplicatePDFPage(page int) { g.duplicatePDFPages([]int{page}) }
+
+func (g *Gui) duplicatePDFPages(pages []int) {
+	if g.waitAnnotationChanges(func() { g.duplicatePDFPages(pages) }) || g.working || g.document == nil || len(pages) == 0 {
 		return
 	}
-	if err := g.document.DuplicatePage(page); err != nil {
-		g.showOperationError("file_work", err)
+	if err := g.document.DuplicatePages(pages); err != nil {
+		g.showOperationError("pdf_pages", err)
 		return
 	}
 	g.cancelThumbnailDrag()
-	g.rebuildPDFWithCompletion(page+1, func() { g.revealThumbnail(page + 1) })
+	first := slices.Max(pages) + 1
+	copies := make([]int, len(pages))
+	for index := range copies {
+		copies[index] = first + index
+	}
+	g.setThumbnailSelection(copies)
+	g.rebuildPDFWithCompletion(first, func() { g.revealThumbnail(first) })
 }

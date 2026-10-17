@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"sync/atomic"
 
@@ -288,48 +289,72 @@ func (d *Document) basePDF() ([]byte, error) {
 }
 
 // DuplicatePage keeps the immutable source, but assigns independent editing IDs.
-func (d *Document) DuplicatePage(page int) error {
+func (d *Document) DuplicatePage(page int) error { return d.DuplicatePages([]int{page}) }
+
+// DuplicatePages inserts an ordered group of copies after the last selected page.
+// Validation and all copies form one atomic history operation.
+func (d *Document) DuplicatePages(selection []int) error {
 	if d.Format() != FormatPDF {
 		return fmt.Errorf("document: page duplication requires a PDF")
 	}
 	if d.activeEdit != nil {
 		return ErrEditInProgress
 	}
-	if err := d.validatePage(page); err != nil {
-		return err
+	if len(selection) == 0 {
+		return fmt.Errorf("document: select at least one page")
+	}
+	selection = slices.Clone(selection)
+	slices.Sort(selection)
+	for i, page := range selection {
+		if err := d.validatePage(page); err != nil {
+			return err
+		}
+		if i > 0 && selection[i-1] == page {
+			return fmt.Errorf("document: duplicate page selection")
+		}
 	}
 	before := d.snapshot()
-	p := d.pages[page]
-	oldID := p.id
-	p.id = pageSequence.Add(1)
-	position := page + 1
-	d.pages = append(d.pages, pageRef{})
-	copy(d.pages[position+1:], d.pages[position:])
-	d.pages[position] = p
-	var copies []SignatureOverlay
-	for i := range d.signatures {
-		s := &d.signatures[i]
-		if s.Page == page {
-			c := *s
+	position := selection[len(selection)-1] + 1
+	pages := make([]pageRef, 0, len(d.pages)+len(selection))
+	pages = append(pages, d.pages[:position]...)
+	copies := make(map[int]int, len(selection))
+	copiedIDs := make(map[uint64]uint64, len(selection))
+	for _, page := range selection {
+		p := d.pages[page]
+		oldID := p.id
+		p.id = pageSequence.Add(1)
+		copies[page] = len(pages)
+		copiedIDs[oldID] = p.id
+		pages = append(pages, p)
+	}
+	pages = append(pages, d.pages[position:]...)
+	overlays := make([]SignatureOverlay, 0, len(d.signatures))
+	var copiedOverlays []SignatureOverlay
+	for _, o := range d.signatures {
+		if page, ok := copies[o.Page]; ok {
+			c := o
 			c.ID = d.nextSignatureID
 			d.nextSignatureID++
-			c.Page = position
-			copies = append(copies, c)
+			c.Page = page
+			copiedOverlays = append(copiedOverlays, c)
 		}
-		if s.Page >= position {
-			s.Page++
+		if o.Page >= position {
+			o.Page += len(selection)
 		}
+		overlays = append(overlays, o)
 	}
-	d.signatures = append(d.signatures, copies...)
-	existing := d.redactions
-	for _, r := range existing {
-		if r.PageID == oldID {
+	redactions := slices.Clone(d.redactions)
+	for _, r := range d.redactions {
+		if id, ok := copiedIDs[r.PageID]; ok {
 			d.nextRedactionID++
 			r.ID = d.nextRedactionID
-			r.PageID = p.id
-			d.redactions = append(d.redactions, r)
+			r.PageID = id
+			redactions = append(redactions, r)
 		}
 	}
+	d.pages = pages
+	d.signatures = append(overlays, copiedOverlays...)
+	d.redactions = redactions
 	d.record(before)
 	return nil
 }

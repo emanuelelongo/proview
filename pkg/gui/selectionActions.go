@@ -8,7 +8,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
@@ -40,7 +39,7 @@ func (s *statusTextSurface) Tapped(*fyne.PointEvent) {
 	g := s.editor
 	if target := g.selectedTextURL(); target != nil && g.app != nil {
 		if err := g.app.OpenURL(target); err != nil {
-			dialog.ShowError(err, g.window)
+			g.showOperationError("open_url", err)
 		}
 	}
 }

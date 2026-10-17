@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -37,6 +38,9 @@ func defaultSignatureRect(pageWidth, pageHeight, signatureWidth, signatureHeight
 }
 
 func (g *Gui) selectSignature(layer *signatureLayer, id document.SignatureID) {
+	if id != 0 {
+		g.finishTextPlacement()
+	}
 	if id != 0 {
 		g.clearTextSelection()
 		g.clearRedactionSelection()
@@ -120,7 +124,7 @@ func (g *Gui) promptSignatureStroke() {
 		}
 	}
 	if !found {
-		dialog.ShowError(document.ErrSignatureNotFound, g.window)
+		g.showOperationError("signature_edit", document.ErrSignatureNotFound)
 		return
 	}
 	if _, ok := selected.Annotation(); ok {
@@ -179,13 +183,16 @@ func (g *Gui) activatePDFPage(page int) {
 		if page == g.activePDFPage {
 			return
 		}
+		g.finishTextPlacement()
 		if g.activePDFPage < len(g.pdfPageBorders) {
 			g.pdfPageBorders[g.activePDFPage].Hide()
-			g.pdfThumbBorders[g.activePDFPage].Hide()
 		}
 		g.clearAreaSelection()
 		g.deactivatePDFCrops()
 		g.activePDFPage = page
+		if !g.thumbnailSelectionFrozen && (g.thumbnailSelectionDocument != g.document || len(g.thumbnailSelection) <= 1) {
+			g.setThumbnailSelection([]int{page})
+		}
 		g.updateFileInfo()
 		if g.annotationTool == toolRedact {
 			if layer := g.signatureLayers[page]; layer != nil && layer.redactInput != nil {
@@ -194,7 +201,6 @@ func (g *Gui) activatePDFPage(page int) {
 		}
 		if page < len(g.pdfPageBorders) {
 			g.pdfPageBorders[page].Show()
-			g.pdfThumbBorders[page].Show()
 		}
 	}
 }
@@ -238,7 +244,7 @@ func (g *Gui) loadVisiblePDFPages() {
 }
 
 func (g *Gui) loadVisiblePDFThumbnails() {
-	if g.document == nil || g.document.Format() != document.FormatPDF || g.sidebar.container.Size().Height <= 0 {
+	if g.closed || g.document == nil || g.document.Format() != document.FormatPDF || g.sidebar.container.Size().Height <= 0 {
 		return
 	}
 	if g.thumbnailDrag != nil {
@@ -269,6 +275,7 @@ func (g *Gui) loadPDFThumbnail(page int) {
 	doc := g.document
 	generation := g.pdfGeneration
 	snapshot := doc.RenderingSnapshot()
+	started := time.Now()
 	go func() {
 		var preview image.Image
 		var err error
@@ -278,7 +285,7 @@ func (g *Gui) loadPDFThumbnail(page int) {
 			preview, err = snapshot.Thumbnail(page)
 		}
 		fyne.Do(func() {
-			if g.document != doc || generation != g.pdfGeneration || page >= len(g.pdfThumbLoading) {
+			if g.closed || g.document != doc || generation != g.pdfGeneration || page >= len(g.pdfThumbLoading) {
 				return
 			}
 			g.pdfThumbLoading[page] = false
@@ -292,6 +299,10 @@ func (g *Gui) loadPDFThumbnail(page int) {
 			g.pdfThumbImages[page].Image = preview
 			g.pdfThumbImages[page].Refresh()
 			g.pdfThumbLoaded[page] = true
+			g.hideThumbnailPlaceholder(page)
+			if elapsed := time.Since(started); elapsed >= time.Second {
+				g.logEvent("pdf_thumbnail_slow", "page=%d elapsed=%s", page+1, elapsed.Round(time.Millisecond))
+			}
 		})
 	}()
 }
@@ -359,8 +370,15 @@ func (g *Gui) refreshPagePreview(page int) {
 			g.pdfThumbImages[page].Image = preview
 			g.pdfThumbImages[page].Refresh()
 			g.pdfThumbLoaded[page] = true
+			g.hideThumbnailPlaceholder(page)
 		})
 	}()
+}
+
+func (g *Gui) hideThumbnailPlaceholder(page int) {
+	if page >= 0 && page < len(g.pdfThumbPlaceholders) {
+		g.pdfThumbPlaceholders[page].Hide()
+	}
 }
 
 func (g *Gui) documentChanged(page int) {

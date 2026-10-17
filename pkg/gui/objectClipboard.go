@@ -7,7 +7,6 @@ import (
 	"emanuelelongo/proview/pkg/document"
 	"emanuelelongo/proview/pkg/signatures"
 	"fmt"
-	"fyne.io/fyne/v2/dialog"
 	"golang.design/x/clipboard"
 	"image/png"
 	"math"
@@ -72,7 +71,7 @@ func (g *Gui) copySelectedObject(o document.Overlay) {
 				return
 			}
 			if e != nil {
-				dialog.ShowError(fmt.Errorf("Could not copy object: %w", e), g.window)
+				g.showOperationError("clipboard_copy", fmt.Errorf("Could not copy object: %w", e))
 			}
 		}
 	})
@@ -101,7 +100,7 @@ func (g *Gui) insertCopiedObject(doc *document.Document, layer *signatureLayer, 
 	rect := g.pastedObjectRect(c, w, h, count)
 	o, e := doc.PasteObject(page, rect, c, prepared)
 	if e != nil {
-		dialog.ShowError(e, g.window)
+		g.showOperationError("clipboard_paste", e)
 		return
 	}
 	g.objectPasteDigest = digest

@@ -246,9 +246,23 @@ func (g *Gui) refreshAnnotationControls() {
 	g.annotationControls.Objects = nil
 	// Keep an editable copy in the controls, independent from document snapshots.
 	data = data.Clone()
+	if !editing && tool == toolText && g.textPlacement != nil {
+		data = g.textPlacement.data.Clone()
+	}
 	publish := func(commit bool) {
 		if !editing {
 			g.annotationDefaults[data.Kind] = data.Clone()
+			if data.Kind == annotations.Text {
+				defaults := g.annotationDefaults[data.Kind]
+				defaults.Text = ""
+				g.annotationDefaults[data.Kind] = defaults
+				if placement := g.textPlacement; placement != nil {
+					text := placement.entry.Text
+					placement.data = data.Clone()
+					placement.data.Text = text
+					placement.layer.Refresh()
+				}
+			}
 			return
 		}
 		if data.Kind == annotations.Text && tool == toolText {
@@ -261,23 +275,25 @@ func (g *Gui) refreshAnnotationControls() {
 		row.Add(container.NewGridWrap(fyne.NewSize(width, 36), object))
 	}
 	if data.Kind == annotations.Text {
-		entry := newAnnotationEntry()
-		g.textEntry = entry
-		entry.SetText(data.Text)
-		entry.SetPlaceHolder("Enter text")
-		entry.OnChanged = func(value string) {
-			clean := annotations.SingleLine(value)
-			data.Text = clean
-			if clean != value {
-				entry.SetText(clean)
+		g.textEntry = nil
+		if editing {
+			entry := newAnnotationEntry()
+			g.textEntry = entry
+			entry.SetText(data.Text)
+			entry.SetPlaceHolder("Enter text")
+			entry.OnChanged = func(value string) {
+				clean := annotations.SingleLine(value)
+				data.Text = clean
+				if clean != value {
+					entry.SetText(clean)
+				}
 			}
-			if !editing {
-				publish(false)
-			}
+			entry.commit = func() { publish(true) }
+			entry.OnSubmitted = func(string) { entry.commit() }
+			wrap(220, entry)
+		} else if g.textPlacement != nil {
+			g.textEntry = g.textPlacement.entry
 		}
-		entry.commit = func() { publish(true) }
-		entry.OnSubmitted = func(string) { entry.commit() }
-		wrap(220, entry)
 		font := widget.NewSelect(annotations.Fonts, nil)
 		font.SetSelected(data.Font)
 		font.OnChanged = func(name string) { data.Font = name; publish(true) }
@@ -412,17 +428,35 @@ func (g *Gui) annotationSlider(low, high, step, value float64, set func(float64)
 type annotationEntry struct {
 	widget.Entry
 	commit func()
+	cancel func()
+	inline bool
 }
 
 func newAnnotationEntry() *annotationEntry { e := &annotationEntry{}; e.ExtendBaseWidget(e); return e }
 func (e *annotationEntry) FocusLost() {
 	e.Entry.FocusLost()
-	if e.commit != nil {
+	if e.commit != nil && !e.inline {
 		e.commit()
 	}
 }
 
+func (e *annotationEntry) TypedKey(event *fyne.KeyEvent) {
+	if event.Name == fyne.KeyEscape && e.cancel != nil {
+		e.cancel()
+		return
+	}
+	e.Entry.TypedKey(event)
+}
+
 func (g *Gui) addPageAnnotation(layer *signatureLayer, data annotations.Data, x, y float64, done func()) {
+	g.addPageAnnotationWithResult(layer, data, x, y, false, func(error) {
+		if done != nil {
+			done()
+		}
+	})
+}
+
+func (g *Gui) addPageAnnotationWithResult(layer *signatureLayer, data annotations.Data, x, y float64, textAnchor bool, done func(error)) {
 	if g.document == nil {
 		return
 	}
@@ -431,7 +465,13 @@ func (g *Gui) addPageAnnotation(layer *signatureLayer, data annotations.Data, x,
 	w, h := g.annotationPageSize(layer)
 	data = data.Clone()
 	g.queueAnnotation(func() func() {
-		asset, bounds, err := data.Artwork()
+		asset, bounds, metrics, err := data.TextArtwork()
+		if textAnchor {
+			if err == nil {
+				x -= metrics.Left
+				y -= data.Padding
+			}
+		}
 		var prepared signatures.Prepared
 		if err == nil {
 			prepared, err = asset.Prepare()
@@ -442,27 +482,24 @@ func (g *Gui) addPageAnnotation(layer *signatureLayer, data annotations.Data, x,
 				x = bounds.X0
 				y = bounds.Y0
 			}
-			width, height := bounds.W()/w, bounds.H()/h
-			if width > 1 || height > 1 {
-				err = fmt.Errorf("The object is too large for the page: reduce its size")
-			} else {
-				rect = document.NormalizedRect{X: math.Min(math.Max(x/w, 0), 1-width), Y: math.Min(math.Max(y/h, 0), 1-height), Width: width, Height: height}
-			}
+			rect, err = annotationPlacementRect(bounds.W(), bounds.H(), w, h, x, y)
 		}
 		return func() {
-			if done != nil {
-				done()
-			}
-			if g.document != doc {
+			defer func() {
+				if done != nil {
+					done(err)
+				}
+			}()
+			if g.closed || g.document != doc {
 				return
 			}
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showAnnotationError(page, data, err)
 				return
 			}
-			_, e := doc.AddAnnotation(page, rect, data, prepared)
-			if e != nil {
-				dialog.ShowError(e, g.window)
+			_, err = doc.AddAnnotation(page, rect, data, prepared)
+			if err != nil {
+				g.showAnnotationError(page, data, err)
 				return
 			}
 			layer.reload()
@@ -575,14 +612,14 @@ func (g *Gui) renderAnnotationProperties(original document.Overlay, data annotat
 			if err != nil {
 				if commit {
 					g.restoreAnnotationPreview()
-					dialog.ShowError(err, g.window)
+					g.showAnnotationError(original.Page, data, err)
 					g.refreshAnnotationControls()
 				}
 				return
 			}
 			if commit {
 				if err := doc.ReplaceAnnotation(original.ID, rect, data, prepared); err != nil {
-					dialog.ShowError(err, g.window)
+					g.showAnnotationError(original.Page, data, err)
 					return
 				}
 				if layer := g.signatureLayers[original.Page]; layer != nil {
@@ -627,13 +664,13 @@ func equalAnnotationProperties(a, b annotations.Data) bool {
 func strokeStyleButton(data *annotations.Data, publish func(bool)) *iconButton {
 	styles := []annotations.StrokeStyle{annotations.StrokeSolid, annotations.StrokeDashed, annotations.StrokeDotted}
 	if data.Kind == annotations.Drawing {
-		styles = append([]annotations.StrokeStyle{annotations.StrokeRound}, styles...)
+		styles = []annotations.StrokeStyle{annotations.StrokeRound, annotations.StrokeDashed, annotations.StrokeDotted}
+		if data.StrokeStyle == annotations.StrokeSolid {
+			data.StrokeStyle = annotations.StrokeRound
+		}
 	}
 	icons := map[annotations.StrokeStyle]string{annotations.StrokeSolid: "stroke-straight", annotations.StrokeDashed: "line-dashed", annotations.StrokeDotted: "line-dotted", annotations.StrokeRound: "circle-filled"}
 	labels := map[annotations.StrokeStyle]string{annotations.StrokeSolid: "Solid line", annotations.StrokeDashed: "Dashed line", annotations.StrokeDotted: "Dotted line", annotations.StrokeRound: "Round tip"}
-	if data.Kind == annotations.Drawing && data.StrokeStyle == annotations.StrokeSolid {
-		labels[annotations.StrokeSolid] = "Flat tip"
-	}
 	if data.StrokeStyle == "" {
 		data.StrokeStyle = styles[0]
 	}
@@ -641,9 +678,6 @@ func strokeStyleButton(data *annotations.Data, publish func(bool)) *iconButton {
 	refresh := func() {
 		button.SetIcon(tablerIcon(icons[data.StrokeStyle]))
 		button.tooltip = labels[data.StrokeStyle]
-		if data.Kind == annotations.Drawing && data.StrokeStyle == annotations.StrokeSolid {
-			button.tooltip = "Flat tip"
-		}
 	}
 	button = newIconButton(nil, "", func() {
 		for i, style := range styles {
@@ -684,6 +718,7 @@ func (g *Gui) restoreAnnotationPreview() {
 
 // Save/open/undo wait for pending vector preparation and commit entry edits.
 func (g *Gui) waitAnnotationChanges(action func()) bool {
+	g.finishTextPlacement()
 	if g.window != nil {
 		if _, ok := g.window.Canvas().Focused().(*annotationEntry); ok {
 			g.window.Canvas().Focus(nil)

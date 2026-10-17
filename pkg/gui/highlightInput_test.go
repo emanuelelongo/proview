@@ -99,7 +99,7 @@ func TestHighlightCancellationAndPropertyControls(t *testing.T) {
 	}
 }
 
-func TestDrawRoundAndFlatTipPreviewMatchOpacity(t *testing.T) {
+func TestDrawRoundAndLegacySolidPreviewMatchOpacity(t *testing.T) {
 	for _, style := range []annotations.StrokeStyle{annotations.StrokeRound, annotations.StrokeSolid} {
 		t.Run(string(style), func(t *testing.T) {
 			g, layer := annotationTestGui(t)

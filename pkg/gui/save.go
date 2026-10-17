@@ -156,7 +156,7 @@ func (g *Gui) writeExport(writer fyne.URIWriteCloser, data []byte, uri fyne.URI,
 
 func (g *Gui) finishFileSave(data []byte, uri fyne.URI, revision uint64, saved func()) {
 	if g.document == nil || g.document.Revision() != revision {
-		dialog.ShowError(errors.New("the document changed; save again to export the latest changes"), g.window)
+		g.showInputError(errors.New("the document changed; save again to export the latest changes"))
 		return
 	}
 	if err := document.WriteFileAtomic(uri.Path(), data); err != nil {
@@ -217,7 +217,7 @@ func (g *Gui) restoresRedactions(target fyne.URI) bool {
 
 func (g *Gui) confirmRedactionExport(target fyne.URI, action func()) {
 	if target != nil && target.Scheme() != "file" && (g.document.HasRedactions() || g.restoresRedactions(target)) {
-		dialog.ShowError(errors.New("redacted PDFs require a local destination for atomic saving; use Save As"), g.window)
+		g.showInputError(errors.New("redacted PDFs require a local destination for atomic saving; use Save As"))
 		return
 	}
 	message := ""
@@ -285,11 +285,11 @@ func (g *Gui) showLocalSaveAsDialog(exports preparedExports, saved func()) {
 			if g.document.Format() == document.FormatPDF {
 				expected = ".pdf"
 			}
-			dialog.ShowError(fmt.Errorf("enter a file name with a supported extension (%s)", expected), g.window)
+			g.showInputError(fmt.Errorf("enter a file name with a supported extension (%s)", expected))
 			return
 		}
 		if g.document != doc || doc.Revision() != exports.revision {
-			dialog.ShowError(errors.New("the document changed; save again"), g.window)
+			g.showInputError(errors.New("the document changed; save again"))
 			return
 		}
 		uri := storage.NewFileURI(filepath.Join(folder, filename))

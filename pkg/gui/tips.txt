@@ -1,18 +1,29 @@
 # Status bar tips: one complete English tip per line.
 
-Tip: Drop files onto the window to open them; an occupied window opens them in new windows.
+Tip: Drop files onto the window to open them.
+Tip: Use the sidebar to switch between documents retained in the same window.
+Tip: Open a PDF while viewing another PDF to choose a new window or append its pages.
 Tip: Hold Shift while clicking New page to create a document from the image in your clipboard.
-Tip: Use Redact PDF to securely remove sensitive information from PDFs when you export.
-Tip: Hold Shift to move or resize an annotation without leaving the current drawing tool.
+Tip: Click a PDF thumbnail to switch pages; drag it to change the page order.
+Tip: Use Command/Control-click to select individual PDF pages, or Shift-click to select a range.
+Tip: Drag any selected PDF thumbnail to move the selected pages together.
+Tip: Right-click selected PDF thumbnails to duplicate or delete the pages together.
+Tip: Select Text, click the page and type; press Enter to place the text or Esc to cancel.
+Tip: Change font, size, style and color in the property bar while entering text on the page.
 Tip: Drag Highlight across words and lines; its opacity stays at 30%.
-Tip: In Draw, the filled circle selects a round tip and the solid line selects a flat marker tip.
+Tip: Select a highlight to change its color; highlights cannot be resized.
+Tip: In Draw, use the style button to switch between round, dashed and dotted strokes.
+Tip: Adjust Draw opacity in the property bar for lighter or stronger strokes.
+Tip: Use Shapes to draw a straight line or a simple arrow with a fixed-size head.
+Tip: Hold Shift to select annotations without leaving the current drawing tool.
 Tip: Hold Ctrl while resizing a shape to preserve its proportions.
 Tip: Press Esc to cancel the current operation or clear a selection.
-Tip: Click a thumbnail to switch PDF pages; drag thumbnails to reorder them.
 Tip: Select an inserted signature to change its color; SVG signatures also support thickness changes.
-Tip: Use Undo to revert your last change.
+Tip: Use Undo to revert your last change, including a group of PDF page edits.
 Tip: Right-click an object to bring it forward or send it backward among overlapping objects.
 Tip: Hold Space and drag to pan around a zoomed document or an STL model.
+Tip: Use the arrow keys to pan an image or PDF when no control or dialog has focus.
+Tip: Use Page Up and Page Down to switch PDF pages when no control or dialog has focus.
 Tip: Hold Ctrl (Command on macOS) and scroll to zoom the document.
 Tip: Press Ctrl+0 (Command+0 on macOS) to fit the document to the window.
 Tip: Select recognized text in an image or PDF to copy it.
@@ -21,22 +32,19 @@ Tip: Use F3 and Shift+F3 to move between search matches, or Enter and Shift+Ente
 Tip: Search also finds text in images when text recognition is enabled.
 Tip: Fill PDF form is enabled when the PDF contains supported editable fields.
 Tip: Activate Fill PDF form to enter values directly on the page; saved fields remain editable.
-Tip: Activate Edit PDF Text and click a word to change its text.
+Tip: Missing required form values are marked, but you can still save an unfinished draft.
+Tip: Activate Edit PDF Text and click a native PDF word to change its text.
 Tip: Clear a word's value in Edit PDF Text and click Apply to delete it.
-Tip: Use Move beside the text box to drag a PDF word; Move stays active after each drop.
+Tip: In Edit PDF Text, Move drags the selected word and Duplicate starts dragging a copy.
 Tip: While moving PDF text, hold Shift to disable snapping and keep the alignment guides visible.
 Tip: Each completed PDF text move has its own Undo step; press Esc to leave Move.
-Tip: PDF text edits keep surrounding content fixed and reject positions that overlap other text.
+Tip: PDF text edits keep surrounding content fixed; edits, moves and copies cannot overlap other source text.
+Tip: Use Redact PDF to securely remove sensitive information from PDFs when you export.
 Tip: Click a QR code to reveal its contents in the status bar; click a link there to open it.
 Tip: Crop a PDF page or STL view to open the selected area as an image in a new window.
 Tip: File > Close closes the current document and keeps the editor window open.
 Tip: For STL models, keys 1-7 select standard views and 0 toggles wireframe.
 Tip: GIF and multipage TIFF files currently show only their first frame or page.
 Tip: Sync your signature library with Google Drive or S3 to use it on another computer.
+Tip: Use Help > Open logs folder to find diagnostic logs when reporting a problem.
 Tip: Use Help > Show Tips to hide or show these suggestions.
-
-Open additional files in this window and use the sidebar to switch documents.
-Open a PDF while viewing a PDF to choose a new window or append its pages.
-
-Tip: In Edit PDF Text, Duplicate starts dragging a copy of the selected word.
-Tip: Move PDF text to a free area: edits and copies cannot overlap other source text.

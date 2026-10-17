@@ -92,7 +92,7 @@ func TestAreaCopyPasteAndTextClipboardIsolation(t *testing.T) {
 		t.Fatal("paste Undo failed")
 	}
 	g.setAnnotationTool(toolText)
-	g.window.Canvas().Focus(g.textEntry)
+	g.beginTextPlacement(g.imageSignatureLayer, annotations.Point{X: 100, Y: 100})
 	reads, writes := mem.reads, mem.writes
 	g.copyArea()
 	g.pasteImage()
@@ -128,16 +128,11 @@ func TestPDFAreaCopyPasteWithoutObjectFormat(t *testing.T) {
 func TestTextInsertionClearsEntryAndDefaults(t *testing.T) {
 	g, l := annotationTestGui(t)
 	g.setAnnotationTool(toolText)
-	g.textEntry.SetText("First")
-	l.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(100, 250)})
-	finishAnnotationJobs(t, g)
-	if g.annotationTool != toolText || g.hasSelectedSignature || g.textEntry.Text != "" || g.annotationDefaults[annotations.Text].Text != "" {
+	placeTestText(t, g, l, fyne.NewPos(100, 250), "First")
+	if g.annotationTool != toolText || g.hasSelectedSignature || g.textEntry != nil || g.annotationDefaults[annotations.Text].Text != "" {
 		t.Fatal("text insertion did not reset the text control")
 	}
-	g.textEntry.SetText("Second")
-	l.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(350, 250)})
-	finishAnnotationJobs(t, g)
-	finishAnnotationJobs(t, g)
+	placeTestText(t, g, l, fyne.NewPos(350, 250), "Second")
 	if len(g.document.Overlays()) != 2 {
 		t.Fatal("next text missing")
 	}
@@ -297,9 +292,7 @@ func TestObjectClipboardDuplicatesEditableObjectsAcrossWindows(t *testing.T) {
 	desktopImageClipboard = mem
 	t.Cleanup(func() { desktopImageClipboard = previous })
 	g.setAnnotationTool(toolText)
-	g.textEntry.SetText("Original text")
-	l.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(100, 250)})
-	finishAnnotationJobs(t, g)
+	placeTestText(t, g, l, fyne.NewPos(100, 250), "Original text")
 	g.setAnnotationTool(toolSelect)
 	original := g.document.Overlays()[0]
 	g.selectSignature(l, original.ID)
@@ -375,17 +368,14 @@ func TestObjectClipboardDuplicatesEditableObjectsAcrossWindows(t *testing.T) {
 func TestTextPlacementRequiresFreshEntry(t *testing.T) {
 	g, l := annotationTestGui(t)
 	g.setAnnotationTool(toolText)
-	g.textEntry.SetText("First")
-	l.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(100, 250)})
-	finishAnnotationJobs(t, g)
+	placeTestText(t, g, l, fyne.NewPos(100, 250), "First")
 	l.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(350, 250)})
+	g.textEntry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
 	finishAnnotationJobs(t, g)
 	if len(g.document.Overlays()) != 1 {
 		t.Fatal("an empty entry duplicated the previous text")
 	}
-	g.textEntry.SetText("Updated before next placement")
-	l.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(350, 250)})
-	finishAnnotationJobs(t, g)
+	placeTestText(t, g, l, fyne.NewPos(350, 250), "Updated before next placement")
 	if len(g.document.Overlays()) != 2 || g.annotationTool != toolText {
 		t.Fatal("fresh text was not placed")
 	}

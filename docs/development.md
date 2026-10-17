@@ -353,12 +353,14 @@ and project documentation use English.
   Other applications receive a transparent PNG representation. Text fields keep
   their normal clipboard behavior.
   PDF area copies use 144 DPI; image copies retain source resolution.
-- Right-click a PDF thumbnail and choose **Duplicate page** to insert an independent
-  editable copy immediately after it, including objects and redaction marks.
+- Command/Control-click PDF thumbnails to select individual pages, or Shift-click
+  to select a range. Drag the selection to move it together; right-click to
+  duplicate or delete it in one Undo step. Copies retain objects/redaction marks
+  and form an ordered group after the last selected original.
 - **Shapes** (**Command/Control+Shift+S**) offers icon-only choices for rectangle, oval, callout, arrow,
-  five-point star and magnifier. Drag to create; ordinary shapes support color,
+  straight line, five-point star and magnifier. Drag to create; ordinary shapes support color,
   stroke width, solid/dashed/dotted lines and an icon toggle for outline/filled
-  appearance. Draw also supports solid, dashed and dotted strokes. Hold **Control**
+  appearance. Draw supports round, dashed and dotted strokes with independent opacity. Hold **Control**
   to constrain an oval to a circle or preserve a shape's proportions while resizing;
   combine it with **Shift** to resize proportionally while Select is temporarily active.
 - The magnifier stays circular and has a separate **1–8×** zoom slider. It follows

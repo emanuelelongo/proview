@@ -21,7 +21,7 @@ func (g *Gui) signatureArchive() (*signatures.Store, bool) {
 	if g.signatureStore == nil {
 		service, err := signatureService(g.app)
 		if err != nil {
-			dialog.ShowError(err, g.window)
+			g.showOperationError("signature_library", err)
 			return nil, false
 		}
 		g.signatureStore = service.store
@@ -89,7 +89,8 @@ func (g *Gui) showSignatureLibrary() {
 				}
 				content.Objects = nil
 				if listErr != nil {
-					content.Add(widget.NewLabel("Some signatures could not be read: " + listErr.Error()))
+					g.operationFailureMessage("signature_library", listErr)
+					content.Add(widget.NewLabel("Some saved signatures could not be read. Details are available in Help → Open logs folder."))
 				}
 				if len(entries) == 0 {
 					content.Add(widget.NewLabel("No saved signatures. Create your first signature."))
@@ -115,7 +116,7 @@ func (g *Gui) showSignatureLibrary() {
 								}
 								fyne.Do(func() {
 									if err != nil {
-										dialog.ShowError(err, g.window)
+										g.showOperationError("signature_library", err)
 										return
 									}
 									library.Hide()
@@ -179,7 +180,7 @@ func (g *Gui) acquireSignature(done func(signatures.Entry)) {
 func (g *Gui) importArchiveSignature(done func(signatures.Entry)) {
 	g.chooseFile("Import signature", []string{".svg", ".png", ".jpg", ".jpeg"}, func(uri fyne.URIReadCloser, err error) {
 		if err != nil {
-			dialog.ShowError(err, g.window)
+			g.showOperationError("signature_library", err)
 			return
 		}
 		if uri == nil {
@@ -209,7 +210,7 @@ func (g *Gui) importArchiveSignature(done func(signatures.Entry)) {
 					return
 				}
 				if readErr != nil {
-					dialog.ShowError(readErr, g.window)
+					g.showOperationError("signature_library", readErr)
 					return
 				}
 				if scan.Image != nil {
@@ -262,7 +263,7 @@ func (g *Gui) saveArchiveEntry(entry signatures.Entry, done func(signatures.Entr
 		fyne.Do(func() {
 			progress.Hide()
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("signature_library", err)
 				return
 			}
 			if done != nil {
@@ -295,7 +296,7 @@ func (g *Gui) insertSignatureAsset(asset signatures.Asset) {
 			g.working = false
 			defer g.processPendingFiles()
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("signature_library", err)
 				return
 			}
 			if g.document != doc {
@@ -307,12 +308,12 @@ func (g *Gui) insertSignatureAsset(asset signatures.Asset) {
 			size := prepared.Preview.Bounds().Size()
 			rect, err := defaultSignatureRect(pageSize.X, pageSize.Y, size.X, size.Y)
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("signature_library", err)
 				return
 			}
 			signature, err := doc.AddSignatureAsset(page, rect, prepared)
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("signature_library", err)
 				return
 			}
 			layer := g.signatureLayers[page]
@@ -372,7 +373,7 @@ func (g *Gui) editSelectedDrawing(signature document.SignatureOverlay) {
 				g.working = false
 				defer g.processPendingFiles()
 				if err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("signature_library", err)
 					return
 				}
 				if g.document != doc {
@@ -380,7 +381,7 @@ func (g *Gui) editSelectedDrawing(signature document.SignatureOverlay) {
 					return
 				}
 				if err = doc.ReplaceSignatureAsset(signature.ID, prepared); err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("signature_library", err)
 					return
 				}
 				if layer := g.signatureLayers[signature.Page]; layer != nil {

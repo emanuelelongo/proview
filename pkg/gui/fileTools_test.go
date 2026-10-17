@@ -92,7 +92,7 @@ func TestNewActionsAvailableAndToolbarUsesIcons(t *testing.T) {
 			labels[item.Label] = true
 		}
 	}
-	for _, label := range []string{"New page", "New from clipboard", "Open PDFs Together", "Append PDFs", "Delete Page"} {
+	for _, label := range []string{"New page", "New from clipboard", "Open PDFs Together", "Append PDFs", "Duplicate Pages", "Delete Pages"} {
 		if !labels[label] {
 			t.Fatalf("missing action %s", label)
 		}

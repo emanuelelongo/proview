@@ -52,6 +52,8 @@ func annotationTestGui(t *testing.T) (*Gui, *signatureLayer) {
 	g.imageSignatureLayer = layer
 	layer.Resize(fyne.NewSize(1000, 800))
 	g.bindAnnotationLayer(layer)
+	g.window.SetContent(layer)
+	layer.Resize(fyne.NewSize(1000, 800))
 	return g, layer
 }
 func mouseAt(x, y float32) *desktop.MouseEvent {
@@ -99,12 +101,8 @@ func TestPageDrawingLivePreviewSeparateStrokesAndUndo(t *testing.T) {
 func TestPageTextInsertionEditingAndStableStacking(t *testing.T) {
 	g, layer := annotationTestGui(t)
 	g.setAnnotationTool(toolText)
-	d := g.annotationDefaults[annotations.Text]
-	d.Text = "Sample text"
-	g.annotationDefaults[annotations.Text] = d
-	layer.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(100, 250)})
-	finishAnnotationJobs(t, g)
-	if g.annotationTool != toolText || g.hasSelectedSignature || g.textEntry.Text != "" || len(g.document.Overlays()) != 1 {
+	placeTestText(t, g, layer, fyne.NewPos(100, 250), "Sample text")
+	if g.annotationTool != toolText || g.hasSelectedSignature || g.textEntry != nil || len(g.document.Overlays()) != 1 {
 		t.Fatal("text insertion did not clear the entry for the next object")
 	}
 	o := g.document.Overlays()[0]
@@ -179,6 +177,10 @@ func TestAnnotationPropertyControlsFitDefaultWindow(t *testing.T) {
 	}
 	if path := os.Getenv("PROVIEW_ANNOTATION_PREVIEW"); path != "" {
 		g.window.Show()
+		origin, _ := layer.displayRect()
+		layer.input.Tapped(&fyne.PointEvent{Position: origin.Add(fyne.NewPos(120, 120))})
+		g.textEntry.SetText("Write directly on the page")
+		finishAnnotationJobs(t, g)
 		file, err := os.Create(path)
 		if err != nil {
 			t.Fatal(err)

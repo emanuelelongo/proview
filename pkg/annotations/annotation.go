@@ -174,16 +174,9 @@ func family(name string, style int) (*sfnt.Font, error) {
 	if f := families[name]; f != nil {
 		return f[style], nil
 	}
-	var data [][]byte
-	switch name {
-	case "Go Sans":
-		data = [][]byte{goregular.TTF, gobold.TTF, goitalic.TTF, gobolditalic.TTF}
-	case "Go Mono":
-		data = [][]byte{gomono.TTF, gomonobold.TTF, gomonoitalic.TTF, gomonobolditalic.TTF}
-	case "Latin Modern Roman":
-		data = [][]byte{lmroman10regular.TTF, lmroman10bold.TTF, lmroman10italic.TTF, lmroman10bolditalic.TTF}
-	default:
-		return nil, fmt.Errorf("Font unavailable: %s", name)
+	data, err := fontSources(name)
+	if err != nil {
+		return nil, err
 	}
 	faces := make([]*sfnt.Font, len(data))
 	for i, b := range data {
@@ -196,6 +189,36 @@ func family(name string, style int) (*sfnt.Font, error) {
 	families[name] = faces
 	return faces[style], nil
 }
+
+// FontData returns an independent copy of the bundled face used for text artwork.
+func FontData(name string, bold, italic bool) ([]byte, error) {
+	faces, err := fontSources(name)
+	if err != nil {
+		return nil, err
+	}
+	style := 0
+	if bold {
+		style |= 1
+	}
+	if italic {
+		style |= 2
+	}
+	return append([]byte(nil), faces[style]...), nil
+}
+
+func fontSources(name string) ([][]byte, error) {
+	switch name {
+	case "Go Sans":
+		return [][]byte{goregular.TTF, gobold.TTF, goitalic.TTF, gobolditalic.TTF}, nil
+	case "Go Mono":
+		return [][]byte{gomono.TTF, gomonobold.TTF, gomonoitalic.TTF, gomonobolditalic.TTF}, nil
+	case "Latin Modern Roman":
+		return [][]byte{lmroman10regular.TTF, lmroman10bold.TTF, lmroman10italic.TTF, lmroman10bolditalic.TTF}, nil
+	default:
+		return nil, fmt.Errorf("Font unavailable: %s", name)
+	}
+}
+
 func textPath(d Data) (*vector.Path, float64, error) {
 	style := 0
 	if d.Bold {
@@ -283,7 +306,21 @@ func textPath(d Data) (*vector.Path, float64, error) {
 
 // Artwork builds one filled path per stroke so opacity is applied once even at
 // joins and self intersections. Text is exported as glyph outlines.
-func (d Data) Artwork() (asset signatures.Asset, bounds vector.Rect, err error) {
+func (d Data) Artwork() (signatures.Asset, vector.Rect, error) {
+	return d.artwork(nil)
+}
+
+// TextMetrics locates the glyph origin and baseline within padded artwork.
+type TextMetrics struct{ Left, Baseline float64 }
+
+// TextArtwork shares the exact outlines and bounds used for insertion/export.
+func (d Data) TextArtwork() (signatures.Asset, vector.Rect, TextMetrics, error) {
+	var metrics TextMetrics
+	asset, bounds, err := d.artwork(&metrics)
+	return asset, bounds, metrics, err
+}
+
+func (d Data) artwork(metrics *TextMetrics) (asset signatures.Asset, bounds vector.Rect, err error) {
 	if err = d.Validate(); err != nil {
 		return
 	}
@@ -309,6 +346,9 @@ func (d Data) Artwork() (asset signatures.Asset, bounds vector.Rect, err error) 
 		b := path.Bounds()
 		left := math.Min(0, b.X0)
 		bounds = vector.Rect{X0: 0, Y0: 0, X1: math.Max(advance, b.X1) - left + 2*d.Padding, Y1: b.H() + 2*d.Padding}
+		if metrics != nil {
+			*metrics = TextMetrics{Left: d.Padding - left, Baseline: d.Padding - b.Y0}
+		}
 		path = path.Translate(d.Padding-left, d.Padding-b.Y0)
 	} else if d.Kind == Highlight && len(d.Quads) > 0 {
 		path = &vector.Path{}
@@ -332,17 +372,12 @@ func (d Data) Artwork() (asset signatures.Asset, bounds vector.Rect, err error) 
 		for _, p := range d.Points[1:] {
 			path.LineTo(p.X, p.Y)
 		}
-		if d.Kind == Drawing && d.StrokeStyle == StrokeSolid {
-			path = flatMarkerPath(d.Points, d.Width).Settle(vector.NonZero)
-		} else if len(d.Points) == 1 {
+		if len(d.Points) == 1 {
 			path = vector.Circle(d.Width/2).Translate(d.Points[0].X, d.Points[0].Y)
 		} else {
 			path = d.dashPath(path)
 			if d.Kind == Drawing {
-				// Resolve overlaps in the outlined stroke before handing it to
-				// raster renderers. Otherwise dense self-intersections can acquire
-				// spurious filled regions even though the source SVG has no fill.
-				path = path.Stroke(d.Width, vector.RoundCap, vector.RoundJoin, .05*d.Padding).Settle(vector.EvenOdd)
+				path = roundStrokePath(path, d.Width)
 			} else {
 				path = path.Stroke(d.Width, vector.RoundCap, vector.RoundJoin, .05*d.Padding)
 			}

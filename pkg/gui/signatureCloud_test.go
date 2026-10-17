@@ -101,7 +101,7 @@ func TestCloudSettingsRemainAvailableWithoutOAuthAndCloseOnEscape(t *testing.T) 
 	}
 	service.coordinator.Report(nil)
 	service.setWarning(errors.New("reconnect required"))
-	if !strings.Contains(service.message(service.coordinator.Status()), "reconnect required") {
+	if !strings.Contains(service.message(service.coordinator.Status()), "Reconnect") {
 		t.Fatal("disconnected error is not visible")
 	}
 }

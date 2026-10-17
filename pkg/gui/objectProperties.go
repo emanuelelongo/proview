@@ -12,6 +12,10 @@ import (
 )
 
 func (g *Gui) commitTextObject() {
+	if g.textPlacement != nil {
+		g.finishTextPlacement()
+		return
+	}
 	if g.annotationTool != toolText {
 		return
 	}
@@ -77,7 +81,7 @@ func (g *Gui) showSignatureProperties(o document.Overlay) {
 			wrap(36, widget.NewIcon(tablerIcon("stroke-straight")))
 			wrap(85, numberSelect([]float64{0, 1, 2, 3, 4, 6, 8, 10}, float64(o.StrokeWidth), "", func(v float64) {
 				if err := g.document.SetSignatureStroke(o.ID, int(v)); err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("object_edit", err)
 					return
 				}
 				g.reloadObjectPage(o.Page, o.ID)
@@ -108,11 +112,11 @@ func (g *Gui) replaceSignatureStyle(original document.Overlay, change func(signa
 				return
 			}
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("object_edit", err)
 				return
 			}
 			if err = doc.ReplaceSignatureAsset(current.ID, p); err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("object_edit", err)
 				return
 			}
 			g.reloadObjectPage(current.Page, current.ID)
@@ -176,12 +180,12 @@ func (g *Gui) transformSelected(command string) {
 				return
 			}
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("object_edit", err)
 				return
 			}
 			if hasSelection {
 				if err = doc.TransformOverlay(selected.ID, command); err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("object_edit", err)
 					return
 				}
 				l := g.signatureLayers[selected.Page]
@@ -194,14 +198,14 @@ func (g *Gui) transformSelected(command string) {
 				g.reloadObjectPage(selected.Page, selected.ID)
 			} else if pageTransform {
 				if err = doc.TransformPDFPage(page, command); err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("object_edit", err)
 					return
 				}
 				g.clearAreaSelection()
 				g.annotationAfterIdle = append(g.annotationAfterIdle, func() { g.rebuildPDF(page) })
 			} else {
 				if err = doc.TransformImage(command); err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("object_edit", err)
 					return
 				}
 				g.clearAreaSelection()

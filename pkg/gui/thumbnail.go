@@ -13,6 +13,8 @@ import (
 type thumbnailTap struct {
 	widget.BaseWidget
 	onTap       func()
+	onSelect    func(fyne.KeyModifier)
+	modifiers   fyne.KeyModifier
 	onDrag      func(*fyne.DragEvent)
 	onDragEnd   func()
 	onSecondary func(*fyne.PointEvent)
@@ -28,9 +30,12 @@ func newThumbnailTap(onTap func()) *thumbnailTap {
 }
 
 func (t *thumbnailTap) Tapped(*fyne.PointEvent) {
-	if t.onTap != nil {
+	if t.onSelect != nil {
+		t.onSelect(t.modifiers)
+	} else if t.onTap != nil {
 		t.onTap()
 	}
+	t.modifiers = 0
 }
 
 func (t *thumbnailTap) CreateRenderer() fyne.WidgetRenderer {
@@ -43,6 +48,7 @@ func (t *thumbnailTap) Dragged(event *fyne.DragEvent) {
 	}
 }
 func (t *thumbnailTap) DragEnd() {
+	t.modifiers = 0
 	if t.onDragEnd != nil {
 		t.onDragEnd()
 	}
@@ -53,6 +59,9 @@ func (t *thumbnailTap) TappedSecondary(event *fyne.PointEvent) {
 	}
 }
 func (t *thumbnailTap) MouseDown(event *desktop.MouseEvent) {
+	if event.Button == desktop.MouseButtonPrimary {
+		t.modifiers = event.Modifier
+	}
 	if t.onMouseDown != nil {
 		t.onMouseDown(event)
 	}

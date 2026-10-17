@@ -10,7 +10,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -56,7 +55,7 @@ func (l *formLayer) reload() {
 				return
 			}
 			if err := l.editor.document.SetFormValues(l.page, f.ID, values); err != nil {
-				dialog.ShowError(err, l.editor.window)
+				l.editor.showOperationError("pdf_form", err)
 				return
 			}
 			l.editor.activatePDFPage(l.page)
@@ -104,7 +103,7 @@ func (l *formLayer) reload() {
 					return
 				}
 				if err := l.editor.document.ResetForm(l.page, f.ID); err != nil {
-					dialog.ShowError(err, l.editor.window)
+					l.editor.showOperationError("pdf_form", err)
 					return
 				}
 				l.editor.syncFormValues()
@@ -307,7 +306,7 @@ func (g *Gui) refreshFormPreviews() {
 					return
 				}
 				if err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("pdf_form", err)
 					return
 				}
 				g.pdfPageImages[page].Image = preview

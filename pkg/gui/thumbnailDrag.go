@@ -2,11 +2,11 @@ package gui
 
 import (
 	"emanuelelongo/proview/pkg/document"
+	"slices"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -19,8 +19,9 @@ type thumbnailDragState struct {
 	pointer         fyne.Position // relative to the sidebar viewport, independent of scrolling
 	inside          bool
 	timer           *time.Timer
-	preview         *canvas.Image
-	translucency    float64
+	pages           []int
+	modifiers       fyne.KeyModifier
+	previews        map[*canvas.Image]float64
 }
 
 // A passive marker paints an insertion line without changing card geometry or
@@ -67,7 +68,7 @@ func (g *Gui) pressThumbnail(page int, doc *document.Document, generation uint64
 	if event.Button != desktop.MouseButtonPrimary || g.working || g.document != doc || g.pdfGeneration != generation {
 		return
 	}
-	g.thumbnailPress = &thumbnailDragState{document: doc, generation: generation, from: page}
+	g.thumbnailPress = &thumbnailDragState{document: doc, generation: generation, from: page, modifiers: event.Modifier}
 }
 
 func (g *Gui) releaseThumbnail(event *desktop.MouseEvent) {
@@ -102,13 +103,23 @@ func (g *Gui) dragThumbnail(page int, doc *document.Document, generation uint64,
 		if page < 0 || page >= doc.PageCount() {
 			return
 		}
-		g.thumbnailDrag = &thumbnailDragState{document: doc, generation: generation, from: page}
-		if page < len(g.pdfThumbImages) {
-			state := g.thumbnailDrag
-			state.preview = g.pdfThumbImages[page]
-			state.translucency = state.preview.Translucency
-			state.preview.Translucency = .5
-			state.preview.Refresh()
+		pages := g.selectedPDFPages()
+		if !slices.Contains(pages, page) {
+			modifiers := fyne.KeyModifier(0)
+			if g.thumbnailPress != nil {
+				modifiers = g.thumbnailPress.modifiers
+			}
+			g.selectThumbnail(page, modifiers)
+			pages = g.selectedPDFPages()
+		}
+		g.thumbnailDrag = &thumbnailDragState{document: doc, generation: generation, from: page, pages: pages, previews: make(map[*canvas.Image]float64)}
+		for _, index := range pages {
+			if index < len(g.pdfThumbImages) {
+				preview := g.pdfThumbImages[index]
+				g.thumbnailDrag.previews[preview] = preview.Translucency
+				preview.Translucency = .5
+				preview.Refresh()
+			}
 		}
 		g.activatePDFPage(page)
 	}
@@ -209,9 +220,9 @@ func (g *Gui) cancelThumbnailDrag() bool {
 	if state.timer != nil {
 		state.timer.Stop()
 	}
-	if state.preview != nil {
-		state.preview.Translucency = state.translucency
-		state.preview.Refresh()
+	for preview, translucency := range state.previews {
+		preview.Translucency = translucency
+		preview.Refresh()
 	}
 	g.thumbnailDrag = nil
 	for _, marker := range g.pdfThumbDropIndicators {
@@ -223,33 +234,25 @@ func (g *Gui) cancelThumbnailDrag() bool {
 // The insertion index refers to the gaps in the original list, including the
 // final gap. Removing the source first adjusts destinations below that source.
 func thumbnailPageOrder(count, from, insertion int) ([]int, int) {
-	if count < 1 || from < 0 || from >= count || insertion < 0 || insertion > count {
-		return nil, -1
-	}
-	to := insertion
-	if to > from {
-		to--
-	}
-	order := make([]int, 0, count)
-	for page := 0; page < count; page++ {
-		if page != from {
-			order = append(order, page)
-		}
-	}
-	order = append(order, 0)
-	copy(order[to+1:], order[to:])
-	order[to] = from
-	return order, to
+	return thumbnailPagesOrder(count, []int{from}, insertion)
 }
+
 func (g *Gui) finishThumbnailDrag() {
 	state := g.thumbnailDrag
 	if state == nil {
 		return
 	}
 	g.cancelThumbnailDrag()
+	g.finishThumbnailMove(state)
+}
+
+func (g *Gui) finishThumbnailMove(state *thumbnailDragState) {
+	if g.waitAnnotationChanges(func() { g.finishThumbnailMove(state) }) {
+		return
+	}
 	to, moved, err := g.applyThumbnailMove(state)
 	if err != nil {
-		dialog.ShowError(err, g.window)
+		g.showOperationError("pdf_pages", err)
 		return
 	}
 	if moved {
@@ -261,8 +264,25 @@ func (g *Gui) applyThumbnailMove(state *thumbnailDragState) (int, bool, error) {
 	if !state.inside || g.working || g.document != state.document || g.pdfGeneration != state.generation {
 		return 0, false, nil
 	}
-	order, to := thumbnailPageOrder(g.document.PageCount(), state.from, state.insertion)
-	if order == nil || to == state.from {
+	pages := state.pages
+	if len(pages) == 0 {
+		pages = []int{state.from}
+	}
+	order, _ := thumbnailPagesOrder(g.document.PageCount(), pages, state.insertion)
+	if order == nil {
+		return 0, false, nil
+	}
+	unchanged := true
+	to := 0
+	for index, page := range order {
+		if page != index {
+			unchanged = false
+		}
+		if page == state.from {
+			to = index
+		}
+	}
+	if unchanged {
 		return 0, false, nil
 	}
 	if err := g.document.SetPageOrder(order); err != nil {
@@ -293,11 +313,52 @@ func (g *Gui) thumbnailContextMenu(page int, event *fyne.PointEvent) {
 	if g.working {
 		return
 	}
+	if !slices.Contains(g.selectedPDFPages(), page) {
+		g.setThumbnailSelection([]int{page})
+	}
 	g.activatePDFPage(page)
-	item := fyne.NewMenuItem("Delete page", func() { g.deletePDFPage(page) })
+	pages := g.selectedPDFPages()
+	deleteLabel, duplicateLabel := "Delete page", "Duplicate page"
+	if len(pages) > 1 {
+		deleteLabel = "Delete selected pages"
+		duplicateLabel = "Duplicate selected pages"
+	}
+	item := fyne.NewMenuItem(deleteLabel, func() { g.deletePDFPages(pages) })
 	item.Icon = tablerIcon("trash")
-	item.Disabled = g.document == nil || g.document.PageCount() < 2
-	duplicate := fyne.NewMenuItem("Duplicate page", func() { g.duplicatePDFPage(page) })
+	item.Disabled = g.document == nil || len(pages) >= g.document.PageCount()
+	duplicate := fyne.NewMenuItem(duplicateLabel, func() { g.duplicatePDFPages(pages) })
 	duplicate.Icon = tablerIcon("duplicate")
-	widget.NewPopUpMenu(fyne.NewMenu("Page", duplicate, item), g.window.Canvas()).ShowAtPosition(event.AbsolutePosition)
+	widget.NewPopUpMenu(fyne.NewMenu("Pages", duplicate, item), g.window.Canvas()).ShowAtPosition(event.AbsolutePosition)
+}
+
+// Insertion is a gap in the original list. Selected pages retain document order.
+func thumbnailPagesOrder(count int, pages []int, insertion int) ([]int, int) {
+	if count < 1 || len(pages) == 0 || insertion < 0 || insertion > count {
+		return nil, -1
+	}
+	selected := make(map[int]bool, len(pages))
+	to := insertion
+	for _, page := range pages {
+		if page < 0 || page >= count || selected[page] {
+			return nil, -1
+		}
+		selected[page] = true
+		if page < insertion {
+			to--
+		}
+	}
+	remaining := make([]int, 0, count-len(pages))
+	group := make([]int, 0, len(pages))
+	for page := 0; page < count; page++ {
+		if selected[page] {
+			group = append(group, page)
+		} else {
+			remaining = append(remaining, page)
+		}
+	}
+	order := make([]int, 0, count)
+	order = append(order, remaining[:to]...)
+	order = append(order, group...)
+	order = append(order, remaining[to:]...)
+	return order, to
 }

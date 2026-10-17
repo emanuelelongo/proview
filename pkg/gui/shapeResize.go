@@ -2,7 +2,6 @@ package gui
 
 import (
 	"emanuelelongo/proview/pkg/document"
-	"fyne.io/fyne/v2/dialog"
 )
 
 // Coalesce pointer updates: one resize preparation runs per object, followed
@@ -35,11 +34,10 @@ func (w *signatureWidget) scheduleShapeResize() {
 			}
 			if err != nil {
 				if w.shapeResizeFinish {
-					g.logEvent("shape_resize_failed", "level=WARN error=%q", err)
 					_ = doc.CancelOverlayEdit(w.id)
 					w.editActive = false
 					w.layer.reload()
-					dialog.ShowError(err, g.window)
+					g.showOperationError("shape_resize", err)
 					g.updateTemporarySelection()
 				}
 				return
@@ -50,7 +48,7 @@ func (w *signatureWidget) scheduleShapeResize() {
 			w.layer.Refresh()
 			if w.shapeResizeFinish {
 				if err := doc.CommitPreparedShapeResize(w.id, target, data, prepared); err != nil {
-					dialog.ShowError(err, g.window)
+					g.showOperationError("shape_resize", err)
 					return
 				}
 				w.editActive, w.shapeResizeFinish = false, false

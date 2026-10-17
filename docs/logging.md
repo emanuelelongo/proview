@@ -1,6 +1,6 @@
 # Local diagnostic logs
 
-Implemented locally on `develop`, 2026-10-17. No commit, release or packaging.
+Implemented on `improvements/editor-workflow`, 2026-10-17. Packaging is separate.
 
 Help > Open logs folder flushes pending records and opens the directory:
 
@@ -45,13 +45,26 @@ OAuth tokens are intentionally logged. Raw underlying error messages and crash
 stacks may include file names or local paths; review logs before sharing them.
 Logs remain local. `--check-ocr` retains its standalone terminal-only behavior.
 
-Native text-edit errors are logged with full technical detail while the dialog
-uses a plain-language message. Engine diagnostics use "text editing" rather
+Error dialogs use operation-specific plain language. Full underlying details go
+to diagnostic logs, including drawing page, kind, style, sample count, width and
+opacity, without stroke coordinates or document text. File, clipboard, page,
+form, object, signature and cloud failures use the same reporting boundary.
+Locally authored input-validation messages remain specific to the entered value.
+Inline signature import/cloud errors also avoid raw engine/server responses;
+cloud status and signature tracing suppress repeated identical diagnostics.
+URLs in error details omit user information and queries; common credential/token
+fields are masked. Reports remain asynchronous and bounded through the existing
+logger, with no mouse-motion or per-frame logging.
+
+Native text-edit errors retain specialized plain-language messages.
+Engine diagnostics use "text editing" rather
 than "correction"; historical internal API/type names remain unchanged.
 
 Verification: `go test ./...`, `go vet ./...`, and
 `go test -race ./internal/applog`. Tests cover rotation/retention, concurrent
 writers, slow-disk overload, truncation, flush/close and a real crash subprocess.
-GUI tests verify the Help entry and that text-edit dialogs omit engine details
-while logs retain the technical reason and page number. Windows logging code
+GUI tests verify the Help entry, operation-specific dialogs, drawing context,
+credential masking and cloud diagnostic deduplication. An AST check keeps direct
+error dialogs inside the reporting boundary. Text-edit tests verify that dialogs
+omit engine details while logs retain the technical reason and page number. Windows logging code
 is cross-compiled; native Windows folder opening/rotation needs desktop acceptance.

@@ -1,6 +1,6 @@
 # Multiple documents in one window
 
-Local implementation on `develop`, 2026-10-17. Not committed or packaged.
+Implemented on `improvements/editor-workflow`, 2026-10-17. Packaging is separate.
 The tested `prototype/pdf-forms` branch was fast-forwarded into `develop` and
 removed locally and remotely before this work.
 
@@ -17,7 +17,7 @@ removed locally and remotely before this work.
   retains the current save destination and records one Undo operation. Redo
   retains access to the transferred sources.
 - Other combinations retain documents in the current window. The sidebar shows
-  clickable image thumbnails with a selection border and dirty indicators; PDF
+  clickable image thumbnails with a selection border and no labels; PDF
   and STL entries retain names. Selecting an entry restores that document.
   Image thumbnails reuse displayed previews and resize with the sidebar.
   The selected PDF's page thumbnails remain below the document selector.
@@ -28,6 +28,57 @@ removed locally and remotely before this work.
   selects a remaining document. Closing the window checks all dirty documents;
   canceling preserves every document, including previously declined saves.
 - Crops and generated images retain their existing independent-window behavior.
+
+## PDF page thumbnails
+
+PDF thumbnails show only a page number in an accent-colored circle at the
+bottom right of the preview, with spacing between cards. Image thumbnails have
+no label or badge. The PDF thumbnail scrollbar is hidden in every hover/scroll
+state; wheel/trackpad scrolling and drag-edge autoscrolling remain available.
+
+Click selects one page. Command-click on macOS / Control-click elsewhere toggles
+individual pages, and Shift-click selects a range from the last anchor. Combining
+the shortcut modifier with Shift adds the range to the current selection. A
+multiple selection remains visible while the document scrolls; a single selection
+continues to follow the active page. Selection tracks stable page IDs across
+reordering and view rebuilds and is reset when switching documents.
+
+Drag any selected thumbnail to move the group, retaining document order. Every
+selected preview fades during the gesture; the insertion marker, edge scrolling
+and Escape/outside cancellation work for the whole group. Right-click a selected
+page to keep the group, or an unselected page to select it alone. Context and File
+menus delete or duplicate the selection. Copies form an ordered group after the
+last selected original and become selected. Each move/delete/duplicate is one
+Undo operation; copied pages, overlays and redactions get independent IDs while
+retaining immutable sources/artwork. Deletion must leave at least one page.
+
+Thumbnails load lazily for the visible sidebar range plus one following page.
+The first page reuses the opening preview; remaining pages show a static
+`Loading…` label until rendered. Sidebar scrolling and viewport layout/resize
+request visible thumbnails. Layout callbacks are coalesced and deferred until
+sizes are valid, including the first transition from zero height, so opening or
+enlarging a window does not require an extra scroll to start loading.
+
+Rendering remains asynchronous, and obsolete document/generation results are
+discarded. Successful thumbnail loads taking at least one second emit
+`pdf_thumbnail_slow` with page number and elapsed time; fast loads add no log I/O.
+Regression tests cover initial zero-height layout, resizing without scrolling,
+lazy loading, placeholder completion and closed-window callbacks. Group operation
+tests cover modifier/range selection, stable IDs, drag cancellation, one-step
+Undo/Redo, page objects/redactions, native vector export and deletion protection.
+
+## Keyboard navigation
+
+Without modifiers, arrow keys scroll the image/PDF viewport by 40 view units per
+keypress (including key repeat), clamped to the scrollable area. Page Up/Page Down
+activate the previous/next PDF page, scroll it into view and reveal its thumbnail;
+first/last page boundaries do not wrap. Multiple thumbnail selections survive
+page navigation. Navigation is view state and never creates an Undo operation.
+
+Focused controls (including inline text and PDF form fields), dialogs/popups,
+modifier combinations, busy operations and active editing gestures retain their
+keys. Page Up/Page Down have no image/STL binding, and existing STL view shortcuts
+are unchanged.
 
 ## Desktop request forwarding
 

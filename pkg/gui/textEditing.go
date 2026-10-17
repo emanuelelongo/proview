@@ -458,7 +458,7 @@ func (g *Gui) refreshCorrectionPreviews() {
 				}
 				if err != nil {
 					g.logEvent("operation_failed", "level=ERROR operation=pdf_text_preview page=%d error=%q", page+1, err)
-					dialog.ShowError(fmt.Errorf("Couldn't update the page preview. Details are available in Help → Open logs folder."), g.window)
+					g.showErrorMessage(operationErrorMessage("preview", err))
 					return
 				}
 				g.pdfPageImages[page].Image = preview

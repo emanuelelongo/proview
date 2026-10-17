@@ -1,10 +1,41 @@
 package annotations
 
 import (
+	"image/color"
 	"math"
 	"math/rand"
 	"testing"
 )
+
+func TestRoundStrokeHandlesVerticalRetracesWithUniformOpacity(t *testing.T) {
+	for _, style := range []StrokeStyle{StrokeRound, StrokeSolid, StrokeDashed, StrokeDotted} {
+		data := Default(Drawing)
+		data.StrokeStyle, data.Width, data.Opacity = style, 10, .3
+		data.PageWidth, data.PageHeight = 200, 200
+		data.Points = []Point{{100, 20}, {100, 100}, {100 + 1e-10, 40}, {100, 150}, {20, 80}, {180, 80}, {100, 20}, {100, 20}}
+		asset, _, err := data.Artwork()
+		if err != nil {
+			t.Fatal(style, err)
+		}
+		picture, err := asset.Render(400)
+		if err != nil {
+			t.Fatal(style, err)
+		}
+		var maxAlpha uint8
+		for y := 0; y < picture.Bounds().Dy(); y++ {
+			for x := 0; x < picture.Bounds().Dx(); x++ {
+				c := color.NRGBAModel.Convert(picture.At(x, y)).(color.NRGBA)
+				maxAlpha = max(maxAlpha, c.A)
+			}
+		}
+		if maxAlpha < 75 || maxAlpha > 79 {
+			t.Fatalf("%s stroke alpha=%d, want uniform 30%%", style, maxAlpha)
+		}
+		if _, err := asset.PDF(); err != nil {
+			t.Fatal("vector PDF export failed", style, err)
+		}
+	}
+}
 
 func TestDenseSelfIntersectingDrawingStaysWithinStroke(t *testing.T) {
 	const seed = int64(0)
