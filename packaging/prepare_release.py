@@ -46,7 +46,7 @@ def release_notes(release_tag, metadata):
         "<details>\n<summary>Build details</summary>\n\n"
         f"- Branch: `{metadata['branch']}`\n"
         f"- Commit: [{metadata['commit'][:7]}]({repo}/commit/{metadata['commit']})\n"
-        f"- [Build workflow]({metadata['run_url']})\n\n</details>\n"
+        f"- [Release workflow]({metadata['run_url']})\n\n</details>\n"
     )
 
 

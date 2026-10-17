@@ -1,4 +1,4 @@
-"""Use the Build workflow's run number minus an offset for release versions."""
+"""Use the Release workflow's run number minus an offset for release versions."""
 
 import os
 import subprocess

@@ -104,7 +104,7 @@ is set. `task ocr:probe` remains a system-engine quality evaluation; legacy
 path. Use `package:linux` or the self-hosted release workflow for bundled Linux
 packages.
 
-Both Build workflow runner choices produce bundled OCR packages for all five
+Both Release workflow runner choices produce bundled OCR packages for all five
 targets. GitHub-hosted jobs build natively and run the embedded OCR smoke test
 on each target, including Windows. The Apple Silicon self-hosted runner builds
 macOS locally and Linux/Windows through Docker; Windows is cross-compiled and

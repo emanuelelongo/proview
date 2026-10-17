@@ -1,5 +1,5 @@
-name: Build
-run-name: Build [${{ inputs.runner || 'github-hosted' }}] - ${{ inputs.branch || github.head_ref || github.ref_name }}
+name: Release
+run-name: Release - ${{ inputs.branch || github.ref_name }} [${{ inputs.runner || 'github-hosted' }}]
 
 # Build packages and publish prereleases only on manual dispatch.
 on:

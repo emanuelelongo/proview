@@ -1,4 +1,4 @@
-"""Check release routing and pull-request-only verification workflows."""
+"""Check release routing and PR/manual verification workflows."""
 
 from itertools import product
 from pathlib import Path
@@ -12,7 +12,7 @@ from unittest import TestCase
 
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
-PR_WORKFLOW = WORKFLOW.with_name("pr-checks.yml")
+PR_WORKFLOW = WORKFLOW.with_name("checks.yml")
 
 
 def job_field(job, field, workflow_path=WORKFLOW):
@@ -41,7 +41,7 @@ def evaluate(expression, values):
     # status checks. Substitute their contexts, then evaluate without builtins.
     expression = expression.removeprefix("${{").removesuffix("}}").strip()
     expression = re.sub(
-        r"inputs\.runner|github\.event_name|needs\.[\w-]+\.result|always\(\)|cancelled\(\)",
+        r"inputs\.(?:runner|branch)|github\.event_name|github\.event\.pull_request\.number|github\.(?:ref|sha)|needs\.[\w-]+\.result|always\(\)|cancelled\(\)",
         lambda match: repr(values[match.group()]), expression,
     )
     expression = expression.replace("&&", " and ").replace("||", " or ")
@@ -93,8 +93,37 @@ class WorkflowTests(TestCase):
         self.assertNotIn("  pull_request:", release_triggers)
         self.assertNotIn("  push:", release_triggers)
         self.assertIn("  pull_request:", pr_triggers)
-        self.assertNotIn("  workflow_dispatch:", pr_triggers)
+        self.assertIn("  workflow_dispatch:", pr_triggers)
         self.assertNotIn("  push:", pr_triggers)
+
+    def test_manual_target_is_independent_of_workflow_source(self):
+        workflow = PR_WORKFLOW.read_text()
+        expression = re.search(r"(?m)^          ref: (.+)$", workflow).group(1)
+        for source in ("refs/heads/develop", "refs/heads/other-workflow"):
+            values = {"github.event_name": "workflow_dispatch", "inputs.branch": "feature/test",
+                      "github.ref": source, "github.sha": "workflow-source-sha"}
+            self.assertEqual(evaluate(expression, values), "feature/test")
+            values["github.event_name"] = "pull_request"
+            values["github.sha"] = "proposed-merge-sha"
+            self.assertEqual(evaluate(expression, values), "proposed-merge-sha")
+        self.assertEqual(job_field("tests", "needs", PR_WORKFLOW), "target")
+        self.assertIn("ref: ${{ needs.target.outputs.commit }}", workflow)
+        self.assertIn("commit: ${{ steps.resolve.outputs.commit }}", workflow)
+
+    def test_manual_runs_and_prs_do_not_cancel_unrelated_checks(self):
+        workflow = PR_WORKFLOW.read_text()
+        group = re.search(r"(?m)^  group: (.+)$", workflow).group(1)
+        def render(event, number, ref, branch=""):
+            values = {"github.event_name": event, "github.event.pull_request.number": number,
+                      "github.ref": ref, "inputs.branch": branch}
+            return re.sub(r"\$\{\{(.*?)\}\}",
+                          lambda match: str(evaluate(match.group(), values)), group)
+        manual = render("workflow_dispatch", "", "refs/heads/develop", "feature/test")
+        self.assertEqual(manual, render("workflow_dispatch", "", "refs/heads/other-workflow", "feature/test"))
+        self.assertNotEqual(manual, render("workflow_dispatch", "", "refs/heads/develop", "another-target"))
+        self.assertNotEqual(manual, render("pull_request", 2, "refs/pull/2/merge"))
+        self.assertNotEqual(render("pull_request", 2, "refs/pull/2/merge"),
+                            render("pull_request", 3, "refs/pull/3/merge"))
 
     def test_pull_requests_test_every_native_target_without_packaging(self):
         workflow = PR_WORKFLOW.read_text()
@@ -133,8 +162,9 @@ class WorkflowTests(TestCase):
         with tempfile.TemporaryDirectory() as directory:
             summary = Path(directory) / "summary.md"
             subprocess.run([sys.executable, "-c", target_summary], check=True,
-                           env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), TARGET_NAME="Linux x64",
+                           env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), TARGET_NAME="Linux x64", CHECKED_COMMIT="checked-target-sha",
                                     TESTS_RESULT="failure", VET_RESULT="success", RACE_RESULT="success",
                                     FORMATTING_RESULT="success", TOOLING_RESULT="success"))
             self.assertIn("Go tests (including native PDF security) | failure", summary.read_text())
             self.assertIn("Go vet | success", summary.read_text())
+            self.assertIn("Checked commit: `checked-target-sha`", summary.read_text())

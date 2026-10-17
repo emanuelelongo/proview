@@ -1,18 +1,41 @@
-name: Pull request checks
-run-name: 'Checks for PR #${{ github.event.pull_request.number }}'
+name: Checks
+run-name: >-
+  Checks - ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || inputs.branch || github.ref_name }}
 
 on:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to check
+        type: string
+        required: true
+        default: develop
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-checks-${{ github.event.pull_request.number }}
+  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.branch || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  target:
+    name: Resolve target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.sha }}
+      - name: Pin checked commit
+        id: resolve
+        run: printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   tests:
+    needs: target
     name: Tests (${{ matrix.target.name }})
     timeout-minutes: 30
     strategy:
@@ -43,8 +66,10 @@ jobs:
       CGO_ENABLED: '1'
       GOARCH: ${{ matrix.target.arch }}
     steps:
-      # On pull_request, checkout tests GitHub's proposed merge commit.
+      # Every target checks the same resolved commit, even if its branch advances.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.target.outputs.commit }}
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.x'
@@ -95,6 +120,7 @@ jobs:
         if: always()
         env:
           TARGET_NAME: ${{ matrix.target.name }}
+          CHECKED_COMMIT: ${{ needs.target.outputs.commit }}
           TESTS_RESULT: ${{ steps.tests.outcome }}
           VET_RESULT: ${{ steps.vet.outcome }}
           RACE_RESULT: ${{ steps.race.outcome }}
@@ -113,7 +139,8 @@ jobs:
           ]
           summary = "## " + os.environ["TARGET_NAME"] + "\n\n| Check | Result |\n| --- | --- |\n"
           summary += "".join(f"| {label} | {os.environ[key]} |\n" for label, key in rows)
-          summary += "\nPull request validation only. No application binaries, packages or releases are produced.\n"
+          summary += "\nChecked commit: `" + os.environ["CHECKED_COMMIT"] + "`.\n"
+          summary += "\nValidation only. No application binaries, packages or releases are produced.\n"
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as output:
               output.write(summary)
           PYTHON
@@ -132,11 +159,11 @@ jobs:
           import os
           from pathlib import Path
           result = os.environ["TESTS_RESULT"]
-          summary = "## Pull request checks\n\n"
+          summary = "## Checks\n\n"
           summary += f"Cross-platform test matrix: **{result}**.\n\n"
           summary += "Review the individual target checks for test logs and verification summaries.\n"
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as output:
               output.write(summary)
           if result != "success":
-              raise SystemExit("::error::All pull request test targets must pass.")
+              raise SystemExit("::error::All test targets must pass.")
           PYTHON

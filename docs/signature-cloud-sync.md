@@ -55,7 +55,7 @@ the equivalent `-X` linker flags to embed configuration in their binaries.
 
 Google Drive is available in every build. Published packages require the OAuth
 client settings above; local builds can omit them and still use S3 and the local
-archive. The manual **Build** workflow publishes one package per supported target,
+archive. The manual **Release** workflow publishes one package per supported target,
 with no provider-specific variants. It uses `v1.<run-number>` for `develop` and
 `v1-dev.<run-number>` for other branches. Pushes do not publish releases.
 

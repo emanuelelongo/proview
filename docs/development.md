@@ -43,14 +43,14 @@ local storage, offline behavior, and the two-device validation procedure.
 
 ## GitHub releases
 
-The **Build** workflow accepts a **branch** and a **runner** choice:
+The **Release** workflow accepts a **branch** and a **runner** choice:
 `github-hosted` builds natively on GitHub's macOS, Windows and Linux runners;
 `self-hosted` builds all five targets on an Apple Silicon Mac, using Docker
 for Linux and Windows. Both paths publish the same five packages, with Google Drive available, and
 use the same workflow run counter for release tags and package versions, minus
 the repository variable `RELEASE_RUN_OFFSET` (default: zero). Bundle build numbers
 retain the original workflow run number. Run titles show the selected runner and
-branch. Build is manual-only; pull requests use the separate checks workflow.
+branch. Release is manual-only; pull requests use the separate checks workflow.
 
 Self-hosted jobs select the locally installed Homebrew Python (`brew install python`)
 through `packaging/self_hosted_python.sh`. The script checks safe tar extraction
@@ -92,11 +92,11 @@ All build jobs and the release use the same
 resolved commit, even if the input branch advances during the run.
 Native package versions are `1.<release-number>.0-dev`.
 
-To restart release numbering, set `RELEASE_RUN_OFFSET` to the next Build workflow
+To restart release numbering, set `RELEASE_RUN_OFFSET` to the next Release workflow
 run number in **Settings → Secrets and variables → Actions → Variables**.
 The next run then uses release number 0 (`v1.0` on `develop`); GitHub Actions history remains intact.
 The offset must be nonnegative and no greater than the current run number.
-The repository uses `RELEASE_RUN_OFFSET=2`, so its next Build workflow run
+The repository uses `RELEASE_RUN_OFFSET=2`, so its next Release workflow run
 produces `v1.0` on `develop` after the failed initial run. Subsequent runs
 increment the release number.
 Avoid rerunning workflow revisions with different numbering rules.
@@ -113,7 +113,7 @@ Download packages from the repository's **Releases** page:
 Build versions are applied only in the runners' working copies. CI creates a
 draft, uploads all assets, then publishes it. Failed runs do not publish a
 release if checks or packaging fail. Rerunning a successful run replaces its published assets and checksums.
-Pull requests run `.github/workflows/pr-checks.yml` on GitHub-hosted macOS
+Pull requests run `.github/workflows/checks.yml` on GitHub-hosted macOS
 ARM64/Intel, Windows x64 and Linux x64/ARM64 runners. They execute all Go tests
 (including native PDF security tests), vet and logging race tests. Linux x64 also
 checks Go formatting and runs the Python build/release tooling tests. The tests
@@ -123,13 +123,31 @@ ZIP, AppImage or release artifact is produced.
 GitHub automatically displays each job as a check in the pull request. The stable
 **PR checks** check succeeds only when the entire test matrix succeeds; failures,
 cancellations and skipped matrices do not pass. Each target has a Markdown
-verification summary alongside its logs. New commits cancel obsolete runs.
+verification summary alongside its logs. New commits cancel obsolete PR runs.
 No bot comments, badges, secrets or write permissions are needed. To require
 these checks before merging, add **PR checks** as a required status check in the
 branch rules for `develop`. This workflow does not change repository rules.
 
+The same **Checks** workflow supports manual runs: open **Actions → Checks →
+Run workflow**, keep **Use workflow from = develop** and set **Branch to check**
+to the target branch (default `develop`). The first selector chooses the workflow
+definition; the separate input chooses the code to test. The target branch does
+not need to contain the updated workflow. From the CLI:
+
+```sh
+gh workflow run checks.yml --ref develop -f branch=feature/example
+```
+
+Manual runs resolve the requested branch once and pin all five runners to that
+commit. PR runs pin GitHub's proposed merge commit. Each target's summary records
+the checked SHA. Both execute the same five-target matrix without creating release
+assets. Runs are grouped by event and PR number or checked branch: a newer run
+replaces an older one for that same target, while unrelated targets remain
+independent, even when the workflow definition comes from the same branch.
+The aggregate check keeps its **PR checks** name for branch-rule compatibility.
+
 Keeping PR checks in a separate workflow also prevents them from consuming the
-Build workflow's release numbering counter. Promotion from prerelease to release
+Release workflow's release numbering counter. Promotion from prerelease to release
 remains a manual action on GitHub.
 The workflow does not require additional release credentials: only the publishing
 job receives `contents: write` through `GITHUB_TOKEN`. Releases inherit repository
@@ -156,7 +174,7 @@ All targets use the same build helper for Google Sync credentials and About
 metadata; credentials are passed to containers by environment variable name,
 not embedded into Docker images.
 
-Start the runner's `./run.sh` only when needed, then run **Build**
+Start the runner's `./run.sh` only when needed, then run **Release**
 from GitHub with the desired **branch** and **runner = self-hosted**. Keep the
 Mac awake and the runner running until the workflow finishes; afterwards stop
 it with Ctrl+C.

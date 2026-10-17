@@ -340,11 +340,15 @@ PDF page combination/reordering/deletion and blank pages.
 - Test meaningful risks: PDF vector/text preservation, page dimensions/rotation,
   overlay remapping, Undo/Redo, transparent exports and save cancellation/failure.
   GUI unit tests use Fyne's test driver and do not prove actual Finder/Dock behavior.
-- **Build** in `.github/workflows/ci.yml` is manual-only. Its `runner` input
+- **Release** in `.github/workflows/ci.yml` is manual-only. Its `runner` input
   selects GitHub-hosted native builds or self-hosted cross builds. Pull requests
-  use the separate `.github/workflows/pr-checks.yml` with GitHub-hosted tests
-  on all five targets, vet, logging race checks and Linux formatting/tooling tests;
-  never build/package application binaries or OCR bundles for PRs. Keep the
+  use the separate `.github/workflows/checks.yml` with GitHub-hosted tests
+  on all five targets, vet, logging race checks and Linux formatting/tooling tests.
+  The same **Checks** workflow supports manual dispatch: `inputs.branch` selects
+  the code independently of the workflow source branch. Resolve it once and pin
+  every matrix checkout to that SHA; PRs pin the proposed merge commit. Group
+  concurrency by event and PR number or checked branch to keep unrelated runs separate.
+  Never build/package application binaries or OCR bundles in the checks workflow. Keep the
   stable aggregate **PR checks** check and read-only permissions; no bot comments
   are needed. Version selection, quality checks and publication use the selected runner. Gate publication on the
   selected build path succeeding while the other path is intentionally skipped.
@@ -469,7 +473,7 @@ PDF page combination/reordering/deletion and blank pages.
   button or saved connection restoration on embedded OAuth configuration. Missing
   configuration is reported when authorization is attempted. Connection still
   requires OAuth client configuration and the user's authorization. Both runner choices
-  use the same Build workflow run number minus the repository variable `RELEASE_RUN_OFFSET`
+  use the same Release workflow run number minus the repository variable `RELEASE_RUN_OFFSET`
   (default zero) for release tags and native package versions. The offset is
   currently 2 so the next build starts release numbering at `v1.0` after the
   failed initial run; bundle build numbers retain the original workflow run number.
