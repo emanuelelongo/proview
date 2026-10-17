@@ -84,7 +84,7 @@ func (d *Document) ApplyTextCorrection(prepared *PreparedTextCorrection) error {
 	if prepared == nil || prepared.source == nil || prepared.source.PageCount() != d.PageCount() {
 		return errors.New("invalid prepared text edit")
 	}
-	if !editorStatesEqual(d.snapshot(), prepared.before, false) {
+	if !d.stateEquals(prepared.before, false) {
 		return fmt.Errorf("document changed while preparing text edit")
 	}
 	before := d.snapshot()

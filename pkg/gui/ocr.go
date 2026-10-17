@@ -27,6 +27,7 @@ type ocrJob struct {
 type ocrState struct {
 	engine    ocr.Engine
 	doc       *document.Document
+	revision  uint64
 	cache     map[string]*ocrEntry
 	requested []int
 	running   *ocrJob
@@ -42,7 +43,8 @@ func (g *Gui) stopOCR() {
 			g.ocr.running.cancel()
 		}
 		g.ocr.doc = nil
-		g.ocr.cache = map[string]*ocrEntry{}
+		g.ocr.revision = 0
+		clear(g.ocr.cache)
 		g.ocr.requested = nil
 	}
 	g.clearTextSelection()
@@ -55,14 +57,16 @@ func (g *Gui) syncOCR() {
 	if g.closed || g.document == nil {
 		return
 	}
+	rev := g.document.Revision()
 	if g.ocr == nil {
 		if !ocr.Enabled() {
 			return
 		}
-		g.ocr = &ocrState{engine: ocr.NewEngine(), cache: map[string]*ocrEntry{}}
+		g.ocr = &ocrState{engine: ocr.NewEngine(), doc: g.document, revision: rev, cache: map[string]*ocrEntry{}}
 	}
 	s := g.ocr
-	if s.doc != g.document {
+	docChanged := s.doc != g.document
+	if docChanged {
 		g.stopOCR()
 		s.doc = g.document
 	}
@@ -70,13 +74,18 @@ func (g *Gui) syncOCR() {
 	if g.textSelection != nil && !g.validTextSelection() {
 		g.clearTextSelection()
 	}
-	valid := map[string]bool{}
-	for page := 0; page < g.document.PageCount(); page++ {
-		valid[g.document.TextSelectionKey(page)] = true
-	}
-	for key := range s.cache {
-		if !valid[key] {
-			delete(s.cache, key)
+	if docChanged || s.revision != rev {
+		s.revision = rev
+		if len(s.cache) > 0 {
+			valid := make(map[string]bool, g.document.PageCount())
+			for page := 0; page < g.document.PageCount(); page++ {
+				valid[g.document.TextSelectionKey(page)] = true
+			}
+			for key := range s.cache {
+				if !valid[key] {
+					delete(s.cache, key)
+				}
+			}
 		}
 	}
 	pages := g.recognitionPages()

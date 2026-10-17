@@ -2,11 +2,14 @@ package document
 
 import (
 	"bytes"
+	"emanuelelongo/proview/pkg/annotations"
+	"emanuelelongo/proview/pkg/signatures"
 	"errors"
 	"image"
 	"image/color"
 	"image/png"
 	"math"
+	"reflect"
 	"testing"
 )
 
@@ -537,7 +540,7 @@ func testImageSource(t *testing.T) (*Source, []byte) {
 	return source, original
 }
 
-func testSignaturePNG(t *testing.T) []byte {
+func testSignaturePNG(t testing.TB) []byte {
 	t.Helper()
 	signature := image.NewNRGBA(image.Rect(0, 0, 4, 2))
 	signature.SetNRGBA(1, 1, color.NRGBA{A: 128})
@@ -546,4 +549,218 @@ func testSignaturePNG(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return encoded.Bytes()
+}
+
+func TestSnapshotSharesImmutableBuffersAndPreservesIsolation(t *testing.T) {
+	source, _ := testImageSource(t)
+	doc, err := New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pngData := testSignaturePNG(t)
+	sig, err := doc.AddSignature(0, NormalizedRect{X: .1, Y: .1, Width: .2, Height: .2}, pngData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	annData := annotations.Default(annotations.Drawing)
+	annData.PageWidth, annData.PageHeight = 100, 100
+	annData.Points = []annotations.Point{{X: 10, Y: 10}, {X: 50, Y: 50}}
+	asset, _, err := annData.Artwork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prep, err := asset.Prepare()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.AddAnnotation(0, NormalizedRect{X: .2, Y: .2, Width: .3, Height: .3}, annData, prep); err != nil {
+		t.Fatal(err)
+	}
+	doc.MarkSaved()
+
+	// Dirty() should not allocate when comparing unchanged state.
+	allocs := testing.AllocsPerRun(50, func() {
+		if doc.Dirty() {
+			t.Fatal("expected clean document")
+		}
+	})
+	if allocs > 0 {
+		t.Fatalf("Dirty() allocated %v objects per run, want 0", allocs)
+	}
+
+	// Internal snapshots share immutable PNG, annotation, and asset payloads and preserve revision.
+	snap := doc.RenderingSnapshot()
+	if snap.Revision() != doc.Revision() {
+		t.Fatalf("RenderingSnapshot revision = %d, want %d", snap.Revision(), doc.Revision())
+	}
+	if &snap.signatures[0].png[0] != &doc.signatures[0].png[0] {
+		t.Fatal("RenderingSnapshot cloned immutable PNG slice")
+	}
+	if snap.signatures[1].annotation != doc.signatures[1].annotation || snap.signatures[1].asset != doc.signatures[1].asset {
+		t.Fatal("RenderingSnapshot cloned immutable annotation or asset pointer")
+	}
+
+	// Public PNG(), Annotation(), and Asset() accessors still return defensive copies.
+	exported := doc.Signatures()[0].PNG()
+	exported[0] ^= 0xff
+	if bytes.Equal(exported, doc.Signatures()[0].PNG()) {
+		t.Fatal("mutating exported PNG slice affected document state")
+	}
+	exportedAnn, ok := doc.Signatures()[1].Annotation()
+	if !ok {
+		t.Fatal("expected annotation")
+	}
+	exportedAnn.Points[0].X = 999
+	currentAnn, _ := doc.Signatures()[1].Annotation()
+	if currentAnn.Points[0].X == 999 {
+		t.Fatal("mutating exported annotation points affected document state")
+	}
+	exportedAsset := doc.Signatures()[1].Asset()
+	exportedAsset.Data[0] ^= 0xff
+	if bytes.Equal(exportedAsset.Data, doc.Signatures()[1].Asset().Data) {
+		t.Fatal("mutating exported asset data affected document state")
+	}
+	if err := doc.UpdateSignature(sig.ID, 0, NormalizedRect{X: .2, Y: .2, Width: .2, Height: .2}); err != nil {
+		t.Fatal(err)
+	}
+	if !doc.Dirty() {
+		t.Fatal("expected dirty document after signature move")
+	}
+}
+
+// mutateLeaf changes one settable leaf inside v and reports whether it did.
+// Slices mutate their existing content first so the comparators are required to
+// compare deeply rather than just by length.
+func mutateLeaf(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Bool:
+		if !v.CanSet() {
+			return false
+		}
+		v.SetBool(!v.Bool())
+		return true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if !v.CanSet() {
+			return false
+		}
+		v.SetInt(v.Int() + 1)
+		return true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if !v.CanSet() {
+			return false
+		}
+		v.SetUint(v.Uint() + 1)
+		return true
+	case reflect.Float32, reflect.Float64:
+		if !v.CanSet() {
+			return false
+		}
+		v.SetFloat(v.Float() + 1)
+		return true
+	case reflect.String:
+		if !v.CanSet() {
+			return false
+		}
+		v.SetString(v.String() + "x")
+		return true
+	case reflect.Slice:
+		if !v.CanSet() {
+			return false
+		}
+		if v.Len() > 0 && mutateLeaf(v.Index(0)) {
+			return true
+		}
+		element := reflect.New(v.Type().Elem()).Elem()
+		if element.Kind() == reflect.Slice {
+			element.Set(reflect.MakeSlice(element.Type(), 1, 1))
+		}
+		v.Set(reflect.Append(v, element))
+		return true
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if mutateLeaf(v.Field(i)) {
+				return true
+			}
+		}
+		return false
+	case reflect.Pointer:
+		return !v.IsNil() && mutateLeaf(v.Elem())
+	}
+	return false
+}
+
+// The editor state comparators replaced reflect.DeepEqual to keep Dirty() free
+// of allocations, so their field lists are maintained by hand. This test fails
+// as soon as a struct gains a field they skip, which would otherwise let Dirty
+// miss a change and make Undo record a no-op entry.
+func TestStateComparatorsCoverEveryField(t *testing.T) {
+	quad := TextQuad{}
+	quad.UL.X, quad.UR.X, quad.LL.X, quad.LR.X = 1, 2, 3, 4
+	drawing := func() *signatures.Drawing {
+		return &signatures.Drawing{
+			Color:   color.NRGBA{R: 10, A: 255},
+			Version: 1,
+			Strokes: [][]signatures.Point{{{X: 1, Y: 2}, {X: 3, Y: 4}}},
+			Smooth:  .5,
+			Width:   3,
+		}
+	}
+	cases := []struct {
+		name  string
+		fresh func() any
+		equal func(a, b any) bool
+	}{
+		{
+			name: "annotations.Data",
+			fresh: func() any {
+				data := annotations.Default(annotations.Shape)
+				data.Points = []annotations.Point{{X: 10, Y: 10}, {X: 40, Y: 40}}
+				return &data
+			},
+			equal: func(a, b any) bool {
+				return annotationsEqual(a.(*annotations.Data), b.(*annotations.Data))
+			},
+		},
+		{
+			name: "signatures.Asset",
+			fresh: func() any {
+				return &signatures.Asset{Kind: signatures.Drawn, Data: []byte("svg"), Drawing: drawing(), Thickness: 2}
+			},
+			equal: func(a, b any) bool {
+				return assetsEqual(a.(*signatures.Asset), b.(*signatures.Asset))
+			},
+		},
+		{
+			name:  "signatures.Drawing",
+			fresh: func() any { return drawing() },
+			equal: func(a, b any) bool {
+				return assetsEqual(
+					&signatures.Asset{Drawing: a.(*signatures.Drawing)},
+					&signatures.Asset{Drawing: b.(*signatures.Drawing)},
+				)
+			},
+		},
+		{
+			name:  "Redaction",
+			fresh: func() any { return &Redaction{ID: 1, PageID: 2, Quads: []TextQuad{quad}} },
+			equal: func(a, b any) bool {
+				return redactionsEqual([]Redaction{*a.(*Redaction)}, []Redaction{*b.(*Redaction)})
+			},
+		},
+	}
+	for _, c := range cases {
+		base := c.fresh()
+		typ := reflect.TypeOf(base).Elem()
+		for i := range typ.NumField() {
+			field := typ.Field(i)
+			candidate := c.fresh()
+			if !mutateLeaf(reflect.ValueOf(candidate).Elem().Field(i)) {
+				t.Errorf("%s.%s: test cannot vary this field", c.name, field.Name)
+				continue
+			}
+			if c.equal(base, candidate) {
+				t.Errorf("%s.%s: comparator ignores this field, so Dirty and Undo would miss the change", c.name, field.Name)
+			}
+		}
+	}
 }

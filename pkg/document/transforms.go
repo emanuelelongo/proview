@@ -153,9 +153,11 @@ func (d *Document) TransformPDFPage(page int, command string) error {
 		if d.redactions[i].PageID != pageID {
 			continue
 		}
+		quads := make([]TextQuad, len(d.redactions[i].Quads))
 		for j, q := range d.redactions[i].Quads {
-			d.redactions[i].Quads[j] = rotateTextQuad(q, command)
+			quads[j] = rotateTextQuad(q, command)
 		}
+		d.redactions[i].Quads = quads
 	}
 	d.record(before)
 	return nil

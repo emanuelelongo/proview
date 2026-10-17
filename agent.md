@@ -175,6 +175,16 @@ PDF page combination/reordering/deletion and blank pages.
 - PDF pages use stable references to their source and index, with independent
   page IDs. Reordering/insertion must retain caches and remap overlays with pages.
   Rendering snapshots isolate mutable editor state while sharing synchronized sources.
+- Overlay PNG, asset and annotation payloads are immutable once stored. Snapshots,
+  history entries and the saved state share them by pointer to keep `Dirty` and
+  rendering allocation-free; edits must replace those fields with fresh values
+  instead of mutating them in place. Defensive copies belong only at public
+  accessors (`PNG`, `Asset`, `Annotation`, `Redactions`). Page transforms replace
+  redaction `Quads` with a new slice rather than rotating in place, so duplicated
+  pages keep independent geometry. `editorStatesEqual` compares fields by hand
+  instead of `reflect.DeepEqual`: a new field must be added to `annotationsEqual`,
+  `assetsEqual` and `redactionsEqual`, which `TestStateComparatorsCoverEveryField`
+  enforces.
 - Use `collectPDFPages` when collecting original source pages: pdfcpu rejects
   C2PA's `AFRelationship /C2PA_Manifest`. The compatibility path accepts only that
   extension during validation and validates the collected output normally.
