@@ -138,11 +138,6 @@ Fixtures:
   multiple-choice widgets, required text/checkbox, defaults, reset-all, reset-subset
   (reference plus group name), reset-exclude, read-only/hidden fields and an inactive
   SubmitForm button. This is a small synthetic structural fixture, not a polished demo.
-- `output/pdf/proview-test-campi-compilabili.pdf`: previously generated three-page
-  manual demo. Automated tests use the dedicated fixtures above. Its old explanatory
-  labels predate multiple-choice/password support; the demo push button has no
-  ResetForm action and should remain inactive. A refreshed visual demo is optional
-  future work, not a reason to treat that button as a reset command.
 
 Latest verification (2026-10-15, Linux): `go test ./...` passed; `go vet ./...`
 passed. Fyne interaction tests use the headless test driver. New desktop behavior

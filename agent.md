@@ -340,10 +340,13 @@ PDF page combination/reordering/deletion and blank pages.
 - Test meaningful risks: PDF vector/text preservation, page dimensions/rotation,
   overlay remapping, Undo/Redo, transparent exports and save cancellation/failure.
   GUI unit tests use Fyne's test driver and do not prove actual Finder/Dock behavior.
-- **Build** in `.github/workflows/ci.yml` is the single build workflow. Its
-  `runner` input selects GitHub-hosted native builds or self-hosted cross builds;
-  pull requests always use GitHub-hosted runners. Version selection, quality
-  checks and publication use the selected runner. Gate publication on the
+- **Build** in `.github/workflows/ci.yml` is manual-only. Its `runner` input
+  selects GitHub-hosted native builds or self-hosted cross builds. Pull requests
+  use the separate `.github/workflows/pr-checks.yml` with GitHub-hosted tests
+  on all five targets, vet, logging race checks and Linux formatting/tooling tests;
+  never build/package application binaries or OCR bundles for PRs. Keep the
+  stable aggregate **PR checks** check and read-only permissions; no bot comments
+  are needed. Version selection, quality checks and publication use the selected runner. Gate publication on the
   selected build path succeeding while the other path is intentionally skipped.
   Check actual CI results before reporting success on destination platforms.
 - Self-hosted jobs require only the custom `macos-self-hosted` label, assigned
@@ -459,7 +462,7 @@ PDF page combination/reordering/deletion and blank pages.
   Do not report binary license compliance as complete from the root license alone.
 
 - Releases are manual through the `branch` workflow input. Pushes do not run CI;
-  pull requests run native CI checks and packaging without publishing.
+  pull requests run checks only, without application binaries or packages.
   `develop` produces `v1.<number>`; other branches produce `v1-dev.<number>`.
   Google Drive is available in every build; do not add build/runtime provider
   flags or duplicate package variants. Do not gate provider selection, the connection

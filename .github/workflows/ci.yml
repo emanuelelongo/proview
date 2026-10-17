@@ -1,9 +1,8 @@
 name: Build
 run-name: Build [${{ inputs.runner || 'github-hosted' }}] - ${{ inputs.branch || github.head_ref || github.ref_name }}
 
-# Validate pull requests; publish releases only on manual dispatch.
+# Build packages and publish prereleases only on manual dispatch.
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       branch:
@@ -99,7 +98,7 @@ jobs:
         run: python3 packaging/ci_version.py
 
   native-build:
-    if: inputs.runner != 'self-hosted'
+    if: github.event_name == 'workflow_dispatch' && inputs.runner != 'self-hosted'
     needs: version
     strategy:
       fail-fast: false

@@ -49,8 +49,8 @@ The **Build** workflow accepts a **branch** and a **runner** choice:
 for Linux and Windows. Both paths publish the same five packages, with Google Drive available, and
 use the same workflow run counter for release tags and package versions, minus
 the repository variable `RELEASE_RUN_OFFSET` (default: zero). Bundle build numbers
-retain the original workflow run number. Run titles show the selected runner and branch. Pull requests
-always use GitHub-hosted runners and do not publish releases.
+retain the original workflow run number. Run titles show the selected runner and
+branch. Build is manual-only; pull requests use the separate checks workflow.
 
 Self-hosted jobs select the locally installed Homebrew Python (`brew install python`)
 through `packaging/self_hosted_python.sh`. The script checks safe tar extraction
@@ -113,12 +113,28 @@ Download packages from the repository's **Releases** page:
 Build versions are applied only in the runners' working copies. CI creates a
 draft, uploads all assets, then publishes it. Failed runs do not publish a
 release if checks or packaging fail. Rerunning a successful run replaces its published assets and checksums.
-Pull requests run the same checks and packaging but only upload temporary
-Actions artifacts (14 days).
+Pull requests run `.github/workflows/pr-checks.yml` on GitHub-hosted macOS
+ARM64/Intel, Windows x64 and Linux x64/ARM64 runners. They execute all Go tests
+(including native PDF security tests), vet and logging race tests. Linux x64 also
+checks Go formatting and runs the Python build/release tooling tests. The tests
+compile their temporary test executables; no application binary, OCR bundle,
+ZIP, AppImage or release artifact is produced.
+
+GitHub automatically displays each job as a check in the pull request. The stable
+**PR checks** check succeeds only when the entire test matrix succeeds; failures,
+cancellations and skipped matrices do not pass. Each target has a Markdown
+verification summary alongside its logs. New commits cancel obsolete runs.
+No bot comments, badges, secrets or write permissions are needed. To require
+these checks before merging, add **PR checks** as a required status check in the
+branch rules for `develop`. This workflow does not change repository rules.
+
+Keeping PR checks in a separate workflow also prevents them from consuming the
+Build workflow's release numbering counter. Promotion from prerelease to release
+remains a manual action on GitHub.
 The workflow does not require additional release credentials: only the publishing
 job receives `contents: write` through `GITHUB_TOKEN`. Releases inherit repository
 visibility. GitHub-hosted builds use GitHub Actions resources according to the repository's plan and visibility.
-Every branch runs five package jobs. Published packages require the OAuth client settings described in the
+Each manually requested build runs five package jobs. Published packages require the OAuth client settings described in the
 [cloud sync guide](signature-cloud-sync.md).
 
 ### Self-hosted builds
