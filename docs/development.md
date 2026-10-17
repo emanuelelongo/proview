@@ -432,3 +432,5 @@ Details and evaluation commands are in [the prototype notes](signature-vectoriza
 Use **Help → Open logs folder** for local rotating diagnostic logs and Go crash
 reports. See [Diagnostic logs](logging.md) for paths, retention and performance.
 `task run` continues to show the same application logs in the terminal.
+
+<!-- Temporary pull-request checks preview. Do not merge this test change. -->
