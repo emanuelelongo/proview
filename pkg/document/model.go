@@ -571,20 +571,18 @@ func (d *Document) CommitSignatureEdit(id SignatureID) error {
 	if index >= 0 && d.signatures[index].annotation != nil {
 		for _, old := range before.signatures {
 			if old.ID == id {
-				data := d.signatures[index].annotation.Scaled(d.signatures[index].Rect.Width / old.Rect.Width)
-				if data.Kind == annotations.Shape {
-					sx, sy := d.signatures[index].Rect.Width/old.Rect.Width, d.signatures[index].Rect.Height/old.Rect.Height
-					if d.signatures[index].Transform.Turns%2 != 0 {
-						sx, sy = sy, sx
+				current := d.signatures[index]
+				if current.annotation.Kind == annotations.Shape {
+					if current.Rect.Width != old.Rect.Width || current.Rect.Height != old.Rect.Height {
+						data, prepared, err := PrepareShapeResize(old, current.Rect)
+						if err != nil {
+							return err
+						}
+						return d.CommitPreparedShapeResize(id, current.Rect, data, prepared)
 					}
-					data = old.annotation.Clone()
-					for j := range data.Points {
-						data.Points[j].X *= sx
-						data.Points[j].Y *= sy
-					}
-					data.Width *= math.Min(sx, sy)
-					data.Padding *= math.Min(sx, sy)
+					break
 				}
+				data := d.signatures[index].annotation.Scaled(d.signatures[index].Rect.Width / old.Rect.Width)
 				if err := data.Validate(); err != nil {
 					return err
 				}
@@ -629,7 +627,15 @@ func (d *Document) UpdateSignature(id SignatureID, page int, rect NormalizedRect
 	var before editorState
 	if d.activeEdit == nil {
 		before = d.snapshot()
-		if signature.annotation != nil && signature.Rect.Width != rect.Width {
+		if signature.annotation != nil && signature.annotation.Kind == annotations.Shape && (signature.Rect.Width != rect.Width || signature.Rect.Height != rect.Height) {
+			data, prepared, err := PrepareShapeResize(*signature, rect)
+			if err != nil {
+				return err
+			}
+			asset := prepared.Asset.Clone()
+			signature.annotation, signature.asset = &data, &asset
+			signature.preview, signature.png = prepared.Preview, bytes.Clone(prepared.PNG)
+		} else if signature.annotation != nil && signature.Rect.Width != rect.Width {
 			data := signature.annotation.Scaled(rect.Width / signature.Rect.Width)
 			if err := data.Validate(); err != nil {
 				return err

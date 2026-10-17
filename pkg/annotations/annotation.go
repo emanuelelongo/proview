@@ -38,6 +38,7 @@ const (
 	Highlight    Kind        = "highlight"
 	Shape        Kind        = "shape"
 	StrokeSolid  StrokeStyle = "solid"
+	StrokeRound  StrokeStyle = "round"
 	StrokeDashed StrokeStyle = "dashed"
 	StrokeDotted StrokeStyle = "dotted"
 )
@@ -45,6 +46,7 @@ const (
 var Fonts = []string{"Go Sans", "Go Mono", "Latin Modern Roman"}
 
 type Point struct{ X, Y float64 }
+type Quad [4]Point
 
 // Coordinates and sizes use points for PDF pages and original pixels for images.
 type Data struct {
@@ -59,13 +61,21 @@ type Data struct {
 	Color                                  color.NRGBA
 	Width, Opacity                         float64
 	Points                                 []Point
+	Quads                                  []Quad
 	PageWidth, PageHeight                  float64
 	Padding                                float64
 }
 
-func (d Data) Clone() Data { d.Points = append([]Point(nil), d.Points...); return d }
+func (d Data) Clone() Data {
+	d.Points = append([]Point(nil), d.Points...)
+	d.Quads = append([]Quad(nil), d.Quads...)
+	return d
+}
 func Default(kind Kind) Data {
 	d := Data{Kind: kind, Font: Fonts[0], Size: 18, Color: color.NRGBA{A: 255}, Width: 2, Opacity: 1, Padding: 1, StrokeStyle: StrokeSolid}
+	if kind == Drawing {
+		d.StrokeStyle = StrokeRound
+	}
 	if kind == Shape {
 		d.Shape = Rectangle
 		d.Magnification = 2
@@ -73,7 +83,7 @@ func Default(kind Kind) Data {
 	if kind == Highlight {
 		d.Color = color.NRGBA{R: 255, G: 235, A: 255}
 		d.Width = 12
-		d.Opacity = .35
+		d.Opacity = .3
 	}
 	return d
 }
@@ -86,9 +96,9 @@ func (d Data) Validate() error {
 		return fmt.Errorf("Invalid padding")
 	}
 	if d.Color.A != 255 {
-		return fmt.Errorf("Choose an opaque color; use the highlight opacity control")
+		return fmt.Errorf("Choose an opaque color; use the opacity control")
 	}
-	if d.StrokeStyle != "" && d.StrokeStyle != StrokeSolid && d.StrokeStyle != StrokeDashed && d.StrokeStyle != StrokeDotted {
+	if d.StrokeStyle != "" && d.StrokeStyle != StrokeSolid && d.StrokeStyle != StrokeDashed && d.StrokeStyle != StrokeDotted && (d.StrokeStyle != StrokeRound || d.Kind != Drawing) {
 		return fmt.Errorf("Invalid stroke style")
 	}
 	if d.Kind == Text {
@@ -117,6 +127,25 @@ func (d Data) Validate() error {
 	if d.Kind != Drawing && d.Kind != Highlight {
 		return fmt.Errorf("Invalid object type")
 	}
+	if d.Kind == Highlight && len(d.Quads) > 0 {
+		if len(d.Quads) > 100000 || !finite(d.PageWidth) || !finite(d.PageHeight) || d.PageWidth <= 0 || d.PageHeight <= 0 {
+			return fmt.Errorf("Invalid text highlight geometry")
+		}
+		for _, q := range d.Quads {
+			area := 0.
+			for i, p := range q {
+				if !finite(p.X) || !finite(p.Y) || p.X < 0 || p.Y < 0 || p.X > d.PageWidth || p.Y > d.PageHeight {
+					return fmt.Errorf("Highlight outside the page")
+				}
+				next := q[(i+1)%4]
+				area += p.X*next.Y - next.X*p.Y
+			}
+			if math.Abs(area) < .000001 {
+				return fmt.Errorf("Empty text highlight")
+			}
+		}
+		return nil
+	}
 	low, high := .5, 40.
 	if d.Kind == Highlight {
 		low, high = 2, 80
@@ -124,7 +153,7 @@ func (d Data) Validate() error {
 	if !finite(d.Width) || d.Width < low || d.Width > high {
 		return fmt.Errorf("Stroke width must be between %g and %g", low, high)
 	}
-	if !finite(d.Opacity) || d.Opacity < .05 || d.Opacity > 1 || d.Kind == Drawing && d.Opacity != 1 {
+	if !finite(d.Opacity) || d.Opacity < .05 || d.Opacity > 1 {
 		return fmt.Errorf("Invalid opacity")
 	}
 	if !finite(d.PageWidth) || !finite(d.PageHeight) || d.PageWidth <= 0 || d.PageHeight <= 0 || len(d.Points) == 0 || len(d.Points) > 100000 {
@@ -281,13 +310,31 @@ func (d Data) Artwork() (asset signatures.Asset, bounds vector.Rect, err error) 
 		left := math.Min(0, b.X0)
 		bounds = vector.Rect{X0: 0, Y0: 0, X1: math.Max(advance, b.X1) - left + 2*d.Padding, Y1: b.H() + 2*d.Padding}
 		path = path.Translate(d.Padding-left, d.Padding-b.Y0)
+	} else if d.Kind == Highlight && len(d.Quads) > 0 {
+		path = &vector.Path{}
+		for _, q := range d.Quads {
+			path.MoveTo(q[0].X, q[0].Y)
+			for _, p := range q[1:] {
+				path.LineTo(p.X, p.Y)
+			}
+			path.Close()
+		}
+		path = path.Settle(vector.NonZero)
+		bounds = path.Bounds().Expand(d.Padding)
+		bounds.X0 = math.Max(0, bounds.X0)
+		bounds.Y0 = math.Max(0, bounds.Y0)
+		bounds.X1 = math.Min(d.PageWidth, bounds.X1)
+		bounds.Y1 = math.Min(d.PageHeight, bounds.Y1)
+		alpha = .3
 	} else {
 		path = &vector.Path{}
 		path.MoveTo(d.Points[0].X, d.Points[0].Y)
 		for _, p := range d.Points[1:] {
 			path.LineTo(p.X, p.Y)
 		}
-		if len(d.Points) == 1 {
+		if d.Kind == Drawing && d.StrokeStyle == StrokeSolid {
+			path = flatMarkerPath(d.Points, d.Width).Settle(vector.NonZero)
+		} else if len(d.Points) == 1 {
 			path = vector.Circle(d.Width/2).Translate(d.Points[0].X, d.Points[0].Y)
 		} else {
 			path = d.dashPath(path)
@@ -306,6 +353,9 @@ func (d Data) Artwork() (asset signatures.Asset, bounds vector.Rect, err error) 
 		bounds.X1 = math.Min(d.PageWidth, bounds.X1)
 		bounds.Y1 = math.Min(d.PageHeight, bounds.Y1)
 		alpha = d.Opacity
+		if d.Kind == Highlight {
+			alpha = .3
+		}
 	}
 	if bounds.W() <= 0 || bounds.H() <= 0 {
 		err = fmt.Errorf("Empty object")
@@ -337,6 +387,12 @@ func (d Data) Scaled(factor float64) Data {
 		d.Width *= factor
 		d.PageWidth *= factor
 		d.PageHeight *= factor
+		for i := range d.Quads {
+			for j := range d.Quads[i] {
+				d.Quads[i][j].X *= factor
+				d.Quads[i][j].Y *= factor
+			}
+		}
 		for i := range d.Points {
 			d.Points[i].X *= factor
 			d.Points[i].Y *= factor

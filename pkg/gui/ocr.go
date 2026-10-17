@@ -3,7 +3,6 @@ package gui
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"emanuelelongo/proview/internal/ocr"
@@ -153,14 +152,16 @@ func (g *Gui) completeOCR(job *ocrJob, layout textselect.Layout, err error, canc
 	}
 	if err != nil {
 		layout = textselect.Layout{}
-		log.Printf("OCR page %d failed: %v", job.page+1, err)
+		g.logEvent("text_recognition_failed", "level=WARN page=%d elapsed=%s error=%q", job.page+1, elapsed.Round(time.Millisecond), err)
 		var setup *ocr.SetupError
 		if errors.As(err, &setup) && !ocrSetupWarningShown && g.window != nil {
 			ocrSetupWarningShown = true
 			dialog.ShowInformation("Text recognition unavailable", "The text recognition engine could not start. Please reinstall Proview if the problem persists.", g.window)
 		}
 	} else {
-		log.Printf("OCR page %d: %d words, %s", job.page+1, len(layout.Words), elapsed.Round(time.Millisecond))
+		if elapsed >= time.Second {
+			g.logEvent("text_recognition_completed", "page=%d words=%d elapsed=%s", job.page+1, len(layout.Words), elapsed.Round(time.Millisecond))
+		}
 	}
 	s.clock++
 	s.cache[job.key] = &ocrEntry{layout: layout, used: s.clock}

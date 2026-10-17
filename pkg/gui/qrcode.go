@@ -126,6 +126,7 @@ func (g *Gui) completeQRCodes(job *ocrJob, layout textselect.Layout, err error, 
 		return
 	}
 	if err != nil {
+		g.logEvent("qr_recognition_failed", "level=WARN page=%d error=%q", job.page+1, err)
 		layout = textselect.Layout{}
 	}
 	s.clock++

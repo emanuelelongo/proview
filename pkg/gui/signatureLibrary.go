@@ -293,6 +293,7 @@ func (g *Gui) insertSignatureAsset(asset signatures.Asset) {
 		fyne.Do(func() {
 			progress.Hide()
 			g.working = false
+			defer g.processPendingFiles()
 			if err != nil {
 				dialog.ShowError(err, g.window)
 				return
@@ -369,6 +370,7 @@ func (g *Gui) editSelectedDrawing(signature document.SignatureOverlay) {
 			fyne.Do(func() {
 				progress.Hide()
 				g.working = false
+				defer g.processPendingFiles()
 				if err != nil {
 					dialog.ShowError(err, g.window)
 					return

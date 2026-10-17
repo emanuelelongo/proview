@@ -83,34 +83,38 @@ func TestDroppedFilesOpenWithoutReplacingCurrentWork(t *testing.T) {
 				uris = append(uris, storage.NewFileURI(path))
 			}
 			g.openDroppedFiles(fyne.NewPos(500, 300), uris)
-			loadedWindows := func() int {
-				loaded := 0
-				for _, window := range driver.AllWindows() {
-					if window.Title() == uris[0].Name()+" — Proview" {
-						loaded++
-					}
+			driver.runNext(t) // Native drop dispatch.
+			if mode == "busy" {
+				if len(g.pendingFiles) != count || g.document != existing {
+					t.Fatal("busy drop was not retained")
 				}
-				return loaded
+				g.working = false
+				g.processPendingFiles()
 			}
-			for loadedWindows() < count {
+			want := count
+			if existing != nil {
+				want++
+			}
+			for len(g.documents) < want || g.openingFiles || len(g.pendingFiles) > 0 {
 				driver.runNext(t)
 			}
-			wantWindows := baseline + count
-			if mode == "empty" || mode == "multiple" {
-				wantWindows--
-				if g.document == nil || g.document.Name() != uris[0].Name() || g.saveTarget.String() != uris[0].String() {
-					t.Fatal("first dropped file was not opened in the empty window")
+			if got := len(driver.AllWindows()); got != baseline {
+				t.Fatalf("window count = %d, want %d", got, baseline)
+			}
+			if len(g.documents) != want || g.document == nil || g.saveTarget.String() != uris[count-1].String() {
+				t.Fatalf("files were not retained: entries=%d want=%d doc=%p existing=%p target=%v", len(g.documents), want, g.document, existing, g.saveTarget)
+			}
+			if existing != nil {
+				g.selectDocument(g.documents[0])
+				if g.document != existing || !existing.Dirty() {
+					t.Fatal("switching lost existing changes")
 				}
-				defer g.document.Close()
-			} else if g.document != existing || (existing != nil && !existing.Dirty()) {
-				t.Fatal("drop replaced or saved the existing document")
 			}
-			if got := len(driver.AllWindows()); got != wantWindows {
-				t.Fatalf("window count = %d, want %d", got, wantWindows)
+			g.closeRetainedDocuments()
+			if g.document != nil {
+				g.document.Close()
 			}
-			if loaded := loadedWindows(); loaded != count {
-				t.Fatalf("loaded windows = %d, want %d", loaded, count)
-			}
+
 		})
 	}
 }

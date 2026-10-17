@@ -169,7 +169,7 @@ func (g *Gui) pasteImage() {
 			if err != nil && !errors.Is(err, clipboard.ErrNoData) {
 				return func() {
 					if g.document == doc && !g.closed {
-						dialog.ShowError(err, g.window)
+						g.showOperationError("clipboard", err)
 					}
 				}
 			}

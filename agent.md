@@ -9,16 +9,23 @@ version metadata is in `FyneApp.toml`.
 
 Read [docs/pdf-forms.md](docs/pdf-forms.md) before continuing PDF form work. It is
 the current implementation/status handoff, including accepted decisions, tests,
-limitations and remaining tasks. Branch: `prototype/pdf-forms`. The prototype,
-fixtures and manual demo are committed together; release/packaging is separate.
+limitations and remaining tasks. The tested `prototype/pdf-forms` branch was
+merged into `develop` and deleted on 2026-10-17; release/packaging is separate.
 
-## Native PDF text correction prototype
+## Native PDF text editing prototype
 
 Read [docs/pdf-text-editing.md](docs/pdf-text-editing.md) before continuing native
 text editing. The prototype is now connected to the application, with a separate
 mode and reversible source replacement. Preserve its conservative eligibility
 checks and insertion at the original text object's position; do not restore an
-append-at-page-end fallback. Read [docs/text-search.md](docs/text-search.md) for
+append-at-page-end fallback. Custom Tc/Tw spacing uses context-local
+processor hooks and positioned replacement glyphs; retain q/Q state, source
+encoding rules and the generated Form's `ProviewTextSpacing` metadata for later
+edits. Mixed selected spacing and inherited source-Form spacing remain rejected.
+Native edits/moves/duplicates must reject overlaps with other source text before
+committing. Duplicate (`copy-plus`) starts a drag, preserves the source word and
+creates one Undo operation on a valid drop; further drops move that new copy.
+Rejecting a drop must retain the mode for retry and leave history unchanged. Read [docs/text-search.md](docs/text-search.md) for
 whole-document search, OCR reuse and result invalidation.
 
 ## Documentation and future PDF signatures
@@ -60,13 +67,26 @@ PDF page combination/reordering/deletion and blank pages.
   an SVG asset; it must not silently convert existing PNG signatures.
 - Overlay rectangles use normalized page coordinates. Annotation dimensions use
   PDF points or original image pixels and must remain independent of view zoom.
+- Highlight follows native PDF or recognized image text, merges words per line,
+  and records one vector object per gesture with fixed 30% opacity. It has only a
+  color control. Draw has independent opacity and round, flat, dashed and dotted
+  modes. The filled-circle mode retains the round freehand tip; the solid-line
+  mode sweeps a fixed 45-degree flat nib along the freehand path, not a segment.
+  See [Drawing and highlighting](docs/annotations.md).
 - PDF crop deliberately creates an independent PNG editor window, including
   visible overlays, at preview resolution (144 DPI). It does not crop the PDF itself.
-- Each editor window owns its document, history and save destination; all windows
-  share one Fyne application. Closing one must not close the other editors.
+- Each editor window owns a document workspace; every retained document has its
+  own history and save destination. All windows share one Fyne application.
+  Closing one must not close the other editors. See [Document workspace](docs/document-workspace.md).
 - File drops use Fyne's window-wide `SetOnDropped` on all desktop platforms.
-  Dispatch to `fyne.Do`, ignore closed windows, and reuse startup opening: an
-  empty idle window opens the first file, otherwise use new editor windows.
+  Dispatch to `fyne.Do` and ignore closed windows. Open file, startup, drops and
+  desktop requests share ordered opening: PDF onto PDF offers New window /
+  Append pages / Cancel; other combinations retain documents in the same window.
+  The sidebar switches documents and keeps the selected PDF's page thumbnails.
+  Busy requests wait; switching preserves edits, source ownership and save targets.
+- Desktop launches with paths use `internal/openfiles` to forward to an existing
+  process through a private authenticated loopback endpoint and OS file lock.
+  macOS retains its Apple Event bridge. Keep `--check-ocr` free of IPC/registration.
 - Use the shared `chooseFile` / `chooseFiles` helpers for document opening,
   signature import and PDF collection selection. Native pickers use
   `github.com/ncruces/zenity`; unavailable/failing backends fall back to Fyne.
@@ -114,6 +134,7 @@ PDF page combination/reordering/deletion and blank pages.
   pinned to revision `74929e50416e2b7c0abb8368cdc74bdcb2560ab6`.
   Assets live in `pkg/gui/icons/tabler`; retain the MIT license and provenance.
   Fetch new icons from that revision's `icons/outline/<name>.svg` when available.
+  The filled-circle nib indicator uses `icons/filled/circle.svg` from that revision.
 - Load toolbar icons with `tablerIcon`: its conversion of SVG strokes into filled
   outlines is intentional, because Fyne themes recolor fills. Do not bypass it.
 - Current icon names: `signature`, `crop`, `pointer`, `text-outline`, `sketching`,
@@ -231,6 +252,15 @@ PDF page combination/reordering/deletion and blank pages.
 - MuPDF `premature end of data in flate filter` warnings concern PDF data;
   diagnose them separately from native-menu and nil-window crashes.
 
+## Diagnostic logging
+
+- See [Diagnostic logs](docs/logging.md). Initialize `internal/applog` only in
+  the executable; keep terminal output and bounded asynchronous file logging.
+  Preserve batched writes, rotation, multi-process locking and crash capture.
+- Log operation boundaries/errors, with document/revision/page context. Do not
+  log input motion, rendering frames, document text, search queries or secrets.
+  Keep technical PDF edit errors in logs and use plain English in user dialogs.
+
 ## Build, packaging and verification
 
 - Use `Taskfile.yaml`: `task run`, `task test`, `task vet`, `task check`, `task build`.
@@ -347,6 +377,12 @@ PDF page combination/reordering/deletion and blank pages.
   and redaction IDs. Copy all editing state; keep shared-image redaction rules.
 - Shapes remain vector geometry on PDF export. Callouts have a fixed tail and no
   integrated text; stars have five points; arrows follow their drag direction.
+  Line is a stroked segment; Arrow is a stroked shaft and open chevron with a
+  fixed 12-unit head, independent of shaft length. Both hide the fill toggle.
+  Resize all shapes by regenerating control points/artwork at the new physical
+  dimensions, retaining stroke width, padding and arrowhead size. Coalesce GUI
+  preparation in the annotation worker and publish only the latest geometry;
+  retain one Undo per drag, transform orientation and Ctrl proportion locking.
 - Magnifiers are circular, dynamic, exclude every other magnifier, and sample only
   earlier objects in stacking order. Their zoom is independent of diameter (1–8×).
   Export only the visible disk at 300 DPI for PDF; never embed hidden corner pixels.

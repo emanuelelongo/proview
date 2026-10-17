@@ -10,7 +10,8 @@ plans and remaining work. Build/installation instructions belong in
 - Linux per-user installation, launcher, icon and Open With associations for
   PDF, supported images and STL, without changing defaults.
 - macOS bundle document declarations and Finder/Open With Apple Event handling;
-  the first file uses an empty window and additional files use separate windows.
+  requests use the shared document-opening flow described in
+  [Document workspace](docs/document-workspace.md).
   Packaging signs the final bundle and checks metadata/signature integrity.
 - Windows embedded application icon, shared startup-file loading and automatic
   per-user Open With registration on launch. Moving the executable updates the
@@ -26,8 +27,9 @@ plans and remaining work. Build/installation instructions belong in
       embedded icon and in-app About metadata.
 - [ ] Windows: decide whether to add an installer/uninstaller or a command to
       remove portable per-user registration. Document cleanup behavior.
-- [ ] Windows: consider single-instance IPC only if forwarding Explorer requests
-      to an existing process becomes a product requirement.
+- Local implementation: desktop startup requests now forward to an existing
+  process; see [Document workspace](docs/document-workspace.md). Verify Explorer
+  forwarding on Windows before recording native acceptance.
 - [ ] All platforms: verify PDF, supported images and STL association coverage;
       missing/unsupported files must preserve other open documents and report errors.
 - [ ] Record native desktop acceptance results; automated packaging checks and

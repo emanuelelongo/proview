@@ -72,3 +72,37 @@ func TestLeavingPreviousIconDoesNotHideNextTooltip(t *testing.T) {
 		t.Fatal("tooltip survived leaving its owner")
 	}
 }
+
+func TestPDFTextDialogTooltipsStayInsideModalAndKeepButtonsClickable(t *testing.T) {
+	g, _ := textMoveTestGui(t)
+	overlays := len(g.window.Canvas().Overlays().List())
+	var buttons []*iconButton
+	for _, object := range fyneTest.LaidOutObjects(g.window.Canvas().Overlays().Top()) {
+		if button, ok := object.(*iconButton); ok && (button.tooltip == "Move" || button.tooltip == "Duplicate") {
+			buttons = append(buttons, button)
+		}
+	}
+	if len(buttons) != 2 {
+		t.Fatalf("dialog buttons=%d", len(buttons))
+	}
+	for _, button := range buttons {
+		button.MouseIn(&desktop.MouseEvent{})
+		surface := button.tooltipHost
+		if surface == nil || !surface.bubble.Visible() || surface.label.Text != button.tooltip {
+			t.Fatal("dialog hover did not show tooltip")
+		}
+		if len(g.window.Canvas().Overlays().List()) != overlays {
+			t.Fatal("tooltip added an input-blocking overlay")
+		}
+		button.MouseOut()
+		if surface.bubble.Visible() {
+			t.Fatal("tooltip survived mouse exit")
+		}
+	}
+	button := buttons[0]
+	button.MouseIn(&desktop.MouseEvent{})
+	fyneTest.Tap(button)
+	if g.correctionDialog != nil || g.textMove == nil || button.tooltipHost.bubble.Visible() {
+		t.Fatal("tooltip blocked the action or survived dialog close")
+	}
+}

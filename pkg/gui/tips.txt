@@ -4,6 +4,8 @@ Tip: Drop files onto the window to open them; an occupied window opens them in n
 Tip: Hold Shift while clicking New page to create a document from the image in your clipboard.
 Tip: Use Redact PDF to securely remove sensitive information from PDFs when you export.
 Tip: Hold Shift to move or resize an annotation without leaving the current drawing tool.
+Tip: Drag Highlight across words and lines; its opacity stays at 30%.
+Tip: In Draw, the filled circle selects a round tip and the solid line selects a flat marker tip.
 Tip: Hold Ctrl while resizing a shape to preserve its proportions.
 Tip: Press Esc to cancel the current operation or clear a selection.
 Tip: Click a thumbnail to switch PDF pages; drag thumbnails to reorder them.
@@ -24,7 +26,7 @@ Tip: Clear a word's value in Edit PDF Text and click Apply to delete it.
 Tip: Use Move beside the text box to drag a PDF word; Move stays active after each drop.
 Tip: While moving PDF text, hold Shift to disable snapping and keep the alignment guides visible.
 Tip: Each completed PDF text move has its own Undo step; press Esc to leave Move.
-Tip: PDF text edits keep surrounding content fixed; adjust the text or its position to manage overlaps.
+Tip: PDF text edits keep surrounding content fixed and reject positions that overlap other text.
 Tip: Click a QR code to reveal its contents in the status bar; click a link there to open it.
 Tip: Crop a PDF page or STL view to open the selected area as an image in a new window.
 Tip: File > Close closes the current document and keeps the editor window open.
@@ -32,3 +34,9 @@ Tip: For STL models, keys 1-7 select standard views and 0 toggles wireframe.
 Tip: GIF and multipage TIFF files currently show only their first frame or page.
 Tip: Sync your signature library with Google Drive or S3 to use it on another computer.
 Tip: Use Help > Show Tips to hide or show these suggestions.
+
+Open additional files in this window and use the sidebar to switch documents.
+Open a PDF while viewing a PDF to choose a new window or append its pages.
+
+Tip: In Edit PDF Text, Duplicate starts dragging a copy of the selected word.
+Tip: Move PDF text to a free area: edits and copies cannot overlap other source text.

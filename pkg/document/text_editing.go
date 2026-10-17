@@ -53,6 +53,14 @@ func (p *PreparedTextCorrection) TextGeometry(page int) (TextLayout, error) {
 }
 
 func (d *Document) PrepareTextCorrection(page, start, count int, value string, dx, dy float64) (*PreparedTextCorrection, error) {
+	return d.prepareTextEdit(page, start, count, value, dx, dy, false)
+}
+
+func (d *Document) PrepareTextDuplication(page, start, count int, value string, dx, dy float64) (*PreparedTextCorrection, error) {
+	return d.prepareTextEdit(page, start, count, value, dx, dy, true)
+}
+
+func (d *Document) prepareTextEdit(page, start, count int, value string, dx, dy float64, duplicate bool) (*PreparedTextCorrection, error) {
 	if d.Format() != FormatPDF {
 		return nil, errors.New("text editing requires a PDF")
 	}
@@ -66,7 +74,12 @@ func (d *Document) PrepareTextCorrection(page, start, count int, value string, d
 	if err != nil {
 		return nil, err
 	}
-	corrected, err := pdfengine.CorrectText(data, page, start, count, value, dx, dy)
+	var corrected []byte
+	if duplicate {
+		corrected, err = pdfengine.DuplicateText(data, page, start, count, value, dx, dy)
+	} else {
+		corrected, err = pdfengine.CorrectText(data, page, start, count, value, dx, dy)
+	}
 	if err != nil {
 		return nil, err
 	}

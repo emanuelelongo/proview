@@ -8,32 +8,29 @@ import (
 )
 
 func (g *Gui) openStartupFiles(paths []string) {
-	for index, path := range paths {
-		reader, err := startupFileReader(path)
-		if err != nil {
-			errorEditor := g
-			if g.closed {
-				errorEditor = newGui(g.app)
-				errorEditor.window.Show()
-			}
-			BuildOpenFileCallback(errorEditor)(nil, err)
-			continue
-		}
-		editor := g
-		if index > 0 || g.hasOpenContent() || g.working || g.closed {
-			editor = newGui(g.app)
-			editor.window.Show()
-		}
-		BuildOpenFileCallback(editor)(reader, nil)
+	if g.closed {
+		editor := g.newEditor()
+		editor.window.Show()
+		editor.openStartupFiles(paths)
+		return
 	}
+	g.pendingFiles = append(g.pendingFiles, paths...)
+	g.processPendingFiles()
 }
+
+// OpenFiles accepts desktop requests from a background worker.
+func (g *Gui) OpenFiles(paths []string) { g.openFilesFromFinder(paths) }
 
 func (g *Gui) openFilesFromFinder(paths []string) {
 	if len(paths) == 0 {
 		return
 	}
 	fyne.Do(func() {
-		g.openStartupFiles(paths)
+		editor := g.desktopEditor()
+		editor.openStartupFiles(paths)
+		if !editor.closed {
+			editor.window.RequestFocus()
+		}
 	})
 }
 
@@ -50,6 +47,7 @@ func (g *Gui) openDroppedFiles(_ fyne.Position, uris []fyne.URI) {
 	// Native drop callbacks run outside Fyne's UI goroutine.
 	fyne.Do(func() {
 		if !g.closed {
+			g.activateEditor()
 			g.openStartupFiles(paths)
 		}
 	})

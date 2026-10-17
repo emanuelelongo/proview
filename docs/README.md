@@ -14,12 +14,15 @@ Feature documentation on a prototype branch does not imply a published release.
 | [Development and packaging](development.md) | Setup, commands, platform builds and releases |
 | [Platform integration backlog](../next-to-do.md) | Remaining desktop integration and manual verification |
 | [Website and OAuth branding](github-pages-setup.md) | Pages, domain and Google project setup |
+| [Diagnostic logs](logging.md) | Local rotating logs, crash reports, retention and troubleshooting |
 | [Licensing review](licensing.md) | Dependencies, distribution obligations and open licensing work |
 
 ## Features and current prototype status
 
 | Document | Purpose |
 | --- | --- |
+| [Document workspace](document-workspace.md) | Multiple documents per window, PDF append choices and desktop request forwarding |
+| [Drawing, highlighting and shapes](annotations.md) | Text-following highlights, freehand nibs, opacity, shape resizing and vector export |
 | [PDF forms](pdf-forms.md) | Implemented behavior, accepted decisions, limits and verification |
 | [Document search](text-search.md) | Whole-document native text search and OCR reuse |
 | [Native PDF text editing](pdf-text-editing.md) | Implemented prototype, constraints, tests and remaining review |

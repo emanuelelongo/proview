@@ -191,9 +191,13 @@ func (g *Gui) startSearch() {
 				s.hits = append(s.hits, hits...)
 				s.scanned = page + 1
 				if err != nil {
+					if s.failed == 0 {
+						g.logEvent("search_page_failed", "level=WARN page=%d error=%q", page+1, err)
+					}
 					s.failed++
 				}
 				if last {
+					g.logEvent("search_completed", "pages_scanned=%d pages_failed=%d matches=%d limited=%t", s.scanned, s.failed, len(s.hits), limited)
 					s.running = false
 					s.limited = limited
 				}

@@ -47,6 +47,7 @@ func (g *Gui) saveWithCompletion(saved func()) {
 
 func (g *Gui) saveConfirmed(saved func()) {
 	target := g.saveTarget
+	g.logEvent("save_started", "mode=save")
 	revision := g.document.Revision()
 	g.working = true
 	progress := dialog.NewCustomWithoutButtons("Saving", widget.NewProgressBarInfinite(), g.window)
@@ -56,8 +57,9 @@ func (g *Gui) saveConfirmed(saved func()) {
 		fyne.Do(func() {
 			progress.Hide()
 			g.working = false
+			defer g.processPendingFiles()
 			if exportErr != nil {
-				dialog.ShowError(exportErr, g.window)
+				g.showOperationError("save", exportErr)
 				return
 			}
 			if target.Scheme() == "file" {
@@ -66,7 +68,7 @@ func (g *Gui) saveConfirmed(saved func()) {
 			}
 			writer, err := storage.Writer(target)
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("save", err)
 				return
 			}
 			g.writeExport(writer, data, target, revision, saved)
@@ -87,6 +89,7 @@ func (g *Gui) saveAsWithCompletion(saved func()) {
 }
 
 func (g *Gui) saveAsConfirmed(saved func()) {
+	g.logEvent("save_started", "mode=save_as")
 	g.working = true
 	progress := dialog.NewCustomWithoutButtons("Preparing export", widget.NewProgressBarInfinite(), g.window)
 	progress.Show()
@@ -95,8 +98,9 @@ func (g *Gui) saveAsConfirmed(saved func()) {
 		fyne.Do(func() {
 			progress.Hide()
 			g.working = false
+			defer g.processPendingFiles()
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("save", err)
 				return
 			}
 			g.showSaveAsDialog(exports, saved)
@@ -143,7 +147,7 @@ func (g *Gui) writeExport(writer fyne.URIWriteCloser, data []byte, uri fyne.URI,
 	_, writeErr := io.Copy(writer, bytes.NewReader(data))
 	closeErr := writer.Close()
 	if err := errors.Join(writeErr, closeErr); err != nil {
-		dialog.ShowError(fmt.Errorf("could not save %q: %w", uri.Name(), err), g.window)
+		g.showOperationError("save_write", fmt.Errorf("could not save %q: %w", uri.Name(), err))
 		return
 	}
 	g.fileSizeBytes = int64(len(data))
@@ -156,7 +160,7 @@ func (g *Gui) finishFileSave(data []byte, uri fyne.URI, revision uint64, saved f
 		return
 	}
 	if err := document.WriteFileAtomic(uri.Path(), data); err != nil {
-		dialog.ShowError(fmt.Errorf("could not save %q: %w", uri.Name(), err), g.window)
+		g.showOperationError("save_write", fmt.Errorf("could not save %q: %w", uri.Name(), err))
 		return
 	}
 	g.fileSizeBytes = int64(len(data))
@@ -164,6 +168,7 @@ func (g *Gui) finishFileSave(data []byte, uri fyne.URI, revision uint64, saved f
 }
 
 func (g *Gui) finishSave(uri fyne.URI, revision uint64, saved func()) {
+	g.logEvent("save_completed", "bytes=%d exported_revision=%d scheme=%q", g.fileSizeBytes, revision, uri.Scheme())
 	g.saveTarget = uri
 	if uri.Scheme() == "file" {
 		if directory, err := filepath.Abs(filepath.Dir(uri.Path())); err == nil {
@@ -256,7 +261,7 @@ func (g *Gui) showLocalSaveAsDialog(exports preparedExports, saved func()) {
 	choose := widget.NewButton("Choose folder", func() {
 		d := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showOperationError("save", err)
 				return
 			}
 			if uri != nil && uri.Scheme() == "file" {
@@ -297,7 +302,7 @@ func (g *Gui) showLocalSaveAsDialog(exports preparedExports, saved func()) {
 		}
 		_, err := os.Stat(uri.Path())
 		if err != nil && !os.IsNotExist(err) {
-			dialog.ShowError(err, g.window)
+			g.showOperationError("save", err)
 			return
 		}
 		if err == nil || g.restoresRedactions(uri) {
@@ -321,6 +326,7 @@ func (g *Gui) showLocalSaveAsDialog(exports preparedExports, saved func()) {
 	cancel := widget.NewButton("Cancel", func() { chooser.Hide() })
 	content := container.NewVBox(widget.NewLabel("File name"), name, widget.NewLabel("Folder"), location, choose, container.NewHBox(cancel, save))
 	chooser = dialog.NewCustomWithoutButtons("Save As", content, g.window)
+	g.pauseExternalOpening(chooser)
 	chooser.Resize(fyne.NewSize(560, 320))
 	chooser.Show()
 }

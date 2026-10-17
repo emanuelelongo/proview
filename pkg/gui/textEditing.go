@@ -101,7 +101,7 @@ func (l *textCorrectionLayer) Tapped(e *fyne.PointEvent) {
 				return
 			}
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showTextEditError(l.page, err)
 				return
 			}
 			l.doc = doc
@@ -191,6 +191,7 @@ func (g *Gui) promptTextCorrection(l *textCorrectionLayer, start, end int) {
 	apply := widget.NewButton("Apply", nil)
 	apply.Importance = widget.HighImportance
 	move := newIconButton(tablerIcon("arrows-move"), "Move", nil)
+	duplicate := newIconButton(tablerIcon("copy-plus"), "Duplicate", nil)
 	submit := func(value string) {
 		if g.working {
 			return
@@ -201,11 +202,15 @@ func (g *Gui) promptTextCorrection(l *textCorrectionLayer, start, end int) {
 		}
 		apply.Disable()
 		move.Disable()
+		duplicate.Disable()
 		g.applyTextEdit(l, start, end, value, 0, 0, func() bool { return g.correctionDialog == d }, func(err error, _ document.TextLayout) {
 			apply.Enable()
 			move.Enable()
+			if strings.TrimSpace(text.Text) != "" {
+				duplicate.Enable()
+			}
 			if err != nil {
-				dialog.ShowError(err, g.window)
+				g.showTextEditError(l.page, err)
 				return
 			}
 			d.Hide()
@@ -220,13 +225,36 @@ func (g *Gui) promptTextCorrection(l *textCorrectionLayer, start, end int) {
 		d.Hide()
 		g.beginTextMove(l, start, end, replacement)
 	}
+	duplicate.OnTapped = func() {
+		if g.working || strings.TrimSpace(text.Text) == "" {
+			return
+		}
+		value := text.Text
+		d.Hide()
+		g.beginTextMove(l, start, end, value)
+		if g.textMove != nil {
+			g.textMove.duplicate = true
+			g.textMove.references = textAlignmentReferences(l.layout, -1, -1)
+		}
+	}
+	text.OnChanged = func(value string) {
+		if strings.TrimSpace(value) == "" {
+			duplicate.Disable()
+		} else {
+			duplicate.Enable()
+		}
+	}
 	cancel := widget.NewButton("Cancel", func() { d.Hide() })
-	row := container.NewBorder(nil, nil, nil, move, text)
+	row := container.NewBorder(nil, nil, nil, container.NewHBox(move, duplicate), text)
 	form := widget.NewForm(widget.NewFormItem("Text", row))
 	content := container.NewVBox(form, container.NewGridWithColumns(2, cancel, apply))
-	d = dialog.NewCustomWithoutButtons("Edit PDF Text", content, g.window)
+	tooltips := newTooltipSurface(content)
+	move.tooltipHost, duplicate.tooltipHost = tooltips, tooltips
+	d = dialog.NewCustomWithoutButtons("Edit PDF Text", tooltips, g.window)
 	g.correctionDialog = d
 	d.SetOnClosed(func() {
+		move.hideTooltip()
+		duplicate.hideTooltip()
 		l.selection.Hide()
 		if g.correctionDialog == d {
 			g.correctionDialog = nil
@@ -250,9 +278,16 @@ func (g *Gui) applyTextEdit(l *textCorrectionLayer, start, end int, value string
 		return
 	}
 	keepMoving := g.textMove != nil && g.textMove.layer == l
+	duplicate := keepMoving && g.textMove.duplicate
 	snapshot := doc.RenderingSnapshot()
 	g.queueAnnotation(func() func() {
-		prepared, err := snapshot.PrepareTextCorrection(l.page, start, end-start+1, value, dx, dy)
+		var prepared *document.PreparedTextCorrection
+		var err error
+		if duplicate {
+			prepared, err = snapshot.PrepareTextDuplication(l.page, start, end-start+1, value, dx, dy)
+		} else {
+			prepared, err = snapshot.PrepareTextCorrection(l.page, start, end-start+1, value, dx, dy)
+		}
 		var updated document.TextLayout
 		if err == nil && keepMoving {
 			updated, err = prepared.TextGeometry(l.page)
@@ -288,6 +323,7 @@ type textMoveState struct {
 	references           []textAlignmentReference
 	horizontal, vertical textSnapAxis
 	dragging             bool
+	duplicate            bool
 }
 
 func (g *Gui) beginTextMove(l *textCorrectionLayer, start, end int, value string) {
@@ -358,7 +394,7 @@ func (l *textCorrectionLayer) DragEnd() {
 	for _, glyph := range l.layout.Glyphs[m.start : m.end+1] {
 		original = append(original, glyph.Rune)
 	}
-	if math.Abs(dx) < .001 && math.Abs(dy) < .001 && m.value == string(original) {
+	if !m.duplicate && math.Abs(dx) < .001 && math.Abs(dy) < .001 && m.value == string(original) {
 		m.rawOffset, m.offset = fyne.Position{}, fyne.Position{}
 		l.selectionRect = m.base
 		l.Refresh()
@@ -370,7 +406,7 @@ func (l *textCorrectionLayer) DragEnd() {
 			m.offset = fyne.Position{}
 			l.selectionRect = m.base
 			l.Refresh()
-			dialog.ShowError(err, g.window)
+			g.showTextEditError(l.page, err)
 			return
 		}
 		// syncDocumentView canceled the old transient move before this callback.
@@ -421,7 +457,8 @@ func (g *Gui) refreshCorrectionPreviews() {
 					return
 				}
 				if err != nil {
-					dialog.ShowError(err, g.window)
+					g.logEvent("operation_failed", "level=ERROR operation=pdf_text_preview page=%d error=%q", page+1, err)
+					dialog.ShowError(fmt.Errorf("Couldn't update the page preview. Details are available in Help → Open logs folder."), g.window)
 					return
 				}
 				g.pdfPageImages[page].Image = preview

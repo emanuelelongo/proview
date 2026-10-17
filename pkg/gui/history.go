@@ -156,6 +156,7 @@ func (g *Gui) updateHistoryActions() {
 	}
 	updateModelMenu(g)
 	g.updateTitle()
+	g.refreshDocumentSidebar()
 	for _, menu := range g.stateMenus {
 		refreshMenuState(menu)
 	}

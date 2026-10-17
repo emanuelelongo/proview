@@ -177,6 +177,7 @@ func (g *Gui) showFyneFilePicker(state *filePickerState, request filePickerReque
 }
 
 func (g *Gui) finishFilePicker(state *filePickerState, readers []fyne.URIReadCloser, err error) {
+	defer g.processPendingFiles()
 	if g.filePicker != state || g.closed {
 		closePickedFiles(readers)
 		return

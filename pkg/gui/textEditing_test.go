@@ -405,3 +405,134 @@ func TestTextMoveNoOpRemainsArmed(t *testing.T) {
 		t.Fatal("Escape did not exit Move while retaining the editing tool")
 	}
 }
+
+func TestPDFTextDuplicateStartsDraggingAndCreatesOneEditableCopy(t *testing.T) {
+	for _, zoom := range []float32{1, 2} {
+		t.Run(fmt.Sprint(zoom), func(t *testing.T) {
+			g, l := textMoveTestGui(t)
+			buttons, entries := textDialogControls(t, g)
+			duplicate := buttons["Duplicate"]
+			if duplicate == nil || duplicate.Icon == nil || !strings.Contains(duplicate.Icon.Name(), "copy-plus") {
+				t.Fatal("missing Duplicate icon")
+			}
+			entries[0].SetText("EDIT")
+			fyneTest.Tap(duplicate)
+			if g.correctionDialog != nil || g.textMove == nil || !g.textMove.duplicate || g.document.Dirty() || g.annotationPending != 0 {
+				t.Fatal("duplicate did not arm without mutation")
+			}
+			l.Resize(fyne.NewSize(600*zoom, 800*zoom))
+			m, size := g.textMove, l.Size()
+			x, y := float32(m.base.X+m.base.Width/2)*size.Width, float32(m.base.Y+m.base.Height/2)*size.Height
+			delta := size.Height * .1
+			l.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(x, y+delta)}, Dragged: fyne.Delta{DY: delta}})
+			if g.document.Dirty() {
+				t.Fatal("duplicate preview changed history")
+			}
+			l.DragEnd()
+			finishAnnotationJobs(t, g)
+			geometry, err := g.document.RenderingSnapshot().CorrectionTextGeometry(0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value := textLayoutString(geometry)
+			if strings.Count(value, "SECRET") != 1 || strings.Count(value, "EDIT") != 1 {
+				t.Fatalf("original/copy incorrect: %q", value)
+			}
+			if g.textMove == nil || g.textMove.duplicate || g.textMove.value != "EDIT" {
+				t.Fatal("copy did not continue as Move")
+			}
+			// Refine the copy's position; this must move the copy rather than duplicate again.
+			m = g.textMove
+			x, y = float32(m.base.X+m.base.Width/2)*size.Width, float32(m.base.Y+m.base.Height/2)*size.Height
+			l.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(x, y+delta)}, Dragged: fyne.Delta{DY: delta}})
+			l.DragEnd()
+			finishAnnotationJobs(t, g)
+			geometry, err = g.document.RenderingSnapshot().CorrectionTextGeometry(0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value = textLayoutString(geometry)
+			if strings.Count(value, "SECRET") != 1 || strings.Count(value, "EDIT") != 1 {
+				t.Fatal("refinement made another copy")
+			}
+			if !g.document.Undo() || !g.document.Dirty() || !g.document.Undo() || g.document.Dirty() || g.document.CanUndo() {
+				t.Fatal("duplicate/refinement history incorrect")
+			}
+		})
+	}
+}
+
+func TestPDFTextDuplicateRejectsOriginalPositionAndCanRetry(t *testing.T) {
+	g, l := textMoveTestGui(t)
+	buttons, _ := textDialogControls(t, g)
+	fyneTest.Tap(buttons["Duplicate"])
+	m := g.textMove
+	m.dragging = true
+	l.DragEnd()
+	finishAnnotationJobs(t, g)
+	if g.document.Dirty() || g.document.CanUndo() || g.textMove != m || !m.duplicate || m.offset != (fyne.Position{}) {
+		t.Fatal("rejected duplicate changed state")
+	}
+	tapDialogButton(t, g, "OK")
+	size := l.Size()
+	x, y := float32(m.base.X+m.base.Width/2)*size.Width, float32(m.base.Y+m.base.Height/2)*size.Height
+	delta := size.Height * .1
+	l.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(x, y+delta)}, Dragged: fyne.Delta{DY: delta}})
+	l.DragEnd()
+	finishAnnotationJobs(t, g)
+	geometry, err := g.document.RenderingSnapshot().CorrectionTextGeometry(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(textLayoutString(geometry), "SECRET") != 2 || !g.document.Dirty() {
+		t.Fatal("retry failed")
+	}
+}
+
+func TestPDFTextDuplicateCancellationAndEmptyValue(t *testing.T) {
+	g, _ := textMoveTestGui(t)
+	buttons, entries := textDialogControls(t, g)
+	entries[0].SetText("")
+	if !buttons["Duplicate"].Disabled() {
+		t.Fatal("empty duplicate enabled")
+	}
+	entries[0].SetText("SECRET")
+	fyneTest.Tap(buttons["Duplicate"])
+	if !g.cancelCurrentOperation() || g.textMove != nil || !g.textEditing || g.document.Dirty() {
+		t.Fatal("canceling duplicate changed document")
+	}
+}
+
+func TestPDFTextEditAndMoveRejectOverlapWithoutHistory(t *testing.T) {
+	for _, mode := range []string{"apply", "move"} {
+		t.Run(mode, func(t *testing.T) {
+			g, l := textMoveTestGui(t)
+			buttons, entries := textDialogControls(t, g)
+			if mode == "apply" {
+				entries[0].SetText("LONG LONG LONG")
+				fyneTest.Tap(buttons["Apply"])
+			} else {
+				fyneTest.Tap(buttons["Move"])
+				m := g.textMove
+				value := textLayoutString(l.layout)
+				keep := len([]rune(value[:strings.Index(value, "KEEP")]))
+				dx := l.layout.Glyphs[keep].Origin.X - l.layout.Glyphs[m.start].Origin.X
+				size := l.Size()
+				x, y := float32(m.base.X+m.base.Width/2)*size.Width, float32(m.base.Y+m.base.Height/2)*size.Height
+				delta := float32(dx) * size.Width
+				l.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(x+delta, y)}, Dragged: fyne.Delta{DX: delta}})
+				l.DragEnd()
+			}
+			finishAnnotationJobs(t, g)
+			if g.document.Dirty() || g.document.CanUndo() {
+				t.Fatal("overlap rejection changed document")
+			}
+			if g.window.Canvas().Overlays().Top() == nil {
+				t.Fatal("overlap was silently ignored")
+			}
+			if mode == "move" && (g.textMove == nil || g.textMove.offset != (fyne.Position{})) {
+				t.Fatal("failed move did not reset for retry")
+			}
+		})
+	}
+}

@@ -149,6 +149,7 @@ func thumbnailSizeForSidebar(pageSize image.Point, sidebarWidth float32) fyne.Si
 }
 
 func (g *Gui) updatePDFThumbnailSizes() {
+	g.refreshDocumentSidebar()
 	if g.document == nil || g.document.Format() != document.FormatPDF || g.sidebarSplit == nil {
 		return
 	}
