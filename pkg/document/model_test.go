@@ -537,7 +537,7 @@ func testImageSource(t *testing.T) (*Source, []byte) {
 	return source, original
 }
 
-func testSignaturePNG(t *testing.T) []byte {
+func testSignaturePNG(t testing.TB) []byte {
 	t.Helper()
 	signature := image.NewNRGBA(image.Rect(0, 0, 4, 2))
 	signature.SetNRGBA(1, 1, color.NRGBA{A: 128})
@@ -547,3 +547,47 @@ func testSignaturePNG(t *testing.T) []byte {
 	}
 	return encoded.Bytes()
 }
+
+func TestSnapshotSharesImmutableBuffersAndPreservesIsolation(t *testing.T) {
+	source, _ := testImageSource(t)
+	doc, err := New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pngData := testSignaturePNG(t)
+	sig, err := doc.AddSignature(0, NormalizedRect{X: .1, Y: .1, Width: .2, Height: .2}, pngData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.MarkSaved()
+
+	// Dirty() should not allocate when comparing unchanged state.
+	allocs := testing.AllocsPerRun(50, func() {
+		if doc.Dirty() {
+			t.Fatal("expected clean document")
+		}
+	})
+	if allocs > 0 {
+		t.Fatalf("Dirty() allocated %v objects per run, want 0", allocs)
+	}
+
+	// Internal snapshots share the immutable PNG backing array.
+	snap := doc.RenderingSnapshot()
+	if &snap.signatures[0].png[0] != &doc.signatures[0].png[0] {
+		t.Fatal("RenderingSnapshot cloned immutable PNG slice")
+	}
+
+	// Public PNG() accessor still returns a defensive copy.
+	exported := doc.Signatures()[0].PNG()
+	exported[0] ^= 0xff
+	if bytes.Equal(exported, doc.Signatures()[0].PNG()) {
+		t.Fatal("mutating exported PNG slice affected document state")
+	}
+	if err := doc.UpdateSignature(sig.ID, 0, NormalizedRect{X: .2, Y: .2, Width: .2, Height: .2}); err != nil {
+		t.Fatal(err)
+	}
+	if !doc.Dirty() {
+		t.Fatal("expected dirty document after signature move")
+	}
+}
+

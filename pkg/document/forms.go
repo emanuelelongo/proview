@@ -84,10 +84,15 @@ func (d *Document) HasFormFields() bool {
 	if d.Format() != FormatPDF {
 		return false
 	}
-	for page := range d.PageCount() {
-		fields, err := d.FormFields(page)
-		if err == nil && len(fields) > 0 {
-			return true
+	for _, ref := range d.pages {
+		fields, err := ref.source.formFields()
+		if err != nil {
+			continue
+		}
+		for _, f := range fields {
+			if f.Page == ref.index {
+				return true
+			}
 		}
 	}
 	return false

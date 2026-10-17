@@ -9,7 +9,6 @@ import (
 	"image/png"
 	"maps"
 	"math"
-	"reflect"
 	"slices"
 	"sync/atomic"
 
@@ -284,7 +283,7 @@ func (d *Document) Dirty() bool {
 	if d.unsaved {
 		return true
 	}
-	return !editorStatesEqual(d.snapshot(), d.saved, false)
+	return !d.stateEquals(d.saved, false)
 }
 
 func (d *Document) MarkSaved() {
@@ -726,7 +725,7 @@ func (d *Document) snapshot() editorState {
 	state := editorState{
 		formValues:      cloneFormValues(d.formValues),
 		imageTransform:  d.imageTransform,
-		pages:           append([]pageRef(nil), d.pages...),
+		pages:           slices.Clone(d.pages),
 		signatures:      make([]SignatureOverlay, len(d.signatures)),
 		nextSignatureID: d.nextSignatureID,
 		redactions:      cloneRedactions(d.redactions),
@@ -745,7 +744,7 @@ func (d *Document) snapshot() editorState {
 func (d *Document) restore(state editorState) {
 	d.formValues = cloneFormValues(state.formValues)
 	d.imageTransform = state.imageTransform
-	d.pages = append([]pageRef(nil), state.pages...)
+	d.pages = slices.Clone(state.pages)
 	d.crop = nil
 	if state.crop != nil {
 		crop := *state.crop
@@ -761,10 +760,10 @@ func (d *Document) restore(state editorState) {
 }
 
 func (d *Document) record(before editorState) {
-	after := d.snapshot()
-	if editorStatesEqual(before, after, true) {
+	if d.stateEquals(before, true) {
 		return
 	}
+	after := d.snapshot()
 	d.undoStack = append(d.undoStack, historyEntry{before: before, after: after})
 	if len(d.undoStack) > maxHistoryEntries {
 		copy(d.undoStack, d.undoStack[len(d.undoStack)-maxHistoryEntries:])
@@ -772,6 +771,19 @@ func (d *Document) record(before editorState) {
 	}
 	d.redoStack = nil
 	d.revision.Add(1)
+}
+
+func (d *Document) stateEquals(other editorState, includeNextID bool) bool {
+	return editorStatesEqual(editorState{
+		formValues:      d.formValues,
+		imageTransform:  d.imageTransform,
+		pages:           d.pages,
+		crop:            d.crop,
+		signatures:      d.signatures,
+		nextSignatureID: d.nextSignatureID,
+		redactions:      d.redactions,
+		nextRedactionID: d.nextRedactionID,
+	}, other, includeNextID)
 }
 
 func editorStatesEqual(first, second editorState, includeNextID bool) bool {
@@ -784,10 +796,10 @@ func editorStatesEqual(first, second editorState, includeNextID bool) bool {
 	if !slices.Equal(first.pages, second.pages) {
 		return false
 	}
-	if includeNextID && first.nextSignatureID != second.nextSignatureID {
+	if includeNextID && (first.nextSignatureID != second.nextSignatureID || first.nextRedactionID != second.nextRedactionID) {
 		return false
 	}
-	if !reflect.DeepEqual(first.redactions, second.redactions) || includeNextID && first.nextRedactionID != second.nextRedactionID {
+	if !redactionsEqual(first.redactions, second.redactions) {
 		return false
 	}
 	if (first.crop == nil) != (second.crop == nil) ||
@@ -796,26 +808,117 @@ func editorStatesEqual(first, second editorState, includeNextID bool) bool {
 		return false
 	}
 	for index, signature := range first.signatures {
-		other := second.signatures[index]
-		if signature.ID != other.ID || signature.Page != other.Page || signature.Rect != other.Rect ||
-			signature.Transform != other.Transform || signature.ObjectKind != other.ObjectKind || signature.StrokeWidth != other.StrokeWidth ||
-			!reflect.DeepEqual(signature.annotation, other.annotation) ||
-			!reflect.DeepEqual(signature.asset, other.asset) ||
-			!bytes.Equal(signature.png, other.png) {
+		if !signaturesEqual(signature, second.signatures[index]) {
 			return false
 		}
 	}
 	return true
 }
 
+func redactionsEqual(first, second []Redaction) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	for i := range first {
+		if first[i].ID != second[i].ID || first[i].PageID != second[i].PageID || !slices.Equal(first[i].Quads, second[i].Quads) {
+			return false
+		}
+	}
+	return true
+}
+
+func signaturesEqual(first, second SignatureOverlay) bool {
+	if first.ID != second.ID || first.Page != second.Page || first.Rect != second.Rect ||
+		first.Transform != second.Transform || first.ObjectKind != second.ObjectKind || first.StrokeWidth != second.StrokeWidth ||
+		!annotationsEqual(first.annotation, second.annotation) ||
+		!assetsEqual(first.asset, second.asset) ||
+		!bytesSameOrEqual(first.png, second.png) {
+		return false
+	}
+	return true
+}
+
+func bytesSameOrEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 || &a[0] == &b[0] {
+		return true
+	}
+	return bytes.Equal(a, b)
+}
+
+func annotationsEqual(a, b *annotations.Data) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Shape == b.Shape &&
+		a.StrokeStyle == b.StrokeStyle &&
+		a.Filled == b.Filled &&
+		a.Magnification == b.Magnification &&
+		a.Kind == b.Kind &&
+		a.Text == b.Text &&
+		a.Font == b.Font &&
+		a.Size == b.Size &&
+		a.Bold == b.Bold &&
+		a.Italic == b.Italic &&
+		a.Underline == b.Underline &&
+		a.Strikethrough == b.Strikethrough &&
+		a.Color == b.Color &&
+		a.Width == b.Width &&
+		a.Opacity == b.Opacity &&
+		a.PageWidth == b.PageWidth &&
+		a.PageHeight == b.PageHeight &&
+		a.Padding == b.Padding &&
+		slices.Equal(a.Points, b.Points)
+}
+
+func assetsEqual(a, b *signatures.Asset) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Kind != b.Kind || a.Thickness != b.Thickness || !bytesSameOrEqual(a.Data, b.Data) {
+		return false
+	}
+	if a.Drawing == b.Drawing {
+		return true
+	}
+	if a.Drawing == nil || b.Drawing == nil {
+		return false
+	}
+	if a.Drawing.Version != b.Drawing.Version ||
+		a.Drawing.Width != b.Drawing.Width ||
+		a.Drawing.Smooth != b.Drawing.Smooth ||
+		a.Drawing.Color != b.Drawing.Color ||
+		len(a.Drawing.Strokes) != len(b.Drawing.Strokes) {
+		return false
+	}
+	for i := range a.Drawing.Strokes {
+		if !slices.Equal(a.Drawing.Strokes[i], b.Drawing.Strokes[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// cloneSignature copies the overlay metadata while sharing immutable PNG,
+// asset, and annotation payloads across internal snapshots and history entries.
+// Defensive copies are created at public API boundaries (PNG, Asset, Annotation)
+// and whenever an edit replaces annotation/asset fields.
 func cloneSignature(signature SignatureOverlay) SignatureOverlay {
 	if signature.annotation != nil {
-		data := signature.annotation.Clone()
+		data := *signature.annotation
+		data.Points = slices.Clone(data.Points)
 		signature.annotation = &data
 	}
-	signature.png = bytes.Clone(signature.png)
 	if signature.asset != nil {
-		asset := signature.asset.Clone()
+		asset := *signature.asset
 		signature.asset = &asset
 	}
 	return signature

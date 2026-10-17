@@ -50,6 +50,7 @@ func (d *Document) renderPageDPI(page int, dpi float64, lenses bool) (image.Imag
 	if e != nil {
 		return nil, e
 	}
+	var out *image.NRGBA
 	for _, s := range d.signatures {
 		if s.Page != page {
 			continue
@@ -76,13 +77,19 @@ func (d *Document) renderPageDPI(page int, dpi float64, lenses bool) (image.Imag
 		if e != nil {
 			return nil, e
 		}
-		out := image.NewNRGBA(base.Bounds())
-		draw.Draw(out, out.Bounds(), base, base.Bounds().Min, draw.Src)
+		if out == nil {
+			out = image.NewNRGBA(base.Bounds())
+			draw.Draw(out, out.Bounds(), base, base.Bounds().Min, draw.Src)
+			base = out
+		}
 		// Vector artwork is already rendered at its target size; raster images stretch only to the object's rectangle.
-		scaled := image.NewNRGBA(image.Rect(0, 0, target.Dx(), target.Dy()))
-		xdraw.BiLinear.Scale(scaled, scaled.Bounds(), p, p.Bounds(), draw.Src, nil)
-		draw.Draw(out, target, scaled, image.Point{}, draw.Over)
-		base = out
+		if p.Bounds().Dx() == target.Dx() && p.Bounds().Dy() == target.Dy() {
+			draw.Draw(out, target, p, p.Bounds().Min, draw.Over)
+		} else {
+			scaled := image.NewNRGBA(image.Rect(0, 0, target.Dx(), target.Dy()))
+			xdraw.BiLinear.Scale(scaled, scaled.Bounds(), p, p.Bounds(), draw.Src, nil)
+			draw.Draw(out, target, scaled, image.Point{}, draw.Over)
+		}
 	}
 	return d.paintRedactions(page, base), nil
 }
