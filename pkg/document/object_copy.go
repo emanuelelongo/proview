@@ -117,7 +117,7 @@ func (d *Document) PasteObject(page int, rect NormalizedRect, c CopiedObject, pr
 	d.nextSignatureID++
 	d.signatures = append(d.signatures, o)
 	d.record(before)
-	return cloneSignature(o), nil
+	return o, nil
 }
 
 func (d *Document) ObjectImage(id OverlayID) (image.Image, error) {

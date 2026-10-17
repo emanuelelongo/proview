@@ -55,6 +55,11 @@ func (r NormalizedRect) Valid() bool {
 		r.X+r.Width <= 1 && r.Y+r.Height <= 1
 }
 
+// SignatureOverlay payloads are immutable once stored: snapshots, history
+// entries and the saved state share png, asset and annotation by pointer.
+// Every edit must replace those fields with fresh values instead of mutating
+// them in place, and defensive copies belong only at public API boundaries
+// (PNG, Asset, Annotation).
 type SignatureOverlay struct {
 	ID          SignatureID
 	Page        int
@@ -486,7 +491,7 @@ func (d *Document) addRasterOverlay(page int, rect NormalizedRect, pngData []byt
 	d.nextSignatureID++
 	d.signatures = append(d.signatures, signature)
 	d.record(before)
-	return cloneSignature(signature), nil
+	return signature, nil
 }
 
 func (d *Document) AddSignatureAsset(page int, rect NormalizedRect, prepared signatures.Prepared) (SignatureOverlay, error) {
@@ -523,7 +528,7 @@ func (d *Document) addOverlay(page int, rect NormalizedRect, prepared signatures
 	d.nextSignatureID++
 	d.signatures = append(d.signatures, signature)
 	d.record(before)
-	return cloneSignature(signature), nil
+	return signature, nil
 }
 
 func (d *Document) ReplaceSignatureAsset(id SignatureID, prepared signatures.Prepared) error {
@@ -695,7 +700,7 @@ func (d *Document) SignaturesForPage(page int) ([]SignatureOverlay, error) {
 	result := make([]SignatureOverlay, 0)
 	for _, signature := range d.signatures {
 		if signature.Page == page {
-			result = append(result, cloneSignature(signature))
+			result = append(result, signature)
 		}
 	}
 	return result, nil
@@ -905,14 +910,6 @@ func assetsEqual(a, b *signatures.Asset) bool {
 		}
 	}
 	return true
-}
-
-// cloneSignature copies the overlay metadata while sharing immutable PNG,
-// asset, and annotation payloads across internal snapshots and history entries.
-// Defensive copies are created at public API boundaries (PNG, Asset, Annotation)
-// and whenever an edit replaces annotation/asset fields.
-func cloneSignature(signature SignatureOverlay) SignatureOverlay {
-	return signature
 }
 
 func normalizedImageRect(rect NormalizedRect, bounds image.Rectangle) image.Rectangle {

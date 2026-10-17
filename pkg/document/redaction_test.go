@@ -37,6 +37,65 @@ func selectedWord(t *testing.T, doc *Document, word string) []TextQuad {
 	}
 	return layout.Selection(start, start+len(word)-1)
 }
+
+// DuplicatePage gives the copy its own redaction ID and page ID while reusing
+// the geometry, so rotating one page must not move the other's marks. Both the
+// duplicate and the history entry share the quad slice until a transform
+// replaces it.
+func TestDuplicatePageKeepsRedactionGeometryIndependent(t *testing.T) {
+	doc := redactionDocument(t)
+	if _, err := doc.AddRedaction(0, selectedWord(t, doc, "SECRET")); err != nil {
+		t.Fatal(err)
+	}
+	source := doc.Redactions()[0]
+	if err := doc.DuplicatePage(0); err != nil {
+		t.Fatal(err)
+	}
+	marks := doc.Redactions()
+	if len(marks) != 2 {
+		t.Fatalf("redactions = %d, want 2", len(marks))
+	}
+	copied := marks[1].Quads[0]
+	if marks[1].ID == source.ID {
+		t.Fatal("duplicate redaction reused the source ID")
+	}
+	if marks[1].PageID == source.PageID {
+		t.Fatal("duplicate redaction kept the source page ID")
+	}
+	if copied != source.Quads[0] {
+		t.Fatal("duplicate redaction changed geometry")
+	}
+
+	if err := doc.TransformPDFPage(0, "right"); err != nil {
+		t.Fatal(err)
+	}
+	marks = doc.Redactions()
+	if marks[1].Quads[0] != copied {
+		t.Fatal("rotating the source page moved the duplicate redaction")
+	}
+	if marks[0].Quads[0] == copied {
+		t.Fatal("rotating the source page did not rotate its own redaction")
+	}
+	if !doc.Undo() {
+		t.Fatal("rotation was not undoable")
+	}
+	marks = doc.Redactions()
+	if marks[0].Quads[0] != copied || marks[1].Quads[0] != copied {
+		t.Fatal("undo did not restore both redactions")
+	}
+	for doc.CanUndo() {
+		if !doc.Undo() {
+			t.Fatal("undo failed")
+		}
+	}
+	if len(doc.Redactions()) != 0 {
+		t.Fatalf("redactions after undo = %d, want 0", len(doc.Redactions()))
+	}
+	if doc.Dirty() {
+		t.Fatal("undoing every edit must leave the document clean")
+	}
+}
+
 func TestRedactionHistorySnapshotsAndExport(t *testing.T) {
 	doc := redactionDocument(t)
 	quads := selectedWord(t, doc, "SECRET")

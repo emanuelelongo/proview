@@ -112,7 +112,6 @@ func (d *Document) AppendDocumentPages(collection *Document) error {
 		d.pages = append(d.pages, p)
 	}
 	for _, overlay := range collection.signatures {
-		overlay = cloneSignature(overlay)
 		overlay.ID = d.nextSignatureID
 		d.nextSignatureID++
 		overlay.Page += offset
@@ -311,7 +310,7 @@ func (d *Document) DuplicatePage(page int) error {
 	for i := range d.signatures {
 		s := &d.signatures[i]
 		if s.Page == page {
-			c := cloneSignature(*s)
+			c := *s
 			c.ID = d.nextSignatureID
 			d.nextSignatureID++
 			c.Page = position
