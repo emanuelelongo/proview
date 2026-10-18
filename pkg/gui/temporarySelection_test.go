@@ -94,6 +94,16 @@ func TestTemporarySelectionMovesAndResizesNewObjects(t *testing.T) {
 			if g.annotationActions[toolSelect].button.Importance != widget.LowImportance || g.annotationActions[scenario.tool].button.Importance != widget.HighImportance {
 				t.Fatal("tool icons did not return to the insertion tool")
 			}
+			if scenario.tool == toolHighlight {
+				if g.document.Overlays()[0].Rect != original || object.editActive {
+					t.Fatal("highlight moved or started a history edit")
+				}
+				// The next undo must remove creation, not undo a blocked drag.
+				if !g.document.Undo() || len(g.document.Overlays()) != 0 {
+					t.Fatal("highlight drag added an Undo step")
+				}
+				return
+			}
 			if g.document.Overlays()[0].Rect == resized || !g.document.Undo() || g.document.Overlays()[0].Rect != resized {
 				t.Fatal("move did not create one Undo step")
 			}

@@ -12,6 +12,27 @@ the current implementation/status handoff, including accepted decisions, tests,
 limitations and remaining tasks. The tested `prototype/pdf-forms` branch was
 merged into `develop` and deleted on 2026-10-17; release/packaging is separate.
 
+## Standard PDF annotations
+
+Read [docs/pdf-annotations.md](docs/pdf-annotations.md) for editable PDF save/reopen.
+Use standard FreeText/Ink/Highlight/shape annotations and appearance streams only;
+do not add a private editor payload or sidecar. Original source bytes stay immutable;
+editable annotations are detached into overlays over a separate base. Keep the
+original source owners alive across page transfers. Runtime appearance/markup caches
+are immutable and shared by history; property edits replace them. Validate pdfcpu
+contexts before writing to preserve native CID font resources. Preserve unsupported
+annotations in the source. Redaction must bake and sanitize annotations, including
+text/metadata, rather than preserving editable markup. Signatures reopen unselectable;
+mixed exports use locked standard stamps to retain painter order. A simple
+single stroked path in a standard Stamp can reopen as Drawing; matching closed polygon fills/strokes (including Preview stars) reopen as polygons;
+curved fills, images/text and unsupported/complex stamps remain static. Import ClosedArrow
+endings without changing the default open arrow. Existing text edits use the
+inline page editor via double-click or the edit button; never restore a text
+entry to the property bar. Preserve the original object ID and visible text anchor, one Undo step,
+Escape cancellation and the save barrier. FreeText Rect is a layout box, never
+an instruction to stretch glyphs: regenerate text at its font size with natural
+physical width/height. The same rule applies to inline and property edits.
+
 ## Native PDF text editing prototype
 
 Read [docs/pdf-text-editing.md](docs/pdf-text-editing.md) before continuing native
@@ -68,9 +89,9 @@ PDF page combination/reordering/deletion and blank pages.
 - Overlay rectangles use normalized page coordinates. Annotation dimensions use
   PDF points or original image pixels and must remain independent of view zoom.
 - Highlight follows native PDF or recognized image text, merges words per line,
-  and records one vector object per gesture with fixed 30% opacity. It has only a
-  color control. Selected highlights keep their selection border and color editing
-  but never expose resize handles or accept resize gestures. Draw has independent
+  and records one vector object per gesture using full color and Multiply blending
+  to preserve dark text. It has only a color control. Imported opacity is retained. Selected highlights keep their selection border and color editing
+  but never expose resize handles or accept move/resize gestures. Draw has independent
   opacity and round, dashed and dotted modes. The filled circle indicates the
   round freehand tip; there is no flat marker mode. Build round strokes as a
   compound nonzero-filled path of simple capsules, never through `Settle` on an
@@ -85,7 +106,8 @@ PDF page combination/reordering/deletion and blank pages.
 - File drops use Fyne's window-wide `SetOnDropped` on all desktop platforms.
   Dispatch to `fyne.Do` and ignore closed windows. Open file, startup, drops and
   desktop requests share ordered opening: PDF onto PDF offers New window /
-  Append pages / Cancel; other combinations retain documents in the same window.
+  Append pages / Cancel. PDF/non-PDF combinations always open a new window;
+  images and STL files can share a window.
   The sidebar switches documents and keeps the selected PDF's page thumbnails.
   Busy requests wait; switching preserves edits, source ownership and save targets.
 - Desktop launches with paths use `internal/openfiles` to forward to an existing
@@ -190,7 +212,11 @@ PDF page combination/reordering/deletion and blank pages.
   plus/equal (including Shift and keypad variants), minus, zero for Fit to Window,
   and modifier + mouse wheel. The passive `zoomScrollSurface` intercepts only
   scrolling in the document viewport, querying `desktop.Driver.CurrentKeyModifiers`
-  instead of tracking key state. Forward unmodified scroll events unchanged; do
+  instead of tracking key state. Zoom keeps the page point under the pointer;
+  toolbar/keyboard zoom keeps the viewport center. Anchor within the individual
+  PDF page, with fixed inter-page gaps, and restore offsets before loading visible
+  pages so zoom cannot switch pages and commit an inline draft halfway through.
+  Forward unmodified scroll events unchanged; do
   not capture hover/click/drag events or route document zoom through the sidebar.
   Hold **Space** and drag to pan above fit zoom on all desktop platforms; keep
   Space available to text fields and dialog controls. Control does not activate pan.
@@ -224,7 +250,13 @@ PDF page combination/reordering/deletion and blank pages.
 - Use `collectPDFPages` when collecting original source pages: pdfcpu rejects
   C2PA's `AFRelationship /C2PA_Manifest`. The compatibility path accepts only that
   extension during validation and validates the collected output normally.
-- PDF previews render lazily at 144 DPI; thumbnails at 72 DPI to stay sharp at
+- PDF previews render lazily at 144 DPI; the primary visible page receives a
+  coalesced zoom/Retina enhancement (600 DPI, 16 million pixels, 8192 long side
+  maximum). Retain only one enhanced page per window and preserve logical page
+  geometry, scroll offsets and immutable ordinary previews. Keep the last frame
+  visible during rendering; reject obsolete document/generation/revision requests.
+  Highlight fragments follow the enhanced pixel density. Thumbnails remain at
+  72 DPI to stay sharp at
   the sidebar's maximum width. Load thumbnails
   while scrolling, not only when clicked. Avoid eager rendering of the entire PDF.
   Retry visible-thumbnail loading after the sidebar viewport is laid out/resized,
@@ -408,6 +440,8 @@ PDF page combination/reordering/deletion and blank pages.
   state while these tools are active because focused Fyne controls receive key
   events instead of canvas handlers. Stop polling on tool changes/window close.
 - Magnifier zoom uses only a slider, aligned with the 36-pixel property row.
+  Select a newly placed lens immediately and bind its controls while Shapes stays
+  active. Zoom property edits preserve its frame; a new gesture clears selection.
 - Area selection is transient UI state and does not mark documents dirty. Background
   drag selects an area; Alt drag works over objects. Clear selection when switching
   tools/pages/documents. Text-focused clipboard shortcuts take precedence.
@@ -430,7 +464,9 @@ PDF page combination/reordering/deletion and blank pages.
   preparation in the annotation worker and publish only the latest geometry;
   retain one Undo per drag, transform orientation and Ctrl proportion locking.
 - Magnifiers are circular, dynamic, exclude every other magnifier, and sample only
-  earlier objects in stacking order. Their zoom is independent of diameter (1–8×).
+  earlier objects in stacking order. Their zoom is independent of diameter (1–8×). Render PDF detail before
+  magnification, bounded to 600 DPI/16 million pixels/8192 long side; retain
+  sanitized sampling and discard stale previews during live property edits.
   Export only the visible disk at 300 DPI for PDF; never embed hidden corner pixels.
 - `SafeRenderPage` uses actual PDF removal/sanitation before raster derivatives when
   redactions exist, including all shared-image reuses. Both area copy and magnifiers
@@ -564,6 +600,8 @@ PDF page combination/reordering/deletion and blank pages.
 
 ## STL viewer prototype
 
+- STL workspace entries use a static isometric thumbnail, rendered once in a
+  cancellable worker and retained across camera changes.
 - STL uses `internal/model3d` and the separate `modelViewport` in each GUI window.
   Do not treat meshes as raster `document.Document` objects. Model mode is read-only;
   editing, signatures, save and OCR remain unavailable, while Open/Close/zoom work.

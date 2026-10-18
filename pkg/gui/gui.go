@@ -69,6 +69,7 @@ type Gui struct {
 	thumbnailAnchor                   uint64
 	thumbnailSelectionFrozen          bool
 	pdfGeneration                     uint64
+	pdfDetail                         *pdfDetailState
 	pdfPageIDs                        []uint64
 	pdfCrops                          map[int]*cropOverlay
 	app                               fyne.App

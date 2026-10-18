@@ -53,6 +53,7 @@ type Data struct {
 	Shape                                  ShapeKind
 	StrokeStyle                            StrokeStyle
 	Filled                                 bool
+	ArrowClosed                            bool
 	Magnification                          float64
 	Kind                                   Kind
 	Text, Font                             string
@@ -83,7 +84,7 @@ func Default(kind Kind) Data {
 	if kind == Highlight {
 		d.Color = color.NRGBA{R: 255, G: 235, A: 255}
 		d.Width = 12
-		d.Opacity = .3
+		d.Opacity = 1
 	}
 	return d
 }
@@ -111,7 +112,7 @@ func (d Data) Validate() error {
 		return nil
 	}
 	if d.Kind == Shape {
-		if !finite(d.Width) || d.Width < .5 || d.Width > 40 || len(d.Points) != 2 {
+		if !finite(d.Width) || d.Width < .5 || d.Width > 40 || (d.Shape != Polygon && len(d.Points) != 2) || (d.Shape == Polygon && (len(d.Points) < 3 || len(d.Points) > 100000)) {
 			return fmt.Errorf("Invalid shape geometry")
 		}
 		if !finite(d.Magnification) || d.Magnification < 1 || d.Magnification > 8 {
@@ -365,7 +366,7 @@ func (d Data) artwork(metrics *TextMetrics) (asset signatures.Asset, bounds vect
 		bounds.Y0 = math.Max(0, bounds.Y0)
 		bounds.X1 = math.Min(d.PageWidth, bounds.X1)
 		bounds.Y1 = math.Min(d.PageHeight, bounds.Y1)
-		alpha = .3
+		alpha = d.Opacity
 	} else {
 		path = &vector.Path{}
 		path.MoveTo(d.Points[0].X, d.Points[0].Y)
@@ -389,7 +390,7 @@ func (d Data) artwork(metrics *TextMetrics) (asset signatures.Asset, bounds vect
 		bounds.Y1 = math.Min(d.PageHeight, bounds.Y1)
 		alpha = d.Opacity
 		if d.Kind == Highlight {
-			alpha = .3
+			alpha = d.Opacity
 		}
 	}
 	if bounds.W() <= 0 || bounds.H() <= 0 {

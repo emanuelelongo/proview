@@ -222,11 +222,14 @@ func (g *Gui) refreshAnnotationControls() {
 	var selected document.Overlay
 	data := g.annotationDefaults[tool.kind()]
 	editing := false
-	if tool == toolSelect || tool == toolText && g.hasSelectedSignature {
+	if tool == toolSelect || (tool == toolText || tool == toolShapes) && g.hasSelectedSignature {
 		var ok bool
 		selected, ok = g.selectedOverlay()
 		if ok {
-			if current, annotation := selected.Annotation(); tool == toolSelect || annotation && current.Kind == annotations.Text {
+			current, annotation := selected.Annotation()
+			editableText := tool == toolText && current.Kind == annotations.Text
+			editableLens := tool == toolShapes && current.Kind == annotations.Shape && current.Shape == annotations.Magnifier
+			if tool == toolSelect || annotation && (editableText || editableLens) {
 				data, editing = current, annotation
 			}
 		}
@@ -246,10 +249,17 @@ func (g *Gui) refreshAnnotationControls() {
 	g.annotationControls.Objects = nil
 	// Keep an editable copy in the controls, independent from document snapshots.
 	data = data.Clone()
-	if !editing && tool == toolText && g.textPlacement != nil {
+	if g.textPlacement != nil && (g.textPlacement.original != nil || !editing && tool == toolText) {
 		data = g.textPlacement.data.Clone()
 	}
 	publish := func(commit bool) {
+		if placement := g.textPlacement; placement != nil && placement.original != nil && placement.original.ID == selected.ID {
+			text := placement.entry.Text
+			placement.data = data.Clone()
+			placement.data.Text = text
+			placement.layer.Refresh()
+			return
+		}
 		if !editing {
 			g.annotationDefaults[data.Kind] = data.Clone()
 			if data.Kind == annotations.Text {
@@ -276,23 +286,16 @@ func (g *Gui) refreshAnnotationControls() {
 	}
 	if data.Kind == annotations.Text {
 		g.textEntry = nil
-		if editing {
-			entry := newAnnotationEntry()
-			g.textEntry = entry
-			entry.SetText(data.Text)
-			entry.SetPlaceHolder("Enter text")
-			entry.OnChanged = func(value string) {
-				clean := annotations.SingleLine(value)
-				data.Text = clean
-				if clean != value {
-					entry.SetText(clean)
-				}
-			}
-			entry.commit = func() { publish(true) }
-			entry.OnSubmitted = func(string) { entry.commit() }
-			wrap(220, entry)
-		} else if g.textPlacement != nil {
+		if g.textPlacement != nil {
 			g.textEntry = g.textPlacement.entry
+		} else if editing {
+			wrap(36, newIconButton(tablerIcon("pencil"), "Edit text on page", func() {
+				layer := g.signatureLayers[selected.Page]
+				if layer == nil {
+					layer = g.imageSignatureLayer
+				}
+				g.beginExistingText(layer, selected.ID)
+			}))
 		}
 		font := widget.NewSelect(annotations.Fonts, nil)
 		font.SetSelected(data.Font)
@@ -313,6 +316,16 @@ func (g *Gui) refreshAnnotationControls() {
 	} else {
 		if data.Kind == annotations.Shape {
 			selector := g.shapeSelector(data.Shape, func(kind annotations.ShapeKind) {
+				if data.Shape == annotations.Polygon && kind != annotations.Polygon {
+					minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+					for _, p := range data.Points {
+						minX = math.Min(minX, p.X)
+						minY = math.Min(minY, p.Y)
+						maxX = math.Max(maxX, p.X)
+						maxY = math.Max(maxY, p.Y)
+					}
+					data.Points = []annotations.Point{{X: minX, Y: minY}, {X: maxX, Y: maxY}}
+				}
 				data.Shape = kind
 				if kind == annotations.Magnifier {
 					data.Color = color.NRGBA{A: 255}
@@ -497,12 +510,16 @@ func (g *Gui) addPageAnnotationWithResult(layer *signatureLayer, data annotation
 				g.showAnnotationError(page, data, err)
 				return
 			}
-			_, err = doc.AddAnnotation(page, rect, data, prepared)
+			added, addErr := doc.AddAnnotation(page, rect, data, prepared)
+			err = addErr
 			if err != nil {
 				g.showAnnotationError(page, data, err)
 				return
 			}
 			layer.reload()
+			if data.Kind == annotations.Shape && data.Shape == annotations.Magnifier && g.effectiveAnnotationTool() == toolShapes && (layer.input == nil || !layer.input.active) {
+				g.selectSignature(layer, added.ID)
+			}
 			if data.Kind == annotations.Text {
 				next := data.Clone()
 				next.Text = ""
@@ -558,6 +575,7 @@ func (g *Gui) renderAnnotationProperties(original document.Overlay, data annotat
 	}
 	doc := g.document
 	snapshot := doc.RenderingSnapshot()
+	lensDPI := g.lensPreviewDPI()
 	g.annotationPropertyGeneration++
 	generation := g.annotationPropertyGeneration
 	// Preview changes do not touch history. The final slider/text action replaces
@@ -577,19 +595,42 @@ func (g *Gui) renderAnnotationProperties(original document.Overlay, data annotat
 				if current.Transform.Turns%2 != 0 {
 					bounds.X1, bounds.Y1 = bounds.X0+bounds.H(), bounds.Y0+bounds.W()
 				}
-				factor := current.Rect.Width / oldBounds.W()
-				rect.Width = bounds.W() * factor
-				rect.Height = current.Rect.Height * bounds.H() / oldBounds.H()
-				if data.Kind != annotations.Text && current.Transform.Turns == 0 && !current.Transform.FlipX && !current.Transform.FlipY {
-					rect.X += (bounds.X0 - oldBounds.X0) * factor
-					rect.Y += (bounds.Y0 - oldBounds.Y0) * current.Rect.Height / oldBounds.H()
-				}
-				if rect.Width > 1 || rect.Height > 1 {
-					err = fmt.Errorf("The object is too large for the page")
+				if data.Kind == annotations.Text {
+					pageSize, e := snapshot.PageSize(current.Page)
+					if e != nil {
+						err = e
+					} else {
+						unit := 1.
+						if snapshot.Format() == document.FormatPDF {
+							unit = .5
+						}
+						// bounds were already swapped above for page rotation.
+						bw, bh := bounds.W(), bounds.H()
+						if current.Transform.Turns%2 != 0 {
+							bw, bh = bh, bw
+						}
+						rect, err = naturalTextRect(current, data, bw, bh, float64(pageSize.X)*unit, float64(pageSize.Y)*unit)
+					}
 				} else {
-					rect.X = math.Min(math.Max(rect.X, 0), 1-rect.Width)
-					rect.Y = math.Min(math.Max(rect.Y, 0), 1-rect.Height)
-					prepared, err = asset.Prepare()
+					factor := current.Rect.Width / oldBounds.W()
+					rect.Width = bounds.W() * factor
+					rect.Height = current.Rect.Height * bounds.H() / oldBounds.H()
+					if data.Kind != annotations.Text && current.Transform.Turns == 0 && !current.Transform.FlipX && !current.Transform.FlipY {
+						rect.X += (bounds.X0 - oldBounds.X0) * factor
+						rect.Y += (bounds.Y0 - oldBounds.Y0) * current.Rect.Height / oldBounds.H()
+					}
+				}
+				if oldData.Kind == annotations.Shape && oldData.Shape == annotations.Magnifier && data.Kind == annotations.Shape && data.Shape == annotations.Magnifier {
+					rect = current.Rect
+				}
+				if err == nil {
+					if rect.Width > 1 || rect.Height > 1 {
+						err = fmt.Errorf("The object is too large for the page")
+					} else {
+						rect.X = math.Min(math.Max(rect.X, 0), 1-rect.Width)
+						rect.Y = math.Min(math.Max(rect.Y, 0), 1-rect.Height)
+						prepared, err = asset.Prepare()
+					}
 				}
 			}
 		}
@@ -598,7 +639,7 @@ func (g *Gui) renderAnnotationProperties(original document.Overlay, data annotat
 			if data.Kind == annotations.Shape && data.Shape == annotations.Magnifier {
 				err = snapshot.ReplaceAnnotation(current.ID, rect, data, prepared)
 				if err == nil {
-					displayPreview, err = snapshot.RenderLens(current.ID, 144)
+					displayPreview, err = snapshot.RenderLens(current.ID, lensDPI)
 				}
 			}
 		}
@@ -658,7 +699,7 @@ func (g *Gui) renderAnnotationProperties(original document.Overlay, data annotat
 	})
 }
 func equalAnnotationProperties(a, b annotations.Data) bool {
-	return a.Text == b.Text && a.Font == b.Font && a.Size == b.Size && a.Bold == b.Bold && a.Italic == b.Italic && a.Underline == b.Underline && a.Strikethrough == b.Strikethrough && a.Color == b.Color && a.Width == b.Width && a.Opacity == b.Opacity && a.Shape == b.Shape && a.Filled == b.Filled && a.StrokeStyle == b.StrokeStyle && a.Magnification == b.Magnification
+	return a.Text == b.Text && a.Font == b.Font && a.Size == b.Size && a.Bold == b.Bold && a.Italic == b.Italic && a.Underline == b.Underline && a.Strikethrough == b.Strikethrough && a.Color == b.Color && a.Width == b.Width && a.Opacity == b.Opacity && a.Shape == b.Shape && a.Filled == b.Filled && a.ArrowClosed == b.ArrowClosed && a.StrokeStyle == b.StrokeStyle && a.Magnification == b.Magnification
 }
 
 func strokeStyleButton(data *annotations.Data, publish func(bool)) *iconButton {

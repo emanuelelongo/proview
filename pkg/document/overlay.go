@@ -56,6 +56,7 @@ func (d *Document) ReplaceAnnotation(id OverlayID, rect NormalizedRect, data ann
 	data = data.Clone()
 	s := &d.signatures[index]
 	s.Rect = rect
+	s.pdfAppearance = nil
 	s.annotation = &data
 	s.asset = &asset
 	s.preview = prepared.Preview

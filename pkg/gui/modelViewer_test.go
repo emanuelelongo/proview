@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/storage"
 	fyneTest "fyne.io/fyne/v2/test"
@@ -250,4 +251,41 @@ func TestModelCropCreatesIndependentEditableImage(t *testing.T) {
 	if g.modelCrop.active {
 		t.Fatal("Close retained model Crop")
 	}
+}
+
+func TestSTLDocumentThumbnailIsStaticAcrossNavigationAndSwitches(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	// Exercise the thumbnail worker independently of the interactive renderer.
+	g.modelViewport.running = true
+	g.addDocument(nil, testSTLMesh(t), nil)
+	entry := g.activeDocument
+	g.addDocument(testDocument(t, 40, 30), nil, nil)
+	for entry.thumbnail == nil {
+		driver.runNext(t)
+	}
+	thumbnail := entry.thumbnail
+	if thumbnail.Bounds().Dx() != 320 || thumbnail.Bounds().Dy() != 240 {
+		t.Fatal("unbounded or missing model thumbnail")
+	}
+	found := false
+	for _, obj := range fyneTest.LaidOutObjects(g.documentList) {
+		if img, ok := obj.(*canvas.Image); ok && img.Image == thumbnail {
+			found = true
+		}
+		if b, ok := obj.(*widget.Button); ok && b.Text == entry.mesh.Name {
+			t.Fatal("STL still shows a filename")
+		}
+	}
+	if !found {
+		t.Fatal("retained STL thumbnail missing from sidebar")
+	}
+	g.selectDocument(entry)
+	g.modelViewport.Dragged(&fyne.DragEvent{Dragged: fyne.NewDelta(20, 10)})
+	g.modelViewport.DragEnd()
+	g.captureDocument()
+	g.refreshDocumentSidebar()
+	if entry.thumbnail != thumbnail || entry.thumbnailCancel != nil {
+		t.Fatal("camera navigation regenerated static thumbnail")
+	}
+	g.closeWindow()
 }

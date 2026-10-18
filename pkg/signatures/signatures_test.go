@@ -166,11 +166,16 @@ func TestStorePersistenceRevisionDeletionAndCorruption(t *testing.T) {
 }
 
 func TestDataDirectories(t *testing.T) {
-	home := filepath.Join(string(filepath.Separator), "home", "user")
+	// DataDir uses host filepath semantics; fixtures need a volume on Windows.
+	home := t.TempDir()
+	data := filepath.Join(home, "data")
 	for _, test := range []struct{ os, env, want string }{
 		{"darwin", "", filepath.Join(home, "Library", "Application Support", "Proview", "signatures")},
 		{"linux", "", filepath.Join(home, ".local", "share", "proview", "signatures")},
-		{"linux", "/data", filepath.Join("/data", "proview", "signatures")},
+		{"linux", data, filepath.Join(data, "proview", "signatures")},
+		{"linux", "relative", filepath.Join(home, ".local", "share", "proview", "signatures")},
+		{"windows", data, filepath.Join(data, "Proview", "signatures")},
+		{"windows", "relative", filepath.Join(home, "AppData", "Local", "Proview", "signatures")},
 		{"windows", "", filepath.Join(home, "AppData", "Local", "Proview", "signatures")},
 	} {
 		got, err := DataDir(test.os, home, func(string) string { return test.env })

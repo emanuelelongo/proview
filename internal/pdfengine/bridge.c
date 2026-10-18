@@ -622,6 +622,35 @@ void pv_fill_form(const unsigned char *data, size_t length,
     fz_drop_context(ctx);
 }
 
+/* Render read-only, unsigned signature markers using their existing artwork.
+ * MuPDF otherwise replaces even an existing appearance with an orange SIGN
+ * prompt. Only the disposable preview document is adjusted, before page load. */
+static void pv_prepare_signature_previews(fz_context *ctx, pdf_document *doc, int number)
+{
+    pdf_obj *page = pdf_lookup_page_obj(ctx, doc, number);
+    pdf_obj *annots = pdf_dict_get(ctx, page, PDF_NAME(Annots));
+    for (int i = pdf_array_len(ctx, annots) - 1; i >= 0; --i) {
+        pdf_obj *obj = pdf_array_get(ctx, annots, i);
+        if (!pdf_name_eq(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Subtype)), PDF_NAME(Widget)) ||
+            pdf_field_type(ctx, obj) != PDF_WIDGET_TYPE_SIGNATURE ||
+            !(pdf_field_flags(ctx, obj) & PDF_FIELD_IS_READ_ONLY) ||
+            !pdf_is_null(ctx, pdf_dict_get_inheritable(ctx, obj, PDF_NAME(V)))) continue;
+        pdf_obj *ap = pdf_dict_getp(ctx, obj, "AP/N");
+        if (!pdf_is_stream(ctx, ap)) continue;
+        fz_buffer *content = pdf_load_stream(ctx, ap);
+        unsigned char *bytes = NULL;
+        size_t length = fz_buffer_storage(ctx, content, &bytes);
+        int empty = 1;
+        for (size_t j = 0; j < length; ++j) {
+            unsigned char c = bytes[j];
+            if (c != 'q' && c != 'Q' && c != ' ' && c != '\n' && c != '\r' && c != '\t') { empty = 0; break; }
+        }
+        fz_drop_buffer(ctx, content);
+        if (empty) pdf_array_delete(ctx, annots, i);
+        else pdf_dict_put(ctx, obj, PDF_NAME(Subtype), PDF_NAME(Stamp));
+    }
+}
+
 void pv_render_forms(const unsigned char *data, size_t length, int number, float dpi, pv_result *result)
 {
     fz_context *ctx = pv_context();
@@ -633,6 +662,7 @@ void pv_render_forms(const unsigned char *data, size_t length, int number, float
     if (!ctx) { pv_error(result, "Cannot create MuPDF context"); return; }
     fz_try(ctx) {
         doc = pv_open(ctx, data, length);
+        pv_prepare_signature_previews(ctx, doc, number);
         page = pdf_load_page(ctx, doc, number);
         pv_update_form_page(ctx, doc, page);
         pixmap = fz_new_pixmap_from_page(ctx, &page->super, fz_scale(dpi/72, dpi/72), fz_device_rgb(ctx), 1);

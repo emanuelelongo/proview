@@ -16,10 +16,14 @@ removed locally and remotely before this work.
 - Append pages preserves native PDF sources, selects the first appended page,
   retains the current save destination and records one Undo operation. Redo
   retains access to the transferred sources.
-- Other combinations retain documents in the current window. The sidebar shows
-  clickable image thumbnails with a selection border and no labels; PDF
-  and STL entries retain names. Selecting an entry restores that document.
-  Image thumbnails reuse displayed previews and resize with the sidebar.
+- PDF and non-PDF files always use separate windows, in both opening directions,
+  including file drops and desktop requests. No append dialog is shown for mixed types.
+- Images and STL files retain documents in the current window. The sidebar shows
+  clickable thumbnails with a selection border and no labels. Selecting an entry
+  restores that document.
+  Image thumbnails reuse displayed previews and resize with the sidebar. STL
+  documents use a static 320 × 240 thumbnail of the initial isometric view,
+  generated once in a worker and retained across camera changes and switches.
   The selected PDF's page thumbnails remain below the document selector.
 - Documents retain independent history, save destination, zoom, selected PDF
   page, scroll position and redaction destination warnings. STL documents retain
@@ -109,3 +113,26 @@ stale endpoint metadata. Forwarding failure falls back to normal local opening.
 Native Finder/Explorer/desktop behavior and visual interaction still need manual
 acceptance on the destination platforms; headless GUI tests and cross compilation
 do not establish that acceptance.
+
+## Zoom anchoring
+
+Modifier + mouse wheel keeps the document point under the pointer. Toolbar and
+keyboard zoom keep the viewport center. In a multipage PDF, the anchor belongs
+to one page: its page coordinates are restored after layout, including centering
+and fixed inter-page spacing. This prevents jumps toward earlier pages when
+zooming deep in a document. Offsets clamp only at document edges. New documents still open at the beginning, fitted to the window. Intermediate
+scroll notifications are suppressed until the anchor has been restored; visible
+pages are then loaded/activated once, preserving active inline drafts.
+
+## PDF display detail
+
+Ordinary previews retain their 144-DPI coordinates and lazy loading. The primary
+visible page gets a background rendering matched to view zoom and display scale,
+bounded to 600 DPI, 16 million pixels and an 8192-pixel long side. Each window
+retains one enhanced page; changing pages restores the previous page's ordinary
+preview. Zoom changes are coalesced, with the current image visible until the
+latest result is ready. Rendering changes only pixels, never page size, scroll
+position, annotation coordinates, source data or history. Highlight fragments
+use the enhanced density too, so highlighted text does not retain a blurry patch.
+Stale results after document changes, form edits, native text edits or Undo/Redo
+are discarded. Failures retain the ordinary/last valid preview and are logged.

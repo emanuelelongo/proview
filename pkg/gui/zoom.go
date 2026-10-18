@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 )
 
@@ -13,31 +14,23 @@ const (
 	zoomStep     = float32(1.25)
 )
 
-func (g *Gui) zoomIn() {
+func (g *Gui) zoomIn()  { g.zoomBy(1, nil) }
+func (g *Gui) zoomOut() { g.zoomBy(-1, nil) }
+func (g *Gui) zoomBy(delta int, point *fyne.Position) {
 	if g.showingModel() {
-		g.modelViewport.zoom(1.25)
+		factor := 1.25
+		if delta < 0 {
+			factor = .8
+		}
+		g.modelViewport.zoom(factor)
 		return
 	}
-	if g.document == nil || g.zoomLevel >= maxZoomLevel {
+	if g.document == nil || delta > 0 && g.zoomLevel >= maxZoomLevel || delta < 0 && g.zoomLevel == 0 {
 		return
 	}
 	g.cropOverlay.Deactivate()
-	g.zoomLevel++
-	g.updateZoomFromLevel()
-	g.setPanActive(g.panModifierDown)
-}
-
-func (g *Gui) zoomOut() {
-	if g.showingModel() {
-		g.modelViewport.zoom(.8)
-		return
-	}
-	if g.document == nil || g.zoomLevel == 0 {
-		return
-	}
-	g.cropOverlay.Deactivate()
-	g.zoomLevel--
-	g.updateZoomFromLevel()
+	g.zoomLevel += delta
+	g.updateZoomAt(point)
 	g.setPanActive(g.panModifierDown)
 }
 
@@ -60,9 +53,74 @@ func (g *Gui) resetZoom() {
 	g.setPanActive(false)
 }
 
-func (g *Gui) updateZoomFromLevel() {
-	g.zoom = g.fitZoom * float32(math.Pow(float64(zoomStep), float64(g.zoomLevel)))
+// Opening a new document starts at its beginning; it has no previous view to
+// anchor. Fit-to-window on an existing document still preserves its position.
+func (g *Gui) fitNewDocument() {
+	g.fitZoom = g.calculateFitZoom()
+	g.zoomLevel = 0
+	g.zoom = g.fitZoom
 	g.applyZoom()
+	g.setPanActive(false)
+}
+
+func (g *Gui) updateZoomFromLevel() { g.updateZoomAt(nil) }
+
+// Preserve a point within its own page, so inter-page gaps do not get scaled
+// and a later page does not drift toward the beginning of a long PDF.
+func (g *Gui) updateZoomAt(point *fyne.Position) {
+	scroll := g.imageScroll
+	pdf := g.document != nil && g.document.Format() == document.FormatPDF
+	if pdf {
+		scroll = g.pdfScroll
+	}
+	if scroll == nil {
+		g.zoom = g.fitZoom * float32(math.Pow(float64(zoomStep), float64(g.zoomLevel)))
+		g.applyZoom()
+		return
+	}
+	anchor := fyne.NewPos(scroll.Size().Width/2, scroll.Size().Height/2)
+	if point != nil {
+		anchor = *point
+	}
+	page := 0
+	if pdf {
+		y := scroll.Offset.Y + anchor.Y
+		top := float32(0)
+		for i, object := range g.pdfPageContainers {
+			page = i
+			bottom := top + object.MinSize().Height
+			if y <= bottom {
+				break
+			}
+			top = bottom + theme.Padding()
+		}
+	}
+	origin, size := g.zoomPageRect(scroll, page, pdf)
+	relative := fyne.NewPos((scroll.Offset.X+anchor.X-origin.X)/max(1, size.Width), (scroll.Offset.Y+anchor.Y-origin.Y)/max(1, size.Height))
+	onScrolled := scroll.OnScrolled
+	scroll.OnScrolled = nil
+	g.zoom = g.fitZoom * float32(math.Pow(float64(zoomStep), float64(g.zoomLevel)))
+	g.layoutZoom()
+	scroll.Refresh()
+	origin, size = g.zoomPageRect(scroll, page, pdf)
+	offset := fyne.NewPos(origin.X+relative.X*size.Width-anchor.X, origin.Y+relative.Y*size.Height-anchor.Y)
+	scroll.ScrollToOffset(offset)
+	scroll.OnScrolled = onScrolled
+	if pdf {
+		g.loadVisiblePDFPages()
+	}
+}
+
+func (g *Gui) zoomPageRect(scroll *container.Scroll, page int, pdf bool) (fyne.Position, fyne.Size) {
+	if pdf && page < len(g.pdfPageImages) {
+		size := g.pdfPageImages[page].MinSize()
+		width := max(scroll.Size().Width, g.pdfPages.MinSize().Width)
+		return fyne.NewPos((width-size.Width)/2, g.pdfPageTop(page)), size
+	}
+	if g.imageSignatureLayer != nil {
+		return g.imageSignatureLayer.displayRect()
+	}
+	return fyne.Position{}, scroll.Content.MinSize()
 }
 
 func (g *Gui) calculateFitZoom() float32 {
@@ -92,6 +150,13 @@ func (g *Gui) calculateFitZoom() float32 {
 }
 
 func (g *Gui) applyZoom() {
+	g.layoutZoom()
+	if g.document != nil && g.document.Format() == document.FormatPDF {
+		g.loadVisiblePDFPages()
+	}
+}
+
+func (g *Gui) layoutZoom() {
 	for _, layer := range g.signatureLayers {
 		layer.hideRedactionReveals()
 		if layer.redactInput != nil {
@@ -113,7 +178,6 @@ func (g *Gui) applyZoom() {
 			}
 		}
 		g.pdfPages.Refresh()
-		g.loadVisiblePDFPages()
 		return
 	}
 	if g.image.Image == nil {

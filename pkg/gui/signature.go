@@ -38,7 +38,7 @@ func defaultSignatureRect(pageWidth, pageHeight, signatureWidth, signatureHeight
 }
 
 func (g *Gui) selectSignature(layer *signatureLayer, id document.SignatureID) {
-	if id != 0 {
+	if id != 0 || g.textPlacement != nil && g.textPlacement.original != nil {
 		g.finishTextPlacement()
 	}
 	if id != 0 {
@@ -98,6 +98,9 @@ func (g *Gui) deleteSelectedSignature() {
 		return
 	}
 	page := g.selectedSignaturePage
+	if p := g.textPlacement; p != nil && p.original != nil && p.original.ID == g.selectedSignature {
+		g.cancelTextPlacement()
+	}
 	if err := g.document.RemoveSignature(g.selectedSignature); err != nil {
 		g.showOperationError("preview", err)
 		return
@@ -238,6 +241,7 @@ func (g *Gui) loadVisiblePDFPages() {
 	if selected >= 0 {
 		g.activatePDFPage(selected)
 	}
+	g.refreshPDFDetail()
 	if lastVisible >= 0 && lastVisible+1 < len(g.pdfPageContainers) {
 		g.loadPDFPage(lastVisible + 1)
 	}
@@ -338,6 +342,7 @@ func (g *Gui) loadPDFPage(page int) {
 				layer.SetPageSize(preview.Bounds().Size())
 			}
 			g.pdfPageLoaded[page] = true
+			g.refreshPDFDetail()
 			g.scheduleLensPreviews(g.signatureLayers[page])
 			if overlays, err := doc.SignaturesForPage(page); err == nil && (len(overlays) > 0 || len(doc.RedactionsForPage(page)) > 0) {
 				g.refreshPagePreview(page)
@@ -387,6 +392,7 @@ func (g *Gui) documentChanged(page int) {
 		layer = g.imageSignatureLayer
 	}
 	g.scheduleLensPreviews(layer)
+	g.refreshPDFDetail()
 	g.refreshPagePreview(page)
 	g.updateHistoryActions()
 }

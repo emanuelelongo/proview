@@ -17,6 +17,9 @@ func (g *Gui) hideObjectOrderMenu() {
 func (l *signatureLayer) showObjectOrderMenuAt(event *fyne.PointEvent) bool {
 	for i := len(l.widgets) - 1; i >= 0; i-- {
 		w := l.widgets[i]
+		if w.readOnly {
+			continue
+		}
 		position, size := l.widgetRect(w.rect)
 		if event.Position.X >= position.X && event.Position.X <= position.X+size.Width &&
 			event.Position.Y >= position.Y && event.Position.Y <= position.Y+size.Height {

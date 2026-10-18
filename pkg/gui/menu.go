@@ -287,6 +287,7 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.thumbnailSelectionDocument = nil
 	g.thumbnailSelection = nil
 	g.pdfGeneration++
+	g.clearPDFDetail()
 	g.deactivatePDFCrops()
 	g.pdfCrops = nil
 	g.pdfPageIDs = nil
@@ -332,7 +333,7 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.image.Refresh()
 	g.setDocument(loadedDocument)
 	g.refreshThumbnailSelection()
-	g.resetZoom()
+	g.fitNewDocument()
 	g.updateTitle()
 	g.updateHistoryActions()
 }
@@ -344,6 +345,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	g.clearAreaSelection()
 	g.cancelThumbnailDrag()
 	g.pdfGeneration++
+	g.clearPDFDetail()
 	generation := g.pdfGeneration
 	g.deactivatePDFCrops()
 	g.pdfCrops = make(map[int]*cropOverlay)
@@ -494,7 +496,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	g.pdfScroll.ScrollToTop()
 	g.setDocument(loadedDocument)
 	g.refreshThumbnailSelection()
-	g.resetZoom()
+	g.fitNewDocument()
 	g.loadVisiblePDFPages()
 	g.loadVisiblePDFThumbnails()
 	g.updateTitle()

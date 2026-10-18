@@ -46,7 +46,7 @@ func TestHighlightFollowsTextAcrossLinesAsOneUndo(t *testing.T) {
 		t.Fatal("multiline highlight did not create one object")
 	}
 	data, _ := g.document.Overlays()[0].Annotation()
-	if data.Kind != annotations.Highlight || data.Opacity != .3 || len(data.Quads) != 2 || len(data.Points) != 0 {
+	if data.Kind != annotations.Highlight || data.Opacity != 1 || len(data.Quads) != 2 || len(data.Points) != 0 {
 		t.Fatalf("highlight=%+v", data)
 	}
 	if !g.document.Undo() || g.document.Dirty() || g.document.CanUndo() {
@@ -162,7 +162,7 @@ func TestHighlightNativePDFQueuesReleasedGestureAndKeepsTextSearchable(t *testin
 		driver.runNext(t)
 	}
 	data, _ := doc.Overlays()[0].Annotation()
-	if len(data.Quads) != 1 || data.Opacity != .3 || g.annotationPending != 0 {
+	if len(data.Quads) != 1 || data.Opacity != 1 || g.annotationPending != 0 {
 		t.Fatal("released gesture did not commit once")
 	}
 	exported, err := doc.Export(document.ExportOptions{})

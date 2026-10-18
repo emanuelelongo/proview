@@ -61,16 +61,19 @@ func (r NormalizedRect) Valid() bool {
 // them in place, and defensive copies belong only at public API boundaries
 // (PNG, Asset, Annotation).
 type SignatureOverlay struct {
-	ID          SignatureID
-	Page        int
-	Rect        NormalizedRect
-	Transform   img.Transform
-	ObjectKind  string
-	StrokeWidth int
-	png         []byte
-	preview     image.Image
-	asset       *signatures.Asset
-	annotation  *annotations.Data
+	// Standard PDF appearance cached in memory, never proprietary PDF metadata.
+	pdfAppearance []byte
+	pdfMarkup     map[string]string
+	ID            SignatureID
+	Page          int
+	Rect          NormalizedRect
+	Transform     img.Transform
+	ObjectKind    string
+	StrokeWidth   int
+	png           []byte
+	preview       image.Image
+	asset         *signatures.Asset
+	annotation    *annotations.Data
 }
 
 // Overlay and OverlayID are the common interfaces; signature APIs remain valid.
@@ -95,7 +98,9 @@ func (s SignatureOverlay) Preview() image.Image {
 	return s.Transform.Apply(img.ThickenAlpha(s.preview, s.StrokeWidth))
 }
 
-func (s SignatureOverlay) IsVector() bool { return s.asset != nil && s.asset.Kind != signatures.PNG }
+func (s SignatureOverlay) IsVector() bool {
+	return len(s.pdfAppearance) > 0 || s.asset != nil && s.asset.Kind != signatures.PNG
+}
 
 func (s SignatureOverlay) Asset() signatures.Asset {
 	if s.asset != nil {
@@ -105,7 +110,8 @@ func (s SignatureOverlay) Asset() signatures.Asset {
 }
 
 type Document struct {
-	// Retain ownership even when history eviction drops an old correction version.
+	// Retain source ownership across native edits and detached annotation bases.
+	// History eviction must not close a source still used by another snapshot.
 	// Rendering snapshots can still refer to those immutable sources.
 	textSources     []*Source
 	formValues      map[formKey][]string
@@ -153,6 +159,7 @@ func New(source *Source) (*Document, error) {
 	doc := &Document{source: source, nextSignatureID: 1}
 	if source.Format() == FormatPDF {
 		doc.pages = sourcePages(source)
+		doc.importSourceOverlays(source, 0)
 	}
 	doc.saved = doc.snapshot()
 	return doc, nil
@@ -638,6 +645,7 @@ func (d *Document) UpdateSignature(id SignatureID, page int, rect NormalizedRect
 			}
 			asset := prepared.Asset.Clone()
 			signature.annotation, signature.asset = &data, &asset
+			signature.pdfAppearance = nil
 			signature.preview, signature.png = prepared.Preview, bytes.Clone(prepared.PNG)
 		} else if signature.annotation != nil && signature.Rect.Width != rect.Width {
 			data := signature.annotation.Scaled(rect.Width / signature.Rect.Width)
@@ -843,6 +851,8 @@ func signaturesEqual(first, second SignatureOverlay) bool {
 		first.Transform != second.Transform || first.ObjectKind != second.ObjectKind || first.StrokeWidth != second.StrokeWidth ||
 		!annotationsEqual(first.annotation, second.annotation) ||
 		!assetsEqual(first.asset, second.asset) ||
+		!maps.Equal(first.pdfMarkup, second.pdfMarkup) ||
+		!bytesSameOrEqual(first.pdfAppearance, second.pdfAppearance) ||
 		!bytesSameOrEqual(first.png, second.png) {
 		return false
 	}
@@ -869,6 +879,7 @@ func annotationsEqual(a, b *annotations.Data) bool {
 	return a.Shape == b.Shape &&
 		a.StrokeStyle == b.StrokeStyle &&
 		a.Filled == b.Filled &&
+		a.ArrowClosed == b.ArrowClosed &&
 		a.Magnification == b.Magnification &&
 		a.Kind == b.Kind &&
 		a.Text == b.Text &&

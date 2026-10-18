@@ -340,7 +340,7 @@ func (d *Document) formPreview(source *Source, index int, dpi float64) (image.Im
 	if err != nil {
 		return nil, true, err
 	}
-	preview, err := pdfengine.RenderFormPage(data, index, dpi)
+	preview, err := renderPDFPage(data, index, dpi)
 	return preview, true, err
 }
 

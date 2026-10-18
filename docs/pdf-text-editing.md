@@ -109,6 +109,31 @@ across a source Form invocation remain rejected. MuPDF 1.24.9's Form filtering
 starts a fresh text state, so inherited spacing needs separate fidelity work.
 Spacing set inside Forms is supported and remains isolated per instance.
 
+## Transparency outside the selected text
+
+Native edits no longer reject an entire page merely because another graphic or
+text object uses opacity, a blend mode or a soft mask. The worker tracks the
+selected glyphs' effective fill opacity, blend mode and mask through q/Q and
+nested Form invocations. Stroke-only opacity does not block ordinary filled text.
+Unrelated artwork and source text keep their graphics state and paint order.
+
+Text that itself uses these effects, or belongs to a transparency-group Form,
+remains unsupported. Changes that leave transparency active at the source ET
+also remain rejected, since replacement insertion occurs there. These failures
+return no output and keep the existing simple UI message with engine details in
+logs. The checks use bounded in-memory state in the native edit worker; no new
+I/O or drag-preview work was added.
+
+Regression tests cover opacity, masks, blending, partial graphics-state updates,
+restoration and nested Forms, including refusal of effects on selected text.
+Rendering comparisons allow at most one 8-bit channel level for transparency
+compositing rounding; other existing exact-render tests remain unchanged.
+A local check on 2026-10-18 edited `Vivamus` on page 3 of the user's five-page
+PDF: an identical replacement rendered pixel-identically; replacing it with
+`Sed` changed only the word's pixels, and all other pages rendered identically.
+pdfcpu validated both outputs. The Desktop original stayed unchanged and was
+not added to fixtures or the repository.
+
 ## Overlap protection
 
 The native edit worker checks the proposed glyph positions against other source
@@ -137,8 +162,9 @@ work during drag preview: validation runs once in the native worker on Apply/dro
       source-glyph matches and unsupported glyph mappings fail without output.
 - [ ] The page-wide preflight intentionally rejects tagged PDFs/alternative text,
       non-filled/invisible text, Type 3/substituted/synthetic fonts, non-default
-      horizontal text scaling and transparency effects. A supported selection on an
-      otherwise unsupported page can therefore also be rejected.
+      horizontal text scaling. A supported selection on an otherwise unsupported
+      page can therefore also be rejected. Transparency is checked on the selected
+      text as described above.
 - [ ] Insertions are at the end of a source text object. Original kerning is not
       reproduced inside a replacement; neighboring glyph positions are preserved.
       New overlaps are blocked. An existing overlap can still be shortened,

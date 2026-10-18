@@ -1,9 +1,11 @@
 package gui
 
 import (
+	"emanuelelongo/proview/pkg/annotations"
 	"emanuelelongo/proview/pkg/document"
 	"fyne.io/fyne/v2"
 	"image"
+	"math"
 	"time"
 )
 
@@ -14,7 +16,7 @@ func (g *Gui) scheduleLensPreviews(layer *signatureLayer) {
 	}
 	found := false
 	for _, o := range g.document.Overlays() {
-		if o.Page == layer.page && o.IsLens() {
+		if o.Page == layer.page && (o.IsLens() || o.IsHighlight()) {
 			found = true
 			break
 		}
@@ -38,11 +40,27 @@ func (g *Gui) scheduleLensPreviews(layer *signatureLayer) {
 			revision := doc.Revision()
 			layer.lensRunning = true
 			page := layer.page
+			lensDPI := g.lensPreviewDPI()
+			highlightDPI := g.pdfOverlayPreviewDPI(page)
 			go func() {
 				previews := map[document.OverlayID]image.Image{}
+				var highlightErr error
+				hasHighlights := false
+				for _, o := range snapshot.Overlays() {
+					if o.Page == page && o.IsHighlight() {
+						hasHighlights = true
+						break
+					}
+				}
+				if hasHighlights {
+					previews, highlightErr = snapshot.HighlightPreviews(page, highlightDPI)
+					if previews == nil {
+						previews = map[document.OverlayID]image.Image{}
+					}
+				}
 				for _, o := range snapshot.Overlays() {
 					if o.Page == page && o.IsLens() {
-						p, e := snapshot.RenderLens(o.ID, 144)
+						p, e := snapshot.RenderLens(o.ID, lensDPI)
 						if e == nil {
 							previews[o.ID] = p
 						}
@@ -50,17 +68,30 @@ func (g *Gui) scheduleLensPreviews(layer *signatureLayer) {
 				}
 				fyne.Do(func() {
 					layer.lensRunning = false
-					if g.closed || g.document != doc {
+					if g.closed || g.document != doc || layer.document != doc || layer.page != page {
+						if !g.closed && layer.document == g.document {
+							g.scheduleLensPreviews(layer)
+						}
 						return
 					}
 					if layer.lensGeneration != gen || doc.Revision() != revision {
 						g.scheduleLensPreviews(layer)
 						return
 					}
+					if highlightErr != nil {
+						g.logEvent("highlight_preview_failed", "level=WARN page=%d error=%q", page+1, highlightErr)
+					}
 					for _, w := range layer.widgets {
-						if p := previews[w.id]; p != nil {
+						if p := previews[w.id]; p != nil && g.annotationPreviewID != w.id {
+							if w.annotation != nil && w.annotation.Kind == annotations.Highlight {
+								if layer.highlightPreviews == nil {
+									layer.highlightPreviews = map[document.OverlayID]image.Image{}
+								}
+								layer.highlightPreviews[w.id] = p
+							}
 							w.preview = p
 							w.image.Image = p
+							w.image.Show()
 							w.image.Refresh()
 						}
 					}
@@ -68,4 +99,21 @@ func (g *Gui) scheduleLensPreviews(layer *signatureLayer) {
 			}()
 		})
 	})
+}
+
+// Match screen density without increasing the ordinary page/highlight previews.
+func (g *Gui) lensPreviewDPI() float64 {
+	scale := 1.
+	if g.window != nil {
+		scale = float64(g.window.Canvas().Scale())
+	}
+	return math.Min(600, 144*math.Max(1, float64(g.zoom)*scale))
+}
+
+func (g *Gui) pdfOverlayPreviewDPI(page int) float64 {
+	s := g.pdfDetail
+	if s != nil && s.image != nil && s.rendered.doc == g.document && s.rendered.generation == g.pdfGeneration && s.rendered.page == page {
+		return s.rendered.dpi
+	}
+	return 144
 }

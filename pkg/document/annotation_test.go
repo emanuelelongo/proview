@@ -172,7 +172,7 @@ func TestAnnotationPDFVectorExportAndLayerOrder(t *testing.T) {
 				t.Fatal(err)
 			}
 			c := color.NRGBAModel.Convert(picture.At(picture.Bounds().Dx()/2, picture.Bounds().Dy()/2)).(color.NRGBA)
-			if c.R < 240 || c.G < 170 || c.G > 188 || c.B < 170 || c.B > 188 {
+			if c.R < 240 || c.G < 120 || c.G > 135 || c.B < 120 || c.B > 135 {
 				t.Fatalf("highlight placement/transparency = %v", c)
 			}
 			// A later translucent flat-nib stroke must blend above the highlight,
@@ -196,7 +196,7 @@ func TestAnnotationPDFVectorExportAndLayerOrder(t *testing.T) {
 				t.Fatal(err)
 			}
 			c = color.NRGBAModel.Convert(picture.At(picture.Bounds().Dx()/2, picture.Bounds().Dy()/2)).(color.NRGBA)
-			if c.R < 120 || c.R > 135 || c.G < 80 || c.G > 98 || c.B < 210 || c.B > 224 {
+			if c.R < 120 || c.R > 135 || c.G < 58 || c.G > 70 || c.B < 185 || c.B > 200 {
 				t.Fatalf("layer order changed in preview: %v", c)
 			}
 			output, err = doc.Export(ExportOptions{Format: FormatPDF})
@@ -213,7 +213,7 @@ func TestAnnotationPDFVectorExportAndLayerOrder(t *testing.T) {
 				t.Fatal(err)
 			}
 			c = color.NRGBAModel.Convert(picture.At(picture.Bounds().Dx()/2, picture.Bounds().Dy()/2)).(color.NRGBA)
-			if c.R < 120 || c.R > 135 || c.G < 80 || c.G > 98 || c.B < 210 || c.B > 224 {
+			if c.R < 120 || c.R > 135 || c.G < 58 || c.G > 70 || c.B < 185 || c.B > 200 {
 				t.Fatalf("layer order changed in PDF: %v", c)
 			}
 		})

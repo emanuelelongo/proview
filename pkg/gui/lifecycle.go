@@ -61,6 +61,7 @@ func (g *Gui) closeDocument() {
 	g.stopSelectionModifierTimer()
 	g.cancelThumbnailDrag()
 	g.pdfGeneration++
+	g.clearPDFDetail()
 	g.panModifierDown = false
 	g.setPanActive(false)
 	g.clearAreaSelection()
@@ -134,6 +135,7 @@ func (g *Gui) closeWindow() {
 	g.cancelFilePicker()
 	g.cancelThumbnailDrag()
 	g.pdfGeneration++
+	g.clearPDFDetail()
 	if g.document != nil {
 		doc := g.document
 		g.document = nil
