@@ -3,6 +3,7 @@
 from itertools import product
 from pathlib import Path
 import re
+import shlex
 import os
 import subprocess
 import sys
@@ -130,7 +131,12 @@ class WorkflowTests(TestCase):
         self.assertEqual(set(re.findall(r"            os: (.+)", workflow)), {
             "macos-15", "macos-15-intel", "windows-2022", "ubuntu-22.04", "ubuntu-24.04-arm",
         })
-        self.assertIn("go test -timeout 10m ./...", workflow)
+        commands = [shlex.split(command) for command in
+                    re.findall(r"(?m)^\s+run: (go test .+)$", workflow)]
+        suite = next((command for command in commands if "./..." in command), None)
+        self.assertIsNotNone(suite, "The complete Go test suite must run")
+        self.assertFalse(any(argument == "-short" or argument.startswith(("-run", "-skip"))
+                             for argument in suite[2:]), "CI must not filter out tests")
         self.assertIn("go vet ./...", workflow)
         self.assertIn("go test -race -timeout 5m ./internal/applog", workflow)
         self.assertIn("xargs -0 gofmt -l", workflow)
