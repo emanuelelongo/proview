@@ -13,7 +13,12 @@ import (
 )
 
 func TestLaunchOptionsResolveWorkDirWithoutChangingCWDOrFileArguments(t *testing.T) {
-	directory := t.TempDir()
+	root := t.TempDir()
+	t.Chdir(root)
+	directory := filepath.Join(root, "work")
+	if err := os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
