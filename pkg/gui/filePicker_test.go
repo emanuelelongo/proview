@@ -146,3 +146,37 @@ func TestNativePickerHasNoWaitingDialogAndFallsBackDirectly(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkDirectoryOverridesOpenDialogsWithoutChangingOtherWindows(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	directory, visited := t.TempDir(), t.TempDir()
+	g.workDir = directory
+	g.filePickerDirectory = visited
+	requests := make(chan filePickerRequest, 1)
+	g.filePickerBackend = func(_ context.Context, request filePickerRequest) ([]string, error) {
+		requests <- request
+		return nil, zenity.ErrCanceled
+	}
+	// Open document, append-PDF and signature import all share this path.
+	for _, title := range []string{"Open file", "Append PDFs", "Import signature"} {
+		done := false
+		g.chooseFiles(title, []string{".pdf"}, true, func([]fyne.URIReadCloser, error) { done = true })
+		request := <-requests
+		if request.directory != directory {
+			t.Fatal("work directory lost after previous file selection", request)
+		}
+		for !done {
+			driver.runNext(t)
+		}
+		if !done || g.working {
+			t.Fatal("picker cancellation did not finish")
+		}
+	}
+	other := newGui(g.app)
+	other.filePickerDirectory = visited
+	if other.initialOpenDirectory() != visited || other.workDir != "" {
+		t.Fatal("work directory leaked into another window")
+	}
+	g.closeWindow()
+	other.closeWindow()
+}

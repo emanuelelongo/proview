@@ -7,6 +7,13 @@ import (
 	"fyne.io/fyne/v2/storage"
 )
 
+// OpenOptions applies only to the receiving editor window. A work directory
+// controls dialogs; it is not a process working directory or a sandbox.
+type OpenOptions struct {
+	NewWindow bool
+	WorkDir   string
+}
+
 func (g *Gui) openStartupFiles(paths []string) {
 	if g.closed {
 		editor := g.newEditor()
@@ -19,20 +26,35 @@ func (g *Gui) openStartupFiles(paths []string) {
 }
 
 // OpenFiles accepts desktop requests from a background worker.
-func (g *Gui) OpenFiles(paths []string) { g.openFilesFromFinder(paths) }
+func (g *Gui) OpenFiles(paths []string) { g.OpenFilesWithOptions(paths, OpenOptions{}) }
 
-func (g *Gui) openFilesFromFinder(paths []string) {
-	if len(paths) == 0 {
+// OpenFilesWithOptions accepts command-line requests from the IPC worker.
+func (g *Gui) OpenFilesWithOptions(paths []string, options OpenOptions) {
+	if len(paths) == 0 && !options.NewWindow && options.WorkDir == "" {
 		return
 	}
-	fyne.Do(func() {
-		editor := g.desktopEditor()
-		editor.openStartupFiles(paths)
-		if !editor.closed {
-			editor.window.RequestFocus()
-		}
-	})
+	paths = append([]string(nil), paths...)
+	fyne.Do(func() { g.openLaunchRequest(paths, options) })
 }
+
+func (g *Gui) openLaunchRequest(paths []string, options OpenOptions) {
+	editor := g.desktopEditor()
+	if options.NewWindow || editor.closed {
+		editor = editor.newEditor()
+		// Explicit launches get their own settings, not the active window's.
+		editor.workDir = options.WorkDir
+		editor.window.Show()
+	} else if options.WorkDir != "" {
+		editor.workDir = options.WorkDir
+	}
+	editor.activateEditor()
+	editor.openStartupFiles(paths)
+	if !editor.closed {
+		editor.window.RequestFocus()
+	}
+}
+
+func (g *Gui) openFilesFromFinder(paths []string) { g.OpenFiles(paths) }
 
 func (g *Gui) openDroppedFiles(_ fyne.Position, uris []fyne.URI) {
 	paths := make([]string, 0, len(uris))

@@ -1,0 +1,672 @@
+{
+  "version": 1,
+  "window": [
+    1000,
+    740
+  ],
+  "coordinate_notes": "Window points are fractions of the 1000x740 macOS window, including its title bar. Page points are fractions of the detected white PDF page after fit. Recipes require initial desktop calibration; capture success is not visual acceptance.",
+  "cases": [
+    {
+      "id": "overview",
+      "title": "Main PDF window and toolbar",
+      "fixture": "showcase.pdf",
+      "format": "png",
+      "target": "overview.png",
+      "automation": "scripted",
+      "readme_section": "Introduction",
+      "readme_alt": "Main window: a PDF with the current toolbar and numbered page thumbnails.",
+      "setup": [],
+      "actions": [],
+      "cleanup_undo": 0,
+      "expected": [
+        "Page 01 is visible with readable native text.",
+        "The current toolbar, numbered thumbnails and status bar are visible."
+      ]
+    },
+    {
+      "id": "image-crop",
+      "title": "Select a crop on an image",
+      "fixture": "lenna.png",
+      "format": "png",
+      "target": "image-editing.png",
+      "setup": [
+        {
+          "op": "key",
+          "key": "c",
+          "modifiers": [
+            "command",
+            "shift"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "op": "drag",
+          "from": [
+            0.38,
+            0.3
+          ],
+          "to": [
+            0.88,
+            0.8
+          ],
+          "duration": 0.55
+        }
+      ],
+      "cleanup_undo": 0,
+      "expected": [
+        "The Lenna test image is visible.",
+        "A crop rectangle and its confirmation controls are visible; the crop has not been applied.",
+        "The crop frames part of the portrait, without clipping the app window."
+      ],
+      "automation": "scripted",
+      "readme_section": "Image viewing and basic editing",
+      "readme_alt": "Image editing: Lenna with a crop selection and confirmation controls."
+    },
+    {
+      "id": "image-ocr",
+      "title": "Select recognized text in an image",
+      "fixture": "scan.png",
+      "format": "png",
+      "target": "ocr.png",
+      "automation": "scripted",
+      "readme_section": "Image viewing and basic editing",
+      "readme_alt": "OCR: recognized text selected directly in an image.",
+      "setup": [
+        {
+          "op": "wait",
+          "seconds": 3
+        }
+      ],
+      "actions": [
+        {
+          "op": "drag",
+          "from": [
+            0.105,
+            0.28
+          ],
+          "to": [
+            0.49,
+            0.28
+          ],
+          "duration": 0.55
+        }
+      ],
+      "cleanup_undo": 0,
+      "expected": [
+        "The fictional scan is visible and OCR has completed.",
+        "Words in the first body sentence are selected using recognized text geometry, rather than a rectangular crop.",
+        "The QR code is visible without a browser opening."
+      ]
+    },
+    {
+      "id": "stl-orbit",
+      "title": "Orbit a small STL model",
+      "fixture": "model.stl",
+      "format": "gif",
+      "target": "stl.gif",
+      "seconds": 6,
+      "actions": [
+        {
+          "op": "drag",
+          "from": [
+            0.49,
+            0.43
+          ],
+          "to": [
+            0.72,
+            0.63
+          ],
+          "duration": 0.65
+        }
+      ],
+      "cleanup_undo": 0,
+      "expected": [
+        "The supplied model remains centered and its lighting changes as the camera orbits.",
+        "Editing tools stay disabled and the camera movement does not mark the document dirty."
+      ],
+      "automation": "scripted",
+      "readme_section": "Image viewing and basic editing",
+      "readme_alt": "STL model viewing: rotating the supplied model to inspect it.",
+      "clip": {
+        "before": 0.25,
+        "after": 0.65,
+        "max_seconds": 3
+      }
+    },
+    {
+      "id": "pdf-highlight",
+      "title": "Change the color of a text-following PDF highlight",
+      "fixture": "showcase.pdf",
+      "format": "gif",
+      "target": "highlight.gif",
+      "automation": "scripted",
+      "readme_section": "PDF markup and organization",
+      "readme_alt": "PDF highlights: changing the color across multiple lines of text.",
+      "setup": [
+        {
+          "op": "key",
+          "key": "h",
+          "modifiers": [
+            "command",
+            "shift"
+          ]
+        },
+        {
+          "op": "drag",
+          "space": "page",
+          "from": [
+            0.08,
+            0.285
+          ],
+          "to": [
+            0.51,
+            0.365
+          ],
+          "duration": 0.65
+        },
+        {
+          "op": "key",
+          "key": "v",
+          "modifiers": [
+            "command",
+            "shift"
+          ]
+        },
+        {
+          "op": "click",
+          "at": [
+            0.45,
+            0.346
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "at": [
+            0.811,
+            0.074
+          ]
+        },
+        {
+          "op": "choose-color",
+          "value": "#8bc34a"
+        }
+      ],
+      "cleanup_undo": 2,
+      "expected": [
+        "Setup creates one text-following highlight across three lines, with blank page areas left uncolored.",
+        "The GIF shows the color picker changing the selected highlight from yellow to green.",
+        "All three lines keep readable text, with no move or resize gesture."
+      ],
+      "seconds": 8,
+      "clip": {
+        "before": 0.25,
+        "after": 0.8,
+        "max_seconds": 4.5
+      }
+    },
+    {
+      "id": "pdf-page-drag",
+      "title": "Move the second PDF page before the first using its thumbnail",
+      "fixture": "showcase.pdf",
+      "format": "gif",
+      "target": "pdf.gif",
+      "seconds": 6,
+      "clip": {
+        "before": 0.25,
+        "after": 0.65,
+        "max_seconds": 3
+      },
+      "actions": [
+        {
+          "op": "drag",
+          "from": [
+            0.07,
+            0.47
+          ],
+          "to": [
+            0.07,
+            0.111
+          ],
+          "duration": 0.55
+        }
+      ],
+      "cleanup_undo": 1,
+      "expected": [
+        "The first two thumbnail previews have loaded before the drag.",
+        "Dragging shows an insertion marker and visibly swaps the distinct first two pages.",
+        "Page count remains six and no error dialog appears."
+      ],
+      "automation": "scripted",
+      "readme_section": "PDF markup and organization",
+      "readme_alt": "PDF pages: dragging the second thumbnail before the first to reorder the document."
+    },
+    {
+      "id": "sign-pdf",
+      "title": "Insert and position a fictional signature",
+      "fixture": "showcase.pdf",
+      "format": "gif",
+      "target": "sign-pdf.gif",
+      "automation": "scripted",
+      "readme_section": "Add handwritten signatures",
+      "readme_alt": "Signing a PDF: positioning an inserted John Doe signature on the page.",
+      "steps": [
+        "Import and save johndoe.png through the real UI into the disposable --data-dir profile.",
+        "Open page 05, insert John Doe through the Signature picker, Fit, then return to page 05 to align the viewport before capture.",
+        "Record only a quick drag to the signature line, with a short initial/final hold.",
+        "Undo the move and insertion; close only the owned window. The signature store is removed with build/demo."
+      ],
+      "setup": [
+        {
+          "op": "key",
+          "key": "i",
+          "modifiers": [
+            "command",
+            "shift"
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.4
+        },
+        {
+          "op": "click",
+          "at": [
+            0.45,
+            0.19
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.4
+        },
+        {
+          "op": "click",
+          "at": [
+            0.375,
+            0.812
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.3
+        },
+        {
+          "op": "click",
+          "at": [
+            0.467,
+            0.6
+          ]
+        },
+        {
+          "op": "choose-file",
+          "file": "johndoe.png"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.6
+        },
+        {
+          "op": "click",
+          "at": [
+            0.533,
+            0.793
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        },
+        {
+          "op": "click",
+          "at": [
+            0.622,
+            0.812
+          ]
+        },
+        {
+          "op": "key",
+          "key": "pagedown"
+        },
+        {
+          "op": "key",
+          "key": "pagedown"
+        },
+        {
+          "op": "key",
+          "key": "pagedown"
+        },
+        {
+          "op": "key",
+          "key": "pagedown"
+        },
+        {
+          "op": "key",
+          "key": "i",
+          "modifiers": [
+            "command",
+            "shift"
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        },
+        {
+          "op": "click",
+          "at": [
+            0.45,
+            0.15
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        },
+        {
+          "op": "key",
+          "key": "0",
+          "modifiers": [
+            "command"
+          ]
+        },
+        {
+          "op": "key",
+          "key": "pagedown"
+        },
+        {
+          "op": "key",
+          "key": "pageup"
+        }
+      ],
+      "actions": [
+        {
+          "op": "drag",
+          "space": "page",
+          "from": [
+            0.5,
+            0.5
+          ],
+          "to": [
+            0.34,
+            0.68
+          ],
+          "duration": 0.55
+        }
+      ],
+      "cleanup_undo": 2,
+      "seconds": 8,
+      "clip": {
+        "before": 0.25,
+        "after": 0.65,
+        "max_seconds": 3
+      },
+      "expected": [
+        "Only the John Doe example artwork is inserted; no personal signatures are used.",
+        "Setup inserts through the real Signature picker; the GIF shows a quick move to the signature line.",
+        "The final selected signature shows its editing controls and the Undo cleanup returns the document to its original state."
+      ]
+    },
+    {
+      "id": "import-signature",
+      "title": "Preview vectorization of a fictional signature",
+      "fixture": "showcase.pdf",
+      "format": "png",
+      "target": "import-signature.png",
+      "automation": "scripted",
+      "readme_section": "Add handwritten signatures",
+      "readme_alt": "Importing a signature: fictional signature artwork beside its transparent vector preview, with the sensitivity control visible.",
+      "steps": [
+        "Launch the standard application with --data-dir pointing to the disposable case profile.",
+        "Use Signature, Manage signatures, New signature and the native file picker to import johndoe.png.",
+        "Wait for the actual vectorization preview and capture its source and sensitivity controls.",
+        "Cancel the editor and close the owned window without saving an entry."
+      ],
+      "setup": [
+        {
+          "op": "key",
+          "key": "i",
+          "modifiers": [
+            "command",
+            "shift"
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.4
+        },
+        {
+          "op": "click",
+          "at": [
+            0.45,
+            0.19
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.4
+        },
+        {
+          "op": "click",
+          "at": [
+            0.375,
+            0.812
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.3
+        },
+        {
+          "op": "click",
+          "at": [
+            0.467,
+            0.6
+          ]
+        },
+        {
+          "op": "choose-file",
+          "file": "johndoe.png"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.6
+        }
+      ],
+      "actions": [],
+      "cleanup_undo": 0,
+      "expected": [
+        "The Import signature dialog shows the fictional source and transparent vector preview side by side.",
+        "The sensitivity slider and live selection are visible.",
+        "No entry is saved to the signature library and no personal signatures are shown."
+      ]
+    },
+    {
+      "id": "pdf-redact",
+      "title": "Mark fictional contact information for redaction",
+      "fixture": "showcase.pdf",
+      "format": "gif",
+      "target": "redaction.gif",
+      "seconds": 8,
+      "setup": [
+        {
+          "op": "key",
+          "key": "pagedown"
+        },
+        {
+          "op": "key",
+          "key": "r",
+          "modifiers": [
+            "command",
+            "shift"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "op": "drag",
+          "space": "page",
+          "from": [
+            0.085,
+            0.3
+          ],
+          "to": [
+            0.42,
+            0.3
+          ],
+          "duration": 0.55
+        },
+        {
+          "op": "click",
+          "at": [
+            0.9,
+            0.8
+          ]
+        }
+      ],
+      "cleanup_undo": 1,
+      "expected": [
+        "A black redaction mark covers the fictional contact line on page 02.",
+        "The cursor leaves the redaction so the hover reveal does not obscure the final state.",
+        "This shows marking only; do not claim sanitization without a separate export/reopen check."
+      ],
+      "automation": "scripted",
+      "readme_section": "Remove sensitive PDF content",
+      "readme_alt": "Redaction: marking a fictional contact line for removal from a PDF.",
+      "clip": {
+        "before": 0.25,
+        "after": 0.65,
+        "max_seconds": 3
+      }
+    },
+    {
+      "id": "pdf-forms",
+      "title": "Fill supported PDF form fields",
+      "fixture": "showcase.pdf",
+      "format": "png",
+      "target": "forms.png",
+      "automation": "scripted",
+      "readme_section": "Fill PDF forms",
+      "readme_alt": "PDF forms: text fields, choices and checkboxes edited directly on the page.",
+      "setup": [
+        {
+          "op": "key",
+          "key": "pagedown"
+        },
+        {
+          "op": "key",
+          "key": "pagedown"
+        },
+        {
+          "op": "click",
+          "at": [
+            0.411,
+            0.074
+          ]
+        },
+        {
+          "op": "click",
+          "at": [
+            0.45,
+            0.322
+          ]
+        },
+        {
+          "op": "key",
+          "key": "a",
+          "modifiers": [
+            "command"
+          ]
+        },
+        {
+          "op": "text",
+          "value": "Sam"
+        },
+        {
+          "op": "click",
+          "at": [
+            0.39,
+            0.58
+          ]
+        },
+        {
+          "op": "click",
+          "at": [
+            0.39,
+            0.71
+          ]
+        },
+        {
+          "op": "click",
+          "at": [
+            0.411,
+            0.074
+          ]
+        }
+      ],
+      "actions": [],
+      "cleanup_undo": 5,
+      "expected": [
+        "Page 03 shows fictional form values and supported controls.",
+        "No validation dialog obscures the fields."
+      ]
+    },
+    {
+      "id": "pdf-text-edit",
+      "title": "Replace a native PDF word",
+      "fixture": "showcase.pdf",
+      "format": "gif",
+      "target": "pdf-text-edit.gif",
+      "automation": "scripted",
+      "readme_section": "Search and edit PDF text",
+      "readme_alt": "Editing native PDF text: replacing a word while preserving the surrounding page.",
+      "setup": [
+        {
+          "op": "key",
+          "key": "e",
+          "modifiers": [
+            "command",
+            "shift"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "at": [
+            0.451,
+            0.346
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.2
+        },
+        {
+          "op": "text",
+          "value": "forest"
+        },
+        {
+          "op": "click",
+          "at": [
+            0.59,
+            0.565
+          ]
+        }
+      ],
+      "cleanup_undo": 1,
+      "expected": [
+        "The Edit PDF Text dialog replaces mountain with forest.",
+        "The replacement retains natural text proportions and surrounding content stays in place."
+      ],
+      "seconds": 8,
+      "clip": {
+        "before": 0.25,
+        "after": 0.8,
+        "max_seconds": 4
+      }
+    }
+  ]
+}

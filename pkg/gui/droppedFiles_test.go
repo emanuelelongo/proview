@@ -33,6 +33,19 @@ func (d *dropTestDriver) runNext(t *testing.T) {
 	}
 }
 
+// Drain callbacks already queued by the synchronous dispatch under test. Other
+// GUI workers may also publish callbacks through Fyne's current test app.
+func (d *dropTestDriver) drain() {
+	for {
+		select {
+		case callback := <-d.callbacks:
+			callback()
+		default:
+			return
+		}
+	}
+}
+
 type dropTestApp struct {
 	fyne.App
 	driver *dropTestDriver
@@ -121,14 +134,17 @@ func TestDroppedFilesOpenWithoutReplacingCurrentWork(t *testing.T) {
 
 func TestDroppedFilesIgnoreNonFilesAndClosedWindow(t *testing.T) {
 	g, driver := newDropTestGui(t)
+	// A queued GUI update must not be mistaken for a file-opening request.
+	driver.callbacks <- func() {}
 	g.openDroppedFiles(fyne.Position{}, []fyne.URI{nil, storage.NewURI("https://example.com/image.png")})
-	if len(driver.callbacks) != 0 {
-		t.Fatal("non-file drop queued an opening request")
+	driver.drain()
+	if len(g.pendingFiles) != 0 || g.openingFiles || g.document != nil || g.working || g.window.Canvas().Overlays().Top() != nil {
+		t.Fatal("non-file drop started an opening request")
 	}
 	g.openDroppedFiles(fyne.Position{}, []fyne.URI{storage.NewFileURI(filepath.Join(t.TempDir(), "missing.pdf"))})
 	g.closed = true // The window closes before the queued drop is processed.
-	driver.runNext(t)
-	if g.window.Canvas().Overlays().Top() != nil || g.working {
+	driver.drain()
+	if g.window.Canvas().Overlays().Top() != nil || g.working || len(g.pendingFiles) != 0 || g.openingFiles {
 		t.Fatal("closed window processed a dropped file")
 	}
 }

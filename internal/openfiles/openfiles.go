@@ -17,10 +17,27 @@ import (
 	"time"
 )
 
-type endpoint struct{ Address, Token string }
+const protocolVersion = 2
+
+var errLaunchOptionsUnsupported = errors.New("running application does not support launch options")
+
+type endpoint struct {
+	Address, Token string
+	Version        int
+}
+
+// Request describes one desktop launch. WorkDir is an absolute dialog directory;
+// it never changes the process working directory or resolves file arguments.
+type Request struct {
+	Paths     []string
+	NewWindow bool
+	WorkDir   string
+}
 type request struct {
-	Token string
-	Paths []string
+	Token     string
+	Paths     []string
+	NewWindow bool
+	WorkDir   string
 }
 
 type Server struct {
@@ -32,9 +49,9 @@ type Server struct {
 }
 
 // Start uses a private endpoint and an OS lock; crashed processes leave no live lock.
-// A second launch with paths forwards them and returns forwarded=true. A launch
-// without paths may still create a separate empty window/process.
-func Start(directory string, paths []string, receive func([]string) error) (*Server, bool, error) {
+// A launch with paths or explicit window options forwards a request to the
+// primary instance. A plain empty launch retains its separate-process behavior.
+func Start(directory string, initial Request, receive func(Request) error) (*Server, bool, error) {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, false, err
 	}
@@ -44,23 +61,30 @@ func Start(directory string, paths []string, receive func([]string) error) (*Ser
 	}
 	if err = tryLock(lock); err != nil {
 		_ = lock.Close()
-		if len(paths) == 0 {
+		if len(initial.Paths) == 0 && !initial.NewWindow && initial.WorkDir == "" {
 			return nil, false, nil
 		}
-		absolute := make([]string, len(paths))
-		for i, path := range paths {
+		absolute := make([]string, len(initial.Paths))
+		for i, path := range initial.Paths {
 			absolute[i], err = filepath.Abs(path)
+			if err != nil {
+				return nil, false, err
+			}
+		}
+		initial.Paths = absolute
+		if initial.WorkDir != "" {
+			initial.WorkDir, err = filepath.Abs(initial.WorkDir)
 			if err != nil {
 				return nil, false, err
 			}
 		}
 		deadline := time.Now().Add(3 * time.Second)
 		for {
-			err = forward(filepath.Join(directory, "open-files.json"), absolute)
+			err = forward(filepath.Join(directory, "open-files.json"), initial)
 			if err == nil {
 				return nil, true, nil
 			}
-			if time.Now().After(deadline) {
+			if errors.Is(err, errLaunchOptionsUnsupported) || time.Now().After(deadline) {
 				return nil, false, fmt.Errorf("forward opening request: %w", err)
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -78,7 +102,7 @@ func Start(directory string, paths []string, receive func([]string) error) (*Ser
 		server.Close()
 		return nil, false, err
 	}
-	info := endpoint{Address: listener.Addr().String(), Token: hex.EncodeToString(token)}
+	info := endpoint{Address: listener.Addr().String(), Token: hex.EncodeToString(token), Version: protocolVersion}
 	data, _ := json.Marshal(info)
 	// The OS lock is held throughout publication; readers retry a partial write.
 	if err = os.WriteFile(server.endpointPath, data, 0600); err != nil {
@@ -100,14 +124,14 @@ func Start(directory string, paths []string, receive func([]string) error) (*Ser
 	return server, false, nil
 }
 
-func (s *Server) handle(connection net.Conn, token string, receive func([]string) error) {
+func (s *Server) handle(connection net.Conn, token string, receive func(Request) error) {
 	defer connection.Close()
 	_ = connection.SetDeadline(time.Now().Add(2 * time.Second))
 	var input request
 	if err := json.NewDecoder(io.LimitReader(connection, 1<<20)).Decode(&input); err != nil {
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(input.Token), []byte(token)) != 1 || len(input.Paths) == 0 || len(input.Paths) > 256 {
+	if subtle.ConstantTimeCompare([]byte(input.Token), []byte(token)) != 1 || (len(input.Paths) == 0 && !input.NewWindow && input.WorkDir == "") || len(input.Paths) > 256 {
 		return
 	}
 	for _, path := range input.Paths {
@@ -115,13 +139,22 @@ func (s *Server) handle(connection net.Conn, token string, receive func([]string
 			return
 		}
 	}
-	if err := receive(input.Paths); err != nil {
+	if input.WorkDir != "" {
+		if !filepath.IsAbs(input.WorkDir) || strings.ContainsRune(input.WorkDir, 0) {
+			return
+		}
+		info, err := os.Stat(input.WorkDir)
+		if err != nil || !info.IsDir() {
+			return
+		}
+	}
+	if err := receive(Request{Paths: input.Paths, NewWindow: input.NewWindow, WorkDir: input.WorkDir}); err != nil {
 		return
 	}
 	_, _ = io.WriteString(connection, "OK\n")
 }
 
-func forward(path string, paths []string) error {
+func forward(path string, initial Request) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -129,6 +162,9 @@ func forward(path string, paths []string) error {
 	var info endpoint
 	if err = json.Unmarshal(data, &info); err != nil {
 		return err
+	}
+	if (initial.NewWindow || initial.WorkDir != "") && info.Version < protocolVersion {
+		return errLaunchOptionsUnsupported
 	}
 	host, _, err := net.SplitHostPort(info.Address)
 	if err != nil || host != "127.0.0.1" || len(info.Token) != 64 {
@@ -140,7 +176,7 @@ func forward(path string, paths []string) error {
 	}
 	defer connection.Close()
 	_ = connection.SetDeadline(time.Now().Add(2 * time.Second))
-	if err = json.NewEncoder(connection).Encode(request{Token: info.Token, Paths: paths}); err != nil {
+	if err = json.NewEncoder(connection).Encode(request{Token: info.Token, Paths: initial.Paths, NewWindow: initial.NewWindow, WorkDir: initial.WorkDir}); err != nil {
 		return err
 	}
 	reply := make([]byte, 3)

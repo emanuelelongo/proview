@@ -2,6 +2,7 @@ package gui
 
 import (
 	"emanuelelongo/proview/assets"
+	"emanuelelongo/proview/internal/appprofile"
 	"emanuelelongo/proview/internal/fileassoc"
 	"emanuelelongo/proview/pkg/annotations"
 	"emanuelelongo/proview/pkg/document"
@@ -60,6 +61,7 @@ type Gui struct {
 	filePicker                        *filePickerState
 	filePickerBackend                 filePickerBackend
 	filePickerDirectory               string
+	workDir                           string
 	closed                            bool
 	thumbnailDrag                     *thumbnailDragState
 	thumbnailPress                    *thumbnailDragState
@@ -174,10 +176,10 @@ type Gui struct {
 }
 
 func NewGui() *Gui {
-	if err := fileassoc.Register(openFileExtensions()); err != nil {
+	if err := registerDefaultFileAssociations(); err != nil {
 		log.Printf("Could not register file associations: %v", err)
 	}
-	g := newGui(app.NewWithID("com.emanuelelongo.proview"))
+	g := newGui(app.NewWithID(appprofile.ID()))
 	g.startTipSequence()
 	return g
 }
@@ -323,7 +325,12 @@ func (g *Gui) Run() {
 }
 
 // RunWithFiles starts the application and queues paths in the document workspace.
-func (g *Gui) RunWithFiles(paths []string) {
+func (g *Gui) RunWithFiles(paths []string) { g.RunWithOptions(paths, OpenOptions{}) }
+
+// The initial launch already owns a fresh window; NewWindow affects forwarded
+// requests only. Apply the dialog directory before showing the first window.
+func (g *Gui) RunWithOptions(paths []string, options OpenOptions) {
+	g.workDir = options.WorkDir
 	// Showing the first window runs the native macOS launch event loop.
 	// Capture document requests before AppKit starts processing them.
 	registerOpenFilesHandler(nil)
@@ -385,4 +392,12 @@ func (g *Gui) setCropToolActive(active bool) {
 	if g.cropAction != nil {
 		g.cropAction.SetActive(active)
 	}
+}
+
+// Custom profiles must not replace the installed application's file associations.
+func registerDefaultFileAssociations() error {
+	if appprofile.Root != "" {
+		return nil
+	}
+	return fileassoc.Register(openFileExtensions())
 }

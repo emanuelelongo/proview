@@ -9,6 +9,43 @@ vars:
   LINUXDEPLOY_AARCH64_SHA256: 620095110d693282b8ebeb244a95b5e911cf8f65f76c88b4b47d16ae6346fcff
 
 tasks:
+  demo:list:
+    desc: List screenshot and animation recipes
+    cmds:
+      - python3 demo/scripts/record.py --list {{.CLI_ARGS}}
+
+  demo:plan:
+    desc: Validate demo recipes without desktop access
+    cmds:
+      - python3 demo/scripts/record.py --dry-run {{.CLI_ARGS}}
+
+  demo:doctor:
+    desc: Check local macOS recording prerequisites
+    cmds:
+      - python3 demo/scripts/record.py --doctor {{.CLI_ARGS}}
+
+  demo:build:
+    desc: Build the standard application with bundled OCR
+    cmds:
+      - task: build
+
+  demo:record:
+    desc: Update README demo media in docs/screenshots (all cases by default)
+    cmds:
+      - task: demo:build
+      - python3 demo/scripts/record.py {{.CLI_ARGS}}
+
+  demo:clean:
+    desc: Clear build/demo; keep final media in docs/screenshots
+    cmds:
+      - python3 demo/scripts/clean.py {{.CLI_ARGS}}
+
+  demo:check:
+    desc: Test synthetic fixtures and recording recipes without controlling the desktop
+    cmds:
+      - go test ./demo
+      - python3 -m unittest discover -s demo/scripts -p 'test_*.py'
+
   signature:probe:
     desc: Evaluate a JPEG or PNG signature as SVG, PNG preview and vector PDF
     cmds:

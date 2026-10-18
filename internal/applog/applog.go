@@ -3,6 +3,7 @@ package applog
 
 import (
 	"bytes"
+	"emanuelelongo/proview/internal/appprofile"
 	"errors"
 	"fmt"
 	"io"
@@ -44,6 +45,9 @@ type Logger struct {
 var active atomic.Pointer[Logger]
 
 func Directory() (string, error) {
+	if appprofile.Root != "" {
+		return filepath.Join(appprofile.Root, "logs"), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

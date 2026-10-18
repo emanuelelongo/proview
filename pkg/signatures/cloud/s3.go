@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"emanuelelongo/proview/internal/appprofile"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,10 +45,8 @@ type SystemS3Credentials struct{}
 
 var errS3Operation = errors.New("Invalid or unreadable remote signature operation")
 
-const s3KeyringService = "com.emanuelelongo.proview.s3"
-
 func (SystemS3Credentials) Get() (S3Keys, error) {
-	data, err := keyring.Get(s3KeyringService, "credentials")
+	data, err := keyring.Get(appprofile.CredentialService("s3"), "credentials")
 	if err != nil {
 		return S3Keys{}, err
 	}
@@ -60,10 +59,10 @@ func (SystemS3Credentials) Set(keys S3Keys) error {
 	if err != nil {
 		return err
 	}
-	return keyring.Set(s3KeyringService, "credentials", string(data))
+	return keyring.Set(appprofile.CredentialService("s3"), "credentials", string(data))
 }
 func (SystemS3Credentials) Delete() error {
-	err := keyring.Delete(s3KeyringService, "credentials")
+	err := keyring.Delete(appprofile.CredentialService("s3"), "credentials")
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}

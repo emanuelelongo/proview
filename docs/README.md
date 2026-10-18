@@ -14,6 +14,7 @@ Feature documentation on a prototype branch does not imply a published release.
 | [Development and packaging](development.md) | Setup, commands, platform builds and releases |
 | [Platform integration backlog](../next-to-do.md) | Remaining desktop integration and manual verification |
 | [Website and OAuth branding](github-pages-setup.md) | Pages, domain and Google project setup |
+| [Demo fixtures and media automation](../demo/README.md) | Synthetic inputs, screenshot/GIF recipes and agent regeneration workflow |
 | [Diagnostic logs](logging.md) | Local rotating logs, crash reports, retention and troubleshooting |
 | [Licensing review](licensing.md) | Dependencies, distribution obligations and open licensing work |
 

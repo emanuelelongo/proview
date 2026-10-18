@@ -135,3 +135,35 @@ func TestImportedWebPExportsToWritableImageFormats(t *testing.T) {
 		t.Fatal("Save As suggests an unsupported extension")
 	}
 }
+
+func TestWorkDirectoryControlsSaveAsWithoutPersistingDemoLocation(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	g := newGui(app)
+	g.showDocument(testDocument(t, 40, 20))
+	g.workDir = t.TempDir()
+	remembered := t.TempDir()
+	app.Preferences().SetString(lastSaveDirectoryKey, remembered)
+	if g.initialSaveDirectory() != g.workDir {
+		t.Fatal("Save As ignored work directory")
+	}
+	data, err := g.exportForName("saved.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Even choosing another destination must not change the explicit starting folder.
+	target := storage.NewFileURI(filepath.Join(t.TempDir(), "saved.png"))
+	g.finishFileSave(data, target, g.document.Revision(), nil)
+	if g.saveTarget.String() != target.String() || g.document.Dirty() {
+		t.Fatal("work directory changed normal Save behavior")
+	}
+	if app.Preferences().String(lastSaveDirectoryKey) != remembered || g.initialSaveDirectory() != g.workDir {
+		t.Fatal("demo save changed persistent preferences or future dialogs")
+	}
+	other := newGui(app)
+	if other.initialSaveDirectory() != remembered {
+		t.Fatal("demo folder leaked into another window")
+	}
+	g.closeWindow()
+	other.closeWindow()
+}
