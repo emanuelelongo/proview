@@ -11,6 +11,14 @@
 
 typedef struct pv_text_filter_state pv_text_filter_state;
 typedef struct {
+    int blend, soft_mask, fill_alpha, group;
+} pv_text_effects;
+
+static int pv_has_text_effects(pv_text_effects effects)
+{
+    return effects.blend || effects.soft_mask || effects.fill_alpha || effects.group;
+}
+typedef struct {
     float character, word, font_size;
     int single_byte_space;
 } pv_text_spacing;
@@ -26,6 +34,7 @@ typedef struct {
     int replacement_count, have_spacing;
     float dx, dy, character_spacing, word_spacing;
     pdf_obj *form_spacing;
+    pv_text_effects form_effects;
     int duplicate, obstacle_count;
     fz_rect *obstacles;
     fz_point *obstacle_origins;
@@ -39,6 +48,8 @@ struct pv_text_filter_state {
     int kept, spacing_depth, has_saved_spacing;
     float saved_font_size,saved_character,saved_word;
     pv_text_spacing spacing, spacing_stack[64];
+    pv_text_effects effects, effects_stack[64];
+    void (*original_gs_begin)(fz_context *, pdf_processor *, const char *, pdf_obj *);
     void (*original_Tc)(fz_context *, pdf_processor *, float);
     void (*original_Tw)(fz_context *, pdf_processor *, float);
     void (*original_Tf)(fz_context *, pdf_processor *, const char *, pdf_font_desc *, float);
@@ -113,13 +124,17 @@ static void pv_spacing_q(fz_context *ctx,pdf_processor *proc)
 {
     pv_text_filter_state *state=pv_spacing_state(ctx,proc);
     if(state->spacing_depth==64) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Text graphics state nesting is too deep for text editing");
+    state->effects_stack[state->spacing_depth]=state->effects;
     state->spacing_stack[state->spacing_depth++]=state->spacing;
     state->original_q(ctx,proc);
 }
 static void pv_spacing_Q(fz_context *ctx,pdf_processor *proc)
 {
     pv_text_filter_state *state=pv_spacing_state(ctx,proc);
-    if(state->spacing_depth) state->spacing=state->spacing_stack[--state->spacing_depth];
+    if(state->spacing_depth) {
+        state->spacing=state->spacing_stack[--state->spacing_depth];
+        state->effects=state->effects_stack[state->spacing_depth];
+    }
     state->original_Q(ctx,proc);
 }
 static void pv_spacing_dquote(fz_context *ctx,pdf_processor *proc,float word,float character,char *text,size_t length)
@@ -127,6 +142,17 @@ static void pv_spacing_dquote(fz_context *ctx,pdf_processor *proc,float word,flo
     pv_text_filter_state *state=pv_spacing_state(ctx,proc);
     state->spacing.word=word;state->spacing.character=character;
     state->original_dquote(ctx,proc,word,character,text,length);
+}
+static void pv_text_gs(fz_context *ctx,pdf_processor *proc,const char *name,pdf_obj *gs)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    pdf_obj *blend=pdf_dict_get(ctx,gs,PDF_NAME(BM));
+    pdf_obj *mask=pdf_dict_get(ctx,gs,PDF_NAME(SMask));
+    if (blend) state->effects.blend=!pdf_name_eq(ctx,blend,PDF_NAME(Normal));
+    if (mask) state->effects.soft_mask=!pdf_name_eq(ctx,mask,PDF_NAME(None));
+    if (pdf_dict_get(ctx,gs,PDF_NAME(ca)))
+        state->effects.fill_alpha=pdf_dict_get_real(ctx,gs,PDF_NAME(ca))!=1;
+    state->original_gs_begin(ctx,proc,name,gs);
 }
 static void pv_spacing_Do_form(fz_context *ctx,pdf_processor *proc,const char *name,pdf_obj *form)
 {
@@ -138,9 +164,13 @@ static void pv_spacing_Do_form(fz_context *ctx,pdf_processor *proc,const char *n
         fz_throw(ctx,FZ_ERROR_ARGUMENT,"Inherited Form text spacing is not supported for text editing");
     pv_text_target *target=state->target;
     pdf_obj *previous=target->form_spacing;
+    pv_text_effects previous_effects=target->form_effects;
+    target->form_effects=state->effects;
+    if (pdf_name_eq(ctx,pdf_dict_get(ctx,pdf_dict_get(ctx,form,PDF_NAME(Group)),PDF_NAME(S)),PDF_NAME(Transparency)))
+        target->form_effects.group=1;
     target->form_spacing=pdf_dict_gets(ctx,form,"ProviewTextSpacing");
     fz_try(ctx) {state->original_Do_form(ctx,proc,name,form);}
-    fz_always(ctx) {target->form_spacing=previous;}
+    fz_always(ctx) {target->form_spacing=previous;target->form_effects=previous_effects;}
     fz_catch(ctx) {fz_rethrow(ctx);}
 }
 
@@ -157,6 +187,8 @@ static int pv_text_remove(fz_context *ctx, void *opaque, int *ucs, int len,
             continue;
         if (len != 1 || ucs[0] != ch->c)
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "Ambiguous glyph or ligature in text editing");
+        if (pv_has_text_effects(state->effects))
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Transparency effects on selected text are not supported for text editing");
         if (++target->seen[i] != 1)
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "Ambiguous duplicate source glyphs in text editing");
         fz_matrix matrix = fz_concat(fz_concat(trm, ctm), target->page_ctm);
@@ -243,17 +275,6 @@ static void pv_guard_font(fz_context *ctx,pdf_processor *proc,const char *name,p
     if (fz_font_t3_procs(ctx,font->font) || flags->fake_bold || flags->fake_italic || flags->ft_substitute)
         fz_throw(ctx,FZ_ERROR_ARGUMENT,"Type 3, substituted or synthetic fonts are not supported for text editing");
 }
-static void pv_guard_gs(fz_context *ctx,pdf_processor *proc,const char *name,pdf_obj *gs)
-{
-    (void)proc;(void)name;
-    pdf_obj *bm=pdf_dict_get(ctx,gs,PDF_NAME(BM));
-    pdf_obj *mask=pdf_dict_get(ctx,gs,PDF_NAME(SMask));
-    if ((bm && !pdf_name_eq(ctx,bm,PDF_NAME(Normal))) ||
-        (mask && !pdf_name_eq(ctx,mask,PDF_NAME(None))) ||
-        (pdf_dict_get(ctx,gs,PDF_NAME(ca)) && pdf_dict_get_real(ctx,gs,PDF_NAME(ca))!=1) ||
-        (pdf_dict_get(ctx,gs,PDF_NAME(CA)) && pdf_dict_get_real(ctx,gs,PDF_NAME(CA))!=1))
-        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Transparency effects are not supported for text editing");
-}
 static void pv_guard_form(fz_context *ctx,pdf_processor *proc,const char *name,pdf_obj *form)
 {
     pv_text_guard *g=(pv_text_guard *)proc;
@@ -281,7 +302,7 @@ static void pv_check_text_page(fz_context *ctx,pdf_document *doc,pdf_page *page)
     proc->drop_processor=pv_guard_drop;
     proc->push_resources=pv_guard_push;proc->pop_resources=pv_guard_pop;
     proc->op_Tr=pv_guard_render;proc->op_Tz=pv_guard_scale;
-    proc->op_Tf=pv_guard_font;proc->op_gs_begin=pv_guard_gs;
+    proc->op_Tf=pv_guard_font;
     proc->op_Do_form=pv_guard_form;proc->op_BDC=pv_guard_tags;
     proc->op_BT=pv_guard_BT;proc->op_ET=pv_guard_ET;
     proc->op_m=pv_guard_xy;proc->op_l=pv_guard_xy;proc->op_c=pv_guard_curve;
@@ -423,6 +444,10 @@ static void pv_text_insert(fz_context *ctx, void *opaque, pdf_document *doc,
     pv_text_filter_state *state = opaque;
     pv_text_target *target = state->target;
     if (!target->pending) { state->kept = 0; return; }
+    /* Insertion follows ET. Do not inherit effects enabled after the selected
+     * glyphs within that same text object. The surrounding source stays intact. */
+    if (pv_has_text_effects(state->effects))
+        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Transparency changes within selected text object are not supported for text editing");
     if (target->inserted) fz_throw(ctx, FZ_ERROR_ARGUMENT, "Text spans multiple text objects");
     for (int i = 0; i < target->count; ++i)
         if (target->seen[i] != 1) fz_throw(ctx, FZ_ERROR_ARGUMENT, "Selection spans multiple text objects");
@@ -457,6 +482,7 @@ static pdf_processor *pv_make_text_filter(fz_context *ctx,pdf_document *doc,pdf_
     pv_text_target *target=opaque;
     pv_text_filter_state *state=fz_malloc_struct(ctx,pv_text_filter_state);
     state->target=target;state->next=target->filters;target->filters=state;
+    state->effects=target->form_effects;
     if (target->form_spacing) {
         pdf_obj *saved=target->form_spacing;
         if (!pdf_is_array(ctx,saved) || pdf_array_len(ctx,saved)!=3)
@@ -474,6 +500,7 @@ static pdf_processor *pv_make_text_filter(fz_context *ctx,pdf_document *doc,pdf_
     state->options.after_text_object=pv_text_insert;
     state->processor=pdf_new_sanitize_filter(ctx,doc,chain,struct_parents,transform,options,&state->options);
     pdf_processor *p=state->processor;
+    state->original_gs_begin=p->op_gs_begin;p->op_gs_begin=pv_text_gs;
     state->original_Tc=p->op_Tc;p->op_Tc=pv_spacing_Tc;
     state->original_Tw=p->op_Tw;p->op_Tw=pv_spacing_Tw;
     state->original_Tf=p->op_Tf;p->op_Tf=pv_spacing_Tf;
