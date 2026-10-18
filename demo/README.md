@@ -48,10 +48,13 @@ An alternative executable can be selected with `--binary /absolute/path`.
 | `image-crop` | `image-editing.png` | Scripted; uses Lenna |
 | `image-ocr` | `ocr.png` | Scripted |
 | `stl-orbit` | `stl.gif` | Scripted; uses the supplied STL |
+| `pdf-highlight` | `highlight.gif` | Scripted; multiline selection and recoloring |
 | `pdf-page-drag` | `pdf.gif` | Scripted; short drag visually verified |
 | `sign-pdf` | `sign-pdf.gif` | Scripted; uses John Doe |
 | `import-signature` | `import-signature.png` | Scripted; uses John Doe |
 | `pdf-redact` | `redaction.gif` | Scripted |
+| `pdf-forms` | `forms.png` | Scripted |
+| `pdf-text-edit` | `pdf-text-edit.gif` | Scripted |
 
 Every case uses the standard executable with `--new-window`, `--work-dir` and
 `--data-dir`. Working documents and signature data live under the case's disposable
@@ -67,7 +70,10 @@ The import screenshot captures the actual vectorization editor and then cancels.
 Preparation, native file selection and Fit happen outside the recording. No
 separate executable, test launcher or direct GUI-state injection is used.
 
-Forms, search and additional drawing demos are outside this initial README phase.
+The additional PDF cases demonstrate text-following highlights, form filling and
+small native text edits. Form filling and highlight creation run before capture;
+the highlight GIF records only recoloring, and the text GIF records replacing a
+word through the actual editor dialog.
 
 ## Editing definitions
 
@@ -77,11 +83,12 @@ Each case specifies `id`, `fixture`, `format`, `target`, `readme_section`,
 must exactly match README image references, and their alt text must agree.
 **Update the README in the same change whenever a case's purpose, media name or
 format changes.** Agents must also update nearby prose when the described
-behavior changes. Keep the current eight cases until new ones are requested.
+behavior changes. Add new cases only when requested.
 
 `setup` runs before capture. Available actions are `key` (single character or
 escape/return/tab/pageup/pagedown, with modifiers), `click`, `drag`, `text` and
-`wait`, plus `choose-file` for a fixture displayed in the owned native Import
+`wait`, plus `choose-color` for a visible hex-color swatch in the centered picker
+and `choose-file` for a fixture displayed in the owned native Import
 signature picker. It resolves only that GUI process's picker and selects the
 matching fixture through accessibility geometry and a double-click. Points are fractions in `[0,1]`, relative to the window by default; use
 `space: page` for the detected white PDF page. Each edit counts one Undo in

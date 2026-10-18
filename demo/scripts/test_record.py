@@ -83,6 +83,23 @@ class RecorderTests(unittest.TestCase):
         doctor.assert_called_once_with((record.ROOT / "build/proview").resolve())
         generate.assert_not_called()
 
+    def test_palette_target_follows_layout_and_rejects_missing_color(self):
+        for top in (315, 340):
+            rgb = bytearray(1000 * 740 * 3)
+            green = bytes.fromhex("8bc34a")
+            # Include a distractor in the document, outside the modal.
+            for left, y0 in ((510, top), (200, 200)):
+                for y in range(y0, y0 + 32):
+                    start = (y * 1000 + left) * 3
+                    rgb[start:start + 32 * 3] = green * 32
+            point = record.color_point(rgb, "#8bc34a")
+            self.assertTrue(510 <= point[0] * 1000 < 542)
+            self.assertTrue(top <= point[1] * 740 < top + 32)
+            with self.assertRaisesRegex(RuntimeError, "not visible"):
+                record.color_point(rgb, "#f44336")
+        with self.assertRaises(ValueError):
+            record.validate_action({"op": "choose-color", "value": "green"})
+
     def test_catalog_and_original_fixture_checksums(self):
         catalog = record.load_catalog()
         record.verify_fixtures()
@@ -92,7 +109,7 @@ class RecorderTests(unittest.TestCase):
     def test_catalog_matches_every_readme_image_and_description(self):
         catalog = record.load_catalog()
         images = record.readme_media(record.ROOT / "README.md")
-        self.assertEqual(len(catalog["cases"]), 8)
+        self.assertTrue(images)
         self.assertEqual({case["target"] for case in catalog["cases"]}, set(images))
         for case in catalog["cases"]:
             self.assertEqual(case["readme_alt"], images[case["target"]])

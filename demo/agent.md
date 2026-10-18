@@ -5,12 +5,12 @@ Read [../agent.md](../agent.md), [README.md](README.md), the project
 
 ## Scope
 
-For now, keep the catalog aligned with the eight media files already in the
-project README. Do not add form/search/drawing or other new cases unless requested.
+Keep the catalog aligned with the media files embedded in the project README.
+Add new feature cases only when requested.
 When asked to regenerate demos, execute the requested cases (all if unspecified),
 inspect the output, correct problems and repeat until the captures are suitable.
 
-All eight cases have scripted recipes. Signature scenes use `johndoe.png` from
+All cases have scripted recipes. Signature scenes use `johndoe.png` from
 the Desktop, copied into fixtures. The crop scene uses Lenna; keep its provenance
 and copyright notice in `fixtures/README.md`.
 
@@ -45,8 +45,9 @@ and copyright notice in `fixtures/README.md`.
 7. **Whenever a case changes, update the project README in the same change:**
    image href/src, alt text, section placement and feature prose must match its
    target and actual behavior. Keep case `readme_alt` equal to the README alt text.
-   Validate the catalog/README correspondence with `task demo:check`. In this
-   phase retain the existing eight media slots, filenames and formats.
+   Validate the catalog/README correspondence with `task demo:check`. Retain
+   existing slots, filenames and formats unless the requested change requires
+   new media.
 8. Review Git status/diff: final assets should appear as added/modified files in
    `docs/screenshots`, while intermediates remain ignored. Write brief visual
    results in `build/demo/review.json` if useful; it is disposable, not a history.
@@ -91,3 +92,39 @@ Lenna, and signing/import use the supplied John Doe example in an isolated nativ
 application profile. Visual validation covers the complete catalog, including corrected
 OCR hit coordinates and returning to page 05 after Fit before moving a signature.
 GIF gestures are short and retain only a brief lead-in/final hold.
+
+The eight existing cases were regenerated and visually reviewed on 2026-10-18
+following the editable PDF annotation and display improvements merged into
+`develop`. Final output is four 1000 × 740 PNGs and four 800 × 592 GIFs; the orbit,
+page drag and signing clips are 1.58 seconds, and redaction is 2.58 seconds. One
+native picker attempt in `import-signature` timed out; rerunning that case with
+the unchanged recipe succeeded. Inspect the owned picker on this failure rather
+than treating a partial run as accepted. This validation covers the original eight
+slots; new cases need their own review.
+
+
+## Additional PDF recipes
+
+The catalog now includes three requested README additions: `pdf-highlight`,
+`pdf-forms` and `pdf-text-edit`, using the existing native text and forms fixture.
+The highlight is created and selected during setup; the short GIF records only
+its yellow-to-green color change. `choose-color` targets the visible preset
+by its pixel color inside the modal, so recent-color rows cannot shift the click
+onto a different swatch. The native text GIF records opening the word
+editor, replacing `mountain` with `forest` and applying the edit. Keep entry focus
+out of pre-capture settling: the blinking caret intentionally changes pixels and
+would prevent the stable-frame check from succeeding.
+
+The form screenshot changes the name to `Sam`, checks the review checkbox and
+adds Translate to the multiple-choice list, then leaves form mode to show the
+updated PDF appearances. Its five Undo steps are three typed characters and two
+choice changes. Highlight cleanup uses two steps (creation and recoloring), and
+the native word edit uses one. Do not change these counts without checking that
+the owned window closes cleanly and its log reports `dirty=false`.
+
+The three additional assets were generated and visually reviewed on 2026-10-18.
+The form PNG is 1000 × 740; both GIFs are 800 × 592. Native editing takes 3.75
+seconds, and highlight recoloring takes 3.08 seconds. All owned windows closed
+cleanly after Undo. Checks cover fixtures, catalog/README alignment and 22 Python
+runner tests. These captures verify the demonstrated UI interactions; they do
+not add export/reopen compatibility coverage.

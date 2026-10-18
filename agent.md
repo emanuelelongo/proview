@@ -75,7 +75,7 @@ For fixture or screenshot/animation work, read [demo/agent.md](demo/agent.md).
 Inputs and recipes live in `demo/`; each generation clears and reuses ignored
 `build/demo/`. Final media replaces `docs/screenshots/<target>` directly and must
 be visually reviewed. Keep cases, README references/alt text and relevant prose
-aligned in the same change; for now cover only the existing README media slots.
+aligned in the same change. Add media slots when the user requests new demos.
 `--work-dir` controls picker folders; demos use the standard executable with
 `--data-dir` for a separate signature library, application preferences, credentials
 and IPC identity. No dedicated demo launcher or test-only GUI entrypoint is needed.

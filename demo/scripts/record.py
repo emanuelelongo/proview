@@ -23,7 +23,7 @@ from clean import reset_workspace, workspace_lock
 ROOT = Path(__file__).resolve().parents[2]
 DEMO = ROOT / "demo"
 TOOLS = ("osascript", "screencapture", "cliclick", "ffmpeg", "ffprobe")
-ACTIONS = {"key", "click", "drag", "wait", "text", "choose-file"}
+ACTIONS = {"key", "click", "drag", "wait", "text", "choose-file", "choose-color"}
 FORMATS = {"png", "gif", "mp4"}
 
 
@@ -86,6 +86,8 @@ def validate_action(action):
         filename = action.get("file", "")
         if not filename or Path(filename).name != filename or filename in {".", ".."}:
             raise ValueError("Picker input must name a fixture file")
+    if op == "choose-color" and not re.fullmatch(r"#[0-9a-fA-F]{6}", action.get("value", "")):
+        raise ValueError("Color action needs a six-digit hex value")
     if op == "text" and not isinstance(action.get("value"), str):
         raise ValueError("Text action needs a value")
     for key in ("seconds", "duration"):
@@ -261,6 +263,24 @@ def page_rect(rgb, width=1000, height=740):
     return left, top, right - left, bottom - top
 
 
+def color_point(rgb, value, width=1000, height=740):
+    """Locate a visible basic palette swatch, independent of recent-color rows."""
+    if len(rgb) != width * height * 3:
+        raise RuntimeError("Unexpected capture dimensions")
+    wanted_row = bytes.fromhex(value.lstrip("#")) * 16
+    # Confine targeting to the centered modal, away from document highlights.
+    for y in range(260, 450):
+        for x in range(320, 680):
+            offset = (y * width + x) * 3
+            if rgb[offset:offset + 48] != wanted_row:
+                continue
+            # A solid 16-point square distinguishes a swatch from text/edges.
+            if all(rgb[((y + dy) * width + x) * 3:((y + dy) * width + x) * 3 + 48] == wanted_row
+                   for dy in range(1, 16)):
+                return [(x + 8) / width, (y + 8) / height]
+    raise RuntimeError("Requested palette color is not visible; inspect color-picker.png")
+
+
 class Session:
     def __init__(self, marker, folder):
         self.marker = marker
@@ -340,6 +360,12 @@ class Session:
             self.window("key", action["key"], ",".join(action.get("modifiers", [])))
         elif op == "choose-file":
             self.choose_file(confined(self.folder / "work", action["file"]))
+        elif op == "choose-color":
+            path = self.folder / "color-picker.png"
+            self.screenshot(path)
+            raw = run(["ffmpeg", "-v", "error", "-i", path, "-vf", "scale=1000:740", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], timeout=20).stdout
+            x, y = self.point(color_point(raw, action["value"]), "window")
+            self.input(["cliclick", "c:%d,%d" % (x, y)], timeout=10)
         elif op == "text":
             self.input(["cliclick", "t:" + action["value"]], timeout=10)
         elif op == "wait":
