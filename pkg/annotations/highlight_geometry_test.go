@@ -31,7 +31,7 @@ func TestTextHighlightGeometryCloneScaleAndUniformAlpha(t *testing.T) {
 	at := func(x, y float64) uint8 {
 		return color.NRGBAModel.Convert(picture.At(int((x-bounds.X0)/bounds.W()*float64(picture.Bounds().Dx())), int((y-bounds.Y0)/bounds.H()*float64(picture.Bounds().Dy())))).(color.NRGBA).A
 	}
-	if math.Abs(float64(at(30, 20))-float64(at(70, 20))) > 1 || math.Abs(float64(at(70, 20))-77) > 2 {
+	if math.Abs(float64(at(30, 20))-float64(at(70, 20))) > 1 || math.Abs(float64(at(70, 20))-255) > 2 {
 		t.Fatal("overlapping highlight regions accumulated opacity")
 	}
 }

@@ -44,6 +44,13 @@ func (d *Document) CopyObject(id OverlayID) (CopiedObject, error) {
 	c := CopiedObject{Version: 1, Kind: s.ObjectKind, Rect: s.Rect, Width: s.Rect.Width * float64(size.X) * unit, Height: s.Rect.Height * float64(size.Y) * unit, StrokeWidth: s.StrokeWidth, Transform: s.Transform, Asset: s.Asset()}
 	if s.annotation != nil {
 		data := s.annotation.Clone()
+		if len(s.pdfAppearance) > 0 {
+			asset, _, err := data.Artwork()
+			if err != nil {
+				return CopiedObject{}, err
+			}
+			c.Asset = asset
+		}
 		c.Annotation = &data
 	}
 	return c, nil
@@ -131,6 +138,9 @@ func (d *Document) ObjectImage(id OverlayID) (image.Image, error) {
 	s := d.signatures[i]
 	if s.IsLens() {
 		return d.RenderLens(id, 144)
+	}
+	if len(s.pdfAppearance) > 0 {
+		return s.Preview(), nil
 	}
 	if s.IsVector() {
 		size, e := d.PageSize(s.Page)

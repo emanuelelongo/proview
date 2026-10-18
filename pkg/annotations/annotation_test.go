@@ -59,8 +59,8 @@ func TestHighlightOpacityAtCrossingsAndEdgeClipping(t *testing.T) {
 		return color.NRGBAModel.Convert(picture.At(int((x-bounds.X0)/bounds.W()*float64(picture.Bounds().Dx())), int((y-bounds.Y0)/bounds.H()*float64(picture.Bounds().Dy())))).(color.NRGBA)
 	}
 	for _, p := range []Point{{50, 50}, {25, 25}, {90, 50}} {
-		if c := at(p.X, p.Y); c.A < 73 || c.A > 80 {
-			t.Fatalf("stroke alpha at %v = %d, want uniform 77", p, c.A)
+		if c := at(p.X, p.Y); c.A != 255 {
+			t.Fatalf("stroke alpha at %v = %d, want uniform 255", p, c.A)
 		}
 	}
 	d.Points = []Point{{0, 0}, {100, 100}}

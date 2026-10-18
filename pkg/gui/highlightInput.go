@@ -10,10 +10,12 @@ import (
 	"emanuelelongo/proview/internal/ocr"
 	"emanuelelongo/proview/internal/textselect"
 	"emanuelelongo/proview/pkg/annotations"
+	"emanuelelongo/proview/pkg/document"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/vector"
 )
 
@@ -30,6 +32,7 @@ type highlightInput struct {
 	cancelLoad                context.CancelFunc
 	draft                     []annotations.Quad
 	preview                   *canvas.Raster
+	backdrop                  image.Image
 }
 
 func newHighlightInput(layer *signatureLayer) *highlightInput {
@@ -54,8 +57,14 @@ func (p *highlightInput) MouseDown(event *desktop.MouseEvent) {
 	g.clearTextSelection()
 	g.ensureAnnotationTools()
 	p.data = g.annotationDefaults[annotations.Highlight].Clone()
-	p.data.Opacity = .3
+	p.data.Opacity = 1
 	p.data.PageWidth, p.data.PageHeight = g.annotationPageSize(p.layer)
+	if g.image != nil {
+		p.backdrop = g.image.Image
+	}
+	if g.document.Format() == document.FormatPDF && p.layer.page < len(g.pdfPageImages) && g.pdfPageImages[p.layer.page] != nil {
+		p.backdrop = g.pdfPageImages[p.layer.page].Image
+	}
 	p.data.Points = nil
 	p.data.Quads = nil
 	p.press, p.last, p.released = event.Position, event.Position, false
@@ -150,6 +159,7 @@ func (p *highlightInput) update(position fyne.Position) {
 	// Capture immutable geometry; Fyne may rasterize from another goroutine.
 	quads := append([]annotations.Quad(nil), p.draft...)
 	data := p.data
+	backdrop := p.backdrop
 	generator := func(w, h int) image.Image {
 		frame := image.NewNRGBA(image.Rect(0, 0, w, h))
 		r := vector.NewRasterizer(w, h)
@@ -165,8 +175,18 @@ func (p *highlightInput) update(position fyne.Position) {
 			r.ClosePath()
 		}
 		c := data.Color
-		c.A = 77
+		c.A = 255
 		r.Draw(frame, frame.Bounds(), image.NewUniform(c), image.Point{})
+		if backdrop != nil {
+			base := image.NewNRGBA(frame.Bounds())
+			xdraw.BiLinear.Scale(base, base.Bounds(), backdrop, backdrop.Bounds(), xdraw.Src, nil)
+			return document.MultiplyHighlight(base, frame, frame.Bounds())
+		}
+		// Geometry can arrive before the page image; keep the gesture visible
+		// without covering text while the page loads.
+		for i := 3; i < len(frame.Pix); i += 4 {
+			frame.Pix[i] = uint8(uint16(frame.Pix[i]) * 77 / 255)
+		}
 		return frame
 	}
 	if p.preview == nil {
@@ -200,6 +220,7 @@ func (p *highlightInput) cancel() bool {
 	p.active, p.pending = false, false
 	p.draft = nil
 	p.preview = nil
+	p.backdrop = nil
 	p.Refresh()
 	return was
 }

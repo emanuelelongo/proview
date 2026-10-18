@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"emanuelelongo/proview/internal/model3d"
 	"emanuelelongo/proview/pkg/document"
 	"fmt"
@@ -19,6 +20,8 @@ import (
 // Each retained document owns its history, save destination and view state.
 type editorDocument struct {
 	thumbnail       image.Image
+	thumbnailCancel context.CancelFunc
+	thumbnailFailed bool
 	doc             *document.Document
 	mesh            *model3d.Mesh
 	camera          model3d.Camera
@@ -143,11 +146,14 @@ func (g *Gui) refreshDocumentSidebar() {
 	if g.activeDocument != nil && g.document != nil && g.document.Format() != document.FormatPDF {
 		g.activeDocument.thumbnail = g.image.Image
 	}
-	// Reuse the displayed image preview; switching never decodes images on the UI thread.
+	for _, entry := range g.documents {
+		g.ensureModelThumbnail(entry)
+	}
+	// Reuse immutable image/model previews; switching never renders on the UI thread.
 	g.documentList.RemoveAll()
 	if len(g.documents) > 1 {
 		for _, entry := range g.documents {
-			if entry.doc != nil && entry.doc.Format() != document.FormatPDF && entry.thumbnail != nil {
+			if entry.thumbnail != nil && (entry.mesh != nil || entry.doc != nil && entry.doc.Format() != document.FormatPDF) {
 				preview := canvas.NewImageFromImage(entry.thumbnail)
 				preview.FillMode = canvas.ImageFillContain
 				preview.ScaleMode = canvas.ImageScaleFastest
@@ -173,7 +179,10 @@ func (g *Gui) refreshDocumentSidebar() {
 					name = "• " + name
 				}
 			} else if entry.mesh != nil {
-				name = entry.mesh.Name
+				name = "Loading…"
+				if entry.thumbnailFailed {
+					name = "Preview unavailable"
+				}
 			}
 			button := widget.NewButton(name, func() { g.selectDocument(entry) })
 			button.Alignment = widget.ButtonAlignLeading
@@ -217,6 +226,15 @@ func (g *Gui) refreshDocumentSidebar() {
 }
 
 func (g *Gui) receiveDocument(doc *document.Document, mesh *model3d.Mesh, target fyne.URI, done func()) {
+	incomingPDF := doc != nil && doc.Format() == document.FormatPDF
+	currentPDF := g.document != nil && g.document.Format() == document.FormatPDF
+	if g.hasOpenContent() && incomingPDF != currentPDF {
+		editor := g.newEditor()
+		editor.addDocument(doc, mesh, target)
+		editor.window.Show()
+		done()
+		return
+	}
 	if doc == nil || doc.Format() != document.FormatPDF || g.document == nil || g.document.Format() != document.FormatPDF {
 		g.addDocument(doc, mesh, target)
 		done()
@@ -283,6 +301,9 @@ func (g *Gui) processPendingFiles() {
 func (g *Gui) removeActiveDocument() {
 	for i, entry := range g.documents {
 		if entry == g.activeDocument {
+			if entry.thumbnailCancel != nil {
+				entry.thumbnailCancel()
+			}
 			g.documents = append(g.documents[:i], g.documents[i+1:]...)
 			break
 		}
@@ -298,6 +319,9 @@ func (g *Gui) restoreRemainingDocument() {
 }
 func (g *Gui) closeRetainedDocuments() {
 	for _, entry := range g.documents {
+		if entry.thumbnailCancel != nil {
+			entry.thumbnailCancel()
+		}
 		if entry.doc != nil && entry.doc != g.document {
 			go entry.doc.Close()
 		}

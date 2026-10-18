@@ -81,8 +81,8 @@ func TestNativePickerMultipleFilesKeepOrderAndOriginWindow(t *testing.T) {
 		}
 		for i, reader := range readers {
 			data, err := io.ReadAll(reader)
-			if err != nil || string(data) != filepath.Base(paths[i]) || reader.URI().Path() != paths[i] {
-				t.Fatal("file path, content or order changed")
+			if err != nil || string(data) != filepath.Base(paths[i]) || filepath.Clean(reader.URI().Path()) != filepath.Clean(paths[i]) {
+				t.Fatalf("file %d: path=%q, want %q; content=%q, error=%v", i, reader.URI().Path(), paths[i], data, err)
 			}
 		}
 	})

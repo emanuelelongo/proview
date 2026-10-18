@@ -8,10 +8,32 @@ import (
 // ResizeShape regenerates control points for a requested artwork size while
 // keeping stroke width, padding and arrowhead size in physical units.
 func (d Data) ResizeShape(width, height float64) (Data, error) {
-	if d.Kind != Shape || len(d.Points) != 2 || !finite(width) || !finite(height) || width <= 0 || height <= 0 {
+	if d.Kind != Shape || (d.Shape != Polygon && len(d.Points) != 2) || !finite(width) || !finite(height) || width <= 0 || height <= 0 {
 		return Data{}, fmt.Errorf("Invalid shape size")
 	}
 	d = d.Clone()
+
+	if d.Shape == Polygon {
+		pad := d.Padding
+		if !d.Filled {
+			pad += d.Width / 2
+		}
+		minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+		for _, p := range d.Points {
+			minX = math.Min(minX, p.X)
+			minY = math.Min(minY, p.Y)
+			maxX = math.Max(maxX, p.X)
+			maxY = math.Max(maxY, p.Y)
+		}
+		if width <= 2*pad || height <= 2*pad || maxX <= minX || maxY <= minY {
+			return Data{}, fmt.Errorf("The shape is too small for this size")
+		}
+		for i, p := range d.Points {
+			d.Points[i] = Point{minX + (p.X-minX)*(width-2*pad)/(maxX-minX), minY + (p.Y-minY)*(height-2*pad)/(maxY-minY)}
+		}
+		return d, nil
+	}
+
 	a, b := d.Points[0], d.Points[1]
 	sx, sy := math.Copysign(1, b.X-a.X), math.Copysign(1, b.Y-a.Y)
 	_, bounds, err := d.Artwork()

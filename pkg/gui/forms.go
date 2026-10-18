@@ -311,6 +311,7 @@ func (g *Gui) refreshFormPreviews() {
 				}
 				g.pdfPageImages[page].Image = preview
 				g.pdfPageImages[page].Refresh()
+				g.refreshPDFDetail()
 				if thumbErr == nil {
 					g.pdfThumbImages[page].Image = thumb
 					g.pdfThumbImages[page].Refresh()

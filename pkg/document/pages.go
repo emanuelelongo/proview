@@ -105,6 +105,10 @@ func (d *Document) AppendDocumentPages(collection *Document) error {
 	}
 	before := d.snapshot()
 	offset := len(d.pages)
+	// Retain owners of detached annotation bases for their full lifetime,
+	// including after the prepared collection is garbage collected.
+	d.textSources = append(d.textSources, collection.source)
+	d.textSources = append(d.textSources, collection.textSources...)
 	pageIDs := make(map[uint64]uint64)
 	for _, p := range collection.pages {
 		oldID := p.id
@@ -128,6 +132,9 @@ func (d *Document) AppendDocumentPages(collection *Document) error {
 }
 
 func sourcePages(source *Source) []pageRef {
+	if source.annotationBase != nil {
+		source = source.annotationBase
+	}
 	pages := make([]pageRef, source.PageCount())
 	for i := range pages {
 		pages[i] = pageRef{source: source, index: i, id: pageSequence.Add(1)}
@@ -172,7 +179,12 @@ func (d *Document) AppendPDFs(sources ...*Source) error {
 	}
 	before := d.snapshot()
 	for _, s := range sources {
+		if s.annotationBase != nil {
+			d.textSources = append(d.textSources, s)
+		}
+		offset := len(d.pages)
 		d.pages = append(d.pages, sourcePages(s)...)
+		d.importSourceOverlays(s, offset)
 	}
 	d.record(before)
 	return nil
@@ -357,4 +369,14 @@ func (d *Document) DuplicatePages(selection []int) error {
 	d.redactions = redactions
 	d.record(before)
 	return nil
+}
+
+// Imported payloads and appearances are immutable, just like newly created ones.
+func (d *Document) importSourceOverlays(source *Source, offset int) {
+	for _, o := range source.importedOverlays {
+		o.ID = d.nextSignatureID
+		d.nextSignatureID++
+		o.Page += offset
+		d.signatures = append(d.signatures, o)
+	}
 }

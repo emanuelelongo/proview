@@ -46,6 +46,16 @@ New work completed; automated verification, awaiting the user's desktop review:
 - [x] Multiple-choice row backgrounds follow the list theme: only the checkbox
       face is light, with no stretched white strip or apparent padding.
 
+## Coexistence with standard annotations
+
+Added text, drawing, highlights and shapes now save as standard editable PDF
+annotations; form widgets remain separate and editable through repeated saves.
+A regression test covers editing a field, adding text, reopening and editing the
+field again. Applied redaction still bakes and sanitizes both widgets and markup.
+Read-only unsigned signature widgets render their existing artwork without a
+synthetic SIGN badge; only the disposable preview document is adjusted.
+See [Standard editable PDF annotations](pdf-annotations.md).
+
 ## Remaining work and limits
 
 These are not implemented; do not infer that supporting a text field executes

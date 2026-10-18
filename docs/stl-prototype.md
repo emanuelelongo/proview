@@ -132,3 +132,8 @@ worker shutdown. Standard tests cover the CPU fallback, cancellation and limits.
 References: [Apple pixel format/context attributes](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Conceptual/OpenGL-MacProgGuide/opengl_pixelformats/opengl_pixelformats.html),
 [Khronos framebuffer multisampling](https://wikis.khronos.org/opengl/Framebuffer),
 [OpenGL frame readback](https://wikis.khronos.org/opengl/GLAPI/glReadPixels).
+
+STL documents in the workspace sidebar use a static isometric thumbnail instead
+of a filename. A bounded CPU render runs once per retained document, outside the
+UI thread. Camera changes never regenerate it; closing the document cancels
+pending thumbnail work and stale results are discarded.

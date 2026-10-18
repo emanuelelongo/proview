@@ -1,8 +1,11 @@
 package gui
 
 import (
+	"bytes"
+	"emanuelelongo/proview/pkg/document"
 	"fmt"
 	"fyne.io/fyne/v2/theme"
+	"image"
 	"image/color"
 	"math"
 	"strings"
@@ -260,4 +263,205 @@ func TestInlineTextPreviewCoalescesTyping(t *testing.T) {
 	if !p.ready || p.requested.Text != p.entry.Text || g.document.Dirty() {
 		t.Fatal("preview did not catch up without changing history")
 	}
+}
+
+func TestExistingTextEditsOnPageWithSingleUndo(t *testing.T) {
+	g, layer := annotationTestGui(t)
+	g.setAnnotationTool(toolText)
+	placeTestText(t, g, layer, fyne.NewPos(100, 250), "Original")
+	g.document.MarkSaved()
+	g.setAnnotationTool(toolSelect)
+	original := g.document.Overlays()[0]
+	layer.widgets[0].DoubleTapped(&fyne.PointEvent{})
+	p := g.textPlacement
+	if p == nil || p.original == nil || p.original.ID != original.ID || g.window.Canvas().Focused() != p.entry {
+		t.Fatal("double click did not open existing text on page")
+	}
+	finishAnnotationJobs(t, g)
+	for _, object := range fyneTest.LaidOutObjects(g.annotationControls) {
+		if _, ok := object.(*annotationEntry); ok {
+			t.Fatal("text entry returned to property bar")
+		}
+	}
+	if layer.widgets[0].Visible() {
+		t.Fatal("original text remains underneath inline editor")
+	}
+	p.entry.SetText("Revised text")
+	var sizes *widget.Select
+	for _, object := range fyneTest.LaidOutObjects(g.annotationControls) {
+		if selectBox, ok := object.(*widget.Select); ok && selectBox.Options[0] == "6" {
+			sizes = selectBox
+		}
+	}
+	if sizes == nil {
+		t.Fatal("missing style controls")
+	}
+	g.window.Canvas().Focus(sizes)
+	sizes.SetSelected("24")
+	finishAnnotationJobs(t, g)
+	if g.textPlacement != p || g.document.Dirty() {
+		t.Fatal("changing style committed the draft")
+	}
+	previewRect := p.rect
+	p.entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	finishAnnotationJobs(t, g)
+	objects := g.document.Overlays()
+	data, _ := objects[0].Annotation()
+	if len(objects) != 1 || objects[0].ID != original.ID || data.Text != "Revised text" || data.Size != 24 || objects[0].Rect != previewRect || !layer.widgets[0].Visible() {
+		t.Fatal("editing duplicated, moved or lost text")
+	}
+	if !g.document.Undo() || g.document.Dirty() {
+		t.Fatal("editing did not produce one undo step")
+	}
+	data, _ = g.document.Overlays()[0].Annotation()
+	if data.Text != "Original" {
+		t.Fatal("undo did not restore original text")
+	}
+}
+
+func TestExistingTextCancelDeleteAndSaveBarrier(t *testing.T) {
+	for _, operation := range []string{"cancel", "delete", "save", "unchanged", "invalid"} {
+		t.Run(operation, func(t *testing.T) {
+			g, layer := annotationTestGui(t)
+			g.setAnnotationTool(toolText)
+			placeTestText(t, g, layer, fyne.NewPos(100, 250), "Original")
+			g.document.MarkSaved()
+			g.setAnnotationTool(toolSelect)
+			layer.widgets[0].DoubleTapped(&fyne.PointEvent{})
+			p := g.textPlacement
+			switch operation {
+			case "cancel":
+				p.entry.SetText("Discarded")
+				p.entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+			case "delete":
+				p.entry.SetText("")
+				p.entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+			case "save", "invalid":
+				text := "Saved edit"
+				if operation == "invalid" {
+					text = strings.Repeat("x", 2001)
+				}
+				p.entry.SetText(text)
+				saved := false
+				g.waitAnnotationChanges(func() { saved = true })
+				finishAnnotationJobs(t, g)
+				if operation == "invalid" {
+					if saved || g.textPlacement != p || p.entry.Text != text || g.document.Dirty() {
+						t.Fatal("failed edit lost draft or continued save")
+					}
+					return
+				}
+				data, _ := g.document.Overlays()[0].Annotation()
+				if !saved || data.Text != "Saved edit" {
+					t.Fatal("save did not wait for edit")
+				}
+				return
+			case "unchanged":
+				p.entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+			}
+			finishAnnotationJobs(t, g)
+			if operation == "delete" {
+				if len(g.document.Overlays()) != 0 || !g.document.Undo() || g.document.Dirty() {
+					t.Fatal("empty edit did not delete in one undo step")
+				}
+				return
+			}
+			data, _ := g.document.Overlays()[0].Annotation()
+			if data.Text != "Original" || g.document.Dirty() || g.textPlacement != nil || !layer.widgets[0].Visible() {
+				t.Fatal("cancel/unchanged modified or hid original")
+			}
+		})
+	}
+}
+
+func TestExistingPDFTextNeverUsesLayoutBoxToStretchGlyphs(t *testing.T) {
+	g, layer := redactTestGui(t)
+	g.setAnnotationTool(toolText)
+	placeTestText(t, g, layer, fyne.NewPos(100, 100), "ciao")
+	original := g.document.Overlays()[0]
+	// A PDF text layout box can be arbitrarily wider/taller than its glyphs.
+	wide := original.Rect
+	wide.Width = .6
+	wide.Height = .3
+	data, _ := original.Annotation()
+	prepared, err := original.Asset().Prepare()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = g.document.RemoveOverlay(original.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.document.AddAnnotation(0, wide, data, prepared); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := g.document.Export(document.ExportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := document.Load("layout-box.pdf", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := document.New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { reopened.Close() })
+	g.document = reopened
+	layer.SetDocument(reopened, 0, image.Pt(600, 400))
+	layer.reload()
+	g.setAnnotationTool(toolSelect)
+	layer.widgets[0].DoubleTapped(&fyne.PointEvent{})
+	p := g.textPlacement
+	p.entry.SetText("ciao edited")
+	finishAnnotationJobs(t, g)
+	_, bounds, _, err := p.data.TextArtwork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(p.rect.Width*p.data.PageWidth-bounds.W()) > .001 || math.Abs(p.rect.Height*p.data.PageHeight-bounds.H()) > .001 {
+		t.Fatal("inline preview stretches text into old layout box")
+	}
+	p.entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	finishAnnotationJobs(t, g)
+	current := g.document.Overlays()[0]
+	data, _ = current.Annotation()
+	// Style edits outside the inline editor must use the same natural dimensions.
+	data.Color = color.NRGBA{R: 150, A: 255}
+	g.selectSignature(layer, current.ID)
+	g.updateAnnotationProperties(current, data, true)
+	finishAnnotationJobs(t, g)
+	current = g.document.Overlays()[0]
+	if math.Abs(current.Rect.Width*p.data.PageWidth-bounds.W()) > .001 || math.Abs(current.Rect.Height*p.data.PageHeight-bounds.H()) > .001 {
+		t.Fatal("property edit stretches PDF text")
+	}
+}
+
+func TestInlineTextKeepsCaretAndBaselineWhileTyping(t *testing.T) {
+	g, layer := annotationTestGui(t)
+	g.setAnnotationTool(toolText)
+	layer.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(100, 250)})
+	p := g.textPlacement
+	p.entry.SetText("abc")
+	finishAnnotationJobs(t, g)
+	if p.field.Theme.Size(theme.SizeNameInputBorder) <= 0 {
+		t.Fatal("invisible caret")
+	}
+	position := p.field.Position()
+	baseline := p.rect.Y*p.data.PageHeight + p.metrics.Baseline
+	for _, text := range []string{"abcg", "abcgH", "abcgH café"} {
+		p.entry.SetText(text)
+		if !p.ready || p.preview.Hidden || p.field.Position() != position {
+			t.Fatal("typing discarded visible preview or moved field before update")
+		}
+		finishAnnotationJobs(t, g)
+		if math.Abs(p.rect.Y*p.data.PageHeight+p.metrics.Baseline-baseline) > .001 {
+			t.Fatal("typing moved writing baseline")
+		}
+	}
+	p.entry.SetText("")
+	if p.ready || !p.preview.Hidden {
+		t.Fatal("clearing entry left stale artwork")
+	}
+
 }

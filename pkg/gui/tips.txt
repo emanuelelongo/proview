@@ -9,8 +9,10 @@ Tip: Use Command/Control-click to select individual PDF pages, or Shift-click to
 Tip: Drag any selected PDF thumbnail to move the selected pages together.
 Tip: Right-click selected PDF thumbnails to duplicate or delete the pages together.
 Tip: Select Text, click the page and type; press Enter to place the text or Esc to cancel.
+Tip: Double-click an added text object to edit it directly on the page.
 Tip: Change font, size, style and color in the property bar while entering text on the page.
-Tip: Drag Highlight across words and lines; its opacity stays at 30%.
+Tip: Drag Highlight across words and lines; the color keeps dark text readable.
+Tip: Text, drawing, highlights and shapes saved in a PDF remain editable when reopened.
 Tip: Select a highlight to change its color; highlights cannot be resized.
 Tip: In Draw, use the style button to switch between round, dashed and dotted strokes.
 Tip: Adjust Draw opacity in the property bar for lighter or stronger strokes.

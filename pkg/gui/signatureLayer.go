@@ -20,10 +20,11 @@ const (
 )
 
 type signatureLayer struct {
-	preparedPreviews map[document.OverlayID]image.Image
-	lensTimer        *time.Timer
-	lensGeneration   uint64
-	lensRunning      bool
+	preparedPreviews  map[document.OverlayID]image.Image
+	highlightPreviews map[document.OverlayID]image.Image
+	lensTimer         *time.Timer
+	lensGeneration    uint64
+	lensRunning       bool
 	widget.BaseWidget
 	document         *document.Document
 	page             int
@@ -108,6 +109,9 @@ func (l *signatureLayer) SetZoom(zoom float32) {
 }
 
 func (l *signatureLayer) SetDocument(doc *document.Document, page int, size image.Point) {
+	if l.document != doc || l.page != page {
+		l.highlightPreviews = nil
+	}
 	if l.highlightInput != nil {
 		l.highlightInput.cancel()
 		l.highlightInput.geometry = nil
@@ -128,6 +132,7 @@ func (l *signatureLayer) reload() {
 	l.widgets = nil
 	l.redactionWidgets = nil
 	if l.document == nil {
+		l.highlightPreviews = nil
 		l.Refresh()
 		return
 	}
@@ -136,6 +141,17 @@ func (l *signatureLayer) reload() {
 		l.Refresh()
 		return
 	}
+	// Rebuilding the widgets must not discard their last completed blend.
+	// Keep old fragments visible until the worker publishes the replacement.
+	retained := map[document.OverlayID]image.Image{}
+	for _, signature := range signatures {
+		if signature.IsHighlight() {
+			if p := l.highlightPreviews[signature.ID]; p != nil {
+				retained[signature.ID] = p
+			}
+		}
+	}
+	l.highlightPreviews = retained
 	for _, signature := range signatures {
 		l.widgets = append(l.widgets, newSignatureWidget(l, signature))
 	}
@@ -158,6 +174,11 @@ func (l *signatureLayer) selectSignature(id document.SignatureID) {
 }
 
 func (l *signatureLayer) selectFromWidget(id document.SignatureID) {
+	for _, w := range l.widgets {
+		if w.id == id && w.readOnly {
+			return
+		}
+	}
 	if l.onActivate != nil {
 		l.onActivate(l.page)
 	}
@@ -251,6 +272,15 @@ func (r *signatureLayerRenderer) Layout(fyne.Size) {
 		mark.Resize(size)
 	}
 	for _, signature := range r.layer.widgets {
+		editing := false
+		if g := r.layer.editor; g != nil && g.textPlacement != nil && g.textPlacement.original != nil {
+			editing = g.textPlacement.layer == r.layer && g.textPlacement.original.ID == signature.id
+		}
+		if editing {
+			signature.Hide()
+		} else {
+			signature.Show()
+		}
 		position, size := r.layer.widgetRect(signature.rect)
 		margin := signature.selectionMargin()
 		signature.Move(fyne.NewPos(position.X-margin, position.Y-margin))
@@ -305,6 +335,7 @@ func (r *signatureLayerRenderer) Refresh() {
 }
 
 type signatureWidget struct {
+	readOnly bool
 	widget.BaseWidget
 	layer              *signatureLayer
 	id                 document.SignatureID
@@ -324,20 +355,28 @@ type signatureWidget struct {
 
 func newSignatureWidget(layer *signatureLayer, signature document.SignatureOverlay) *signatureWidget {
 	preview := layer.preparedPreviews[signature.ID]
+	if signature.IsHighlight() {
+		preview = layer.highlightPreviews[signature.ID]
+	}
+	blended := preview != nil
 	if preview == nil {
 		preview = signature.Preview()
 	}
 	w := &signatureWidget{
-		layer:   layer,
-		id:      signature.ID,
-		rect:    signature.Rect,
-		preview: preview,
-		image:   canvas.NewImageFromImage(preview),
-		border:  canvas.NewRectangle(color.Transparent),
+		readOnly: signature.ObjectKind == "pdf-stamp",
+		layer:    layer,
+		id:       signature.ID,
+		rect:     signature.Rect,
+		preview:  preview,
+		image:    canvas.NewImageFromImage(preview),
+		border:   canvas.NewRectangle(color.Transparent),
 	}
 	w.image.FillMode = canvas.ImageFillStretch
 	if data, ok := signature.Annotation(); ok {
 		w.annotation = &data
+		if signature.IsHighlight() && !blended {
+			w.image.Hide()
+		}
 	}
 	w.border.StrokeColor = color.NRGBA{R: 0, G: 122, B: 255, A: 255}
 	w.border.StrokeWidth = 2
@@ -361,14 +400,32 @@ func (w *signatureWidget) CreateRenderer() fyne.WidgetRenderer {
 }
 
 func (w *signatureWidget) Tapped(*fyne.PointEvent) {
-	w.layer.selectFromWidget(w.id)
+	if w.readOnly {
+		return
+	}
+	if !w.selected {
+		w.layer.selectFromWidget(w.id)
+	}
+}
+
+func (w *signatureWidget) DoubleTapped(*fyne.PointEvent) {
+	if !w.readOnly && w.annotation != nil && w.annotation.Kind == annotations.Text && w.layer.editor != nil {
+		w.layer.selectFromWidget(w.id)
+		w.layer.editor.beginExistingText(w.layer, w.id)
+	}
 }
 
 func (w *signatureWidget) Cursor() desktop.Cursor {
+	if w.readOnly {
+		return desktop.DefaultCursor
+	}
 	return desktop.PointerCursor
 }
 
 func (w *signatureWidget) Dragged(event *fyne.DragEvent) {
+	if w.readOnly {
+		return
+	}
 	if w.areaDrag {
 		p, _ := w.layer.widgetRect(w.rect)
 		w.layer.updateArea(fyne.NewPos(p.X+event.Position.X, p.Y+event.Position.Y))
@@ -379,6 +436,11 @@ func (w *signatureWidget) Dragged(event *fyne.DragEvent) {
 	}
 	if !w.selected {
 		w.layer.selectFromWidget(w.id)
+	}
+	// Highlights stay anchored to the text they mark. Selection and color
+	// editing remain available, but dragging must not create a history edit.
+	if w.annotation != nil && w.annotation.Kind == annotations.Highlight {
+		return
 	}
 	_, displaySize := w.layer.displayRect()
 	if displaySize.Width <= 0 || displaySize.Height <= 0 {
@@ -414,6 +476,7 @@ func (w *signatureWidget) DragEnd() {
 }
 
 func (w *signatureWidget) setSelected(selected bool) {
+	selected = selected && !w.readOnly
 	w.selected = selected
 	if selected {
 		w.border.Show()
@@ -431,7 +494,7 @@ func (w *signatureWidget) setSelected(selected bool) {
 }
 
 func (w *signatureWidget) canResize() bool {
-	return w.annotation == nil || w.annotation.Kind != annotations.Highlight
+	return !w.readOnly && (w.annotation == nil || w.annotation.Kind != annotations.Highlight)
 }
 
 func (w *signatureWidget) resize(kind signatureHandleKind, dragged fyne.Delta) {
@@ -682,12 +745,21 @@ func clampFloat64(value, minimum, maximum float64) float64 {
 }
 
 func (w *signatureWidget) MouseDown(e *desktop.MouseEvent) {
+	if w.readOnly {
+		return
+	}
 	if e.Button != desktop.MouseButtonPrimary || w.layer.editor == nil {
 		return
 	}
 	if e.Modifier&fyne.KeyModifierAlt != 0 {
 		p, _ := w.layer.widgetRect(w.rect)
 		w.areaDrag = w.layer.startArea(fyne.NewPos(p.X+e.Position.X, p.Y+e.Position.Y))
+		return
+	}
+	// Tapped is delayed by Fyne while it waits for a possible double click.
+	// Select immediately on mouse down and retain DoubleTapped for text editing.
+	if !w.selected {
+		w.layer.selectFromWidget(w.id)
 	}
 }
 func (w *signatureWidget) MouseUp(e *desktop.MouseEvent) {

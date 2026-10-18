@@ -463,6 +463,7 @@ func (g *Gui) refreshCorrectionPreviews() {
 				}
 				g.pdfPageImages[page].Image = preview
 				g.pdfPageImages[page].Refresh()
+				g.refreshPDFDetail()
 			})
 		}()
 	}

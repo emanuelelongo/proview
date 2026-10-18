@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"emanuelelongo/proview/internal/model3d"
 	"emanuelelongo/proview/pkg/document"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/storage"
@@ -154,18 +155,18 @@ func TestFinderOpeningUsesSharedDocumentWorkspace(t *testing.T) {
 	}
 	g.openFilesFromFinder([]string{path})
 	driver.runNext(t)
-	for len(g.documents) < 2 || g.openingFiles {
+	for len(g.editors.windows) < 2 || g.openingFiles {
 		driver.runNext(t)
 	}
-	if len(g.documents) != 2 || g.document.Format() != document.FormatPDF {
-		t.Fatalf("Finder entries=%d format=%v", len(g.documents), g.document.Format())
+	if len(g.documents) != 1 || g.document != existing || len(g.editors.windows) != 2 {
+		t.Fatal("Finder PDF was mixed into the image window")
 	}
-	g.selectDocument(g.documents[0])
-	if g.document != existing {
-		t.Fatal("Finder request discarded earlier document")
+	opened := g.editors.windows[1]
+	if opened.document == nil || opened.document.Format() != document.FormatPDF || len(opened.documents) != 1 {
+		t.Fatal("Finder PDF was not opened in its own window")
 	}
-	g.closeRetainedDocuments()
-	existing.Close()
+	opened.closeWindow()
+	g.closeWindow()
 }
 
 func TestModelDocumentSwitchRestoresCameraAndImageEdits(t *testing.T) {
@@ -204,15 +205,21 @@ func TestDesktopRequestsReuseSurvivingEditorAfterFirstWindowCloses(t *testing.T)
 	if first.desktopEditor() != second {
 		t.Fatal("closed root did not route to surviving editor")
 	}
-	path := filepath.Join(t.TempDir(), "incoming.pdf")
-	if err := os.WriteFile(path, scrollTestPDF(1), 0600); err != nil {
+	path := filepath.Join(t.TempDir(), "incoming.png")
+	image := testDocument(t, 30, 20)
+	raw, err := image.Export(document.ExportOptions{Format: document.FormatPNG})
+	image.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 	first.openFilesFromFinder([]string{path})
 	for len(second.documents) != 2 || second.openingFiles {
 		driver.runNext(t)
 	}
-	if second.document.Format() != document.FormatPDF || len(driver.AllWindows()) != baseline {
+	if second.document.Format() != document.FormatPNG || len(driver.AllWindows()) != baseline {
 		t.Fatal("desktop request opened an unrelated window")
 	}
 	second.closeWindow()
@@ -263,11 +270,55 @@ func TestDesktopRequestWaitsForFilePickerLoadCompletion(t *testing.T) {
 	if len(g.pendingFiles) != 1 {
 		t.Fatal("desktop request was lost during load")
 	}
-	for len(g.documents) < 2 || g.openingFiles {
+	for len(g.editors.windows) < 2 || g.openingFiles || len(g.pendingFiles) > 0 {
 		driver.runNext(t)
 	}
-	if !g.showingModel() || g.documents[0].doc == nil {
+	if g.showingModel() || len(g.documents) != 1 || g.document == nil || g.document.Format() != document.FormatPDF || !g.editors.windows[1].showingModel() {
 		t.Fatal("queued request did not preserve first document")
 	}
+	g.editors.windows[1].closeWindow()
 	g.closeWindow()
+}
+
+func TestPDFAndOtherFileTypesOpenInSeparateWindows(t *testing.T) {
+	for _, scenario := range []string{"pdf-image", "image-pdf", "pdf-model", "model-pdf"} {
+		t.Run(scenario, func(t *testing.T) {
+			g, _ := newDropTestGui(t)
+			g.modelViewport.running = true
+			pdf := workspacePDF(t, 2)
+			image := testDocument(t, 20, 30)
+			mesh := testSTLMesh(t)
+			var incoming *document.Document
+			var incomingMesh *model3d.Mesh
+			switch scenario {
+			case "pdf-image":
+				g.addDocument(pdf, nil, nil)
+				incoming = image
+			case "image-pdf":
+				g.addDocument(image, nil, nil)
+				incoming = pdf
+			case "pdf-model":
+				g.addDocument(pdf, nil, nil)
+				incomingMesh = mesh
+				image.Close()
+			case "model-pdf":
+				g.addDocument(nil, mesh, nil)
+				incoming = pdf
+				image.Close()
+			}
+			originalDoc, originalMesh := g.document, g.modelViewport.mesh
+			originalEntry := g.activeDocument
+			done := 0
+			g.receiveDocument(incoming, incomingMesh, nil, func() { done++ })
+			if done != 1 || len(g.editors.windows) != 2 || len(g.documents) != 1 || g.activeDocument != originalEntry || g.document != originalDoc || g.modelViewport.mesh != originalMesh || g.pdfOpenDialog != nil {
+				t.Fatal("mixed opening changed the original window or showed an append prompt")
+			}
+			other := g.editors.windows[1]
+			if other.document != incoming || other.modelViewport.mesh != incomingMesh || len(other.documents) != 1 {
+				t.Fatal("incoming file not owned by a separate window")
+			}
+			other.closeWindow()
+			g.closeWindow()
+		})
+	}
 }

@@ -102,6 +102,7 @@ func (p *annotationInput) MouseDown(event *desktop.MouseEvent) {
 	}
 	g.ensureAnnotationTools()
 	g.activatePDFPage(p.layer.page)
+	g.clearSignatureSelection()
 	p.data = g.annotationDefaults[g.annotationTool.kind()].Clone()
 	p.data.PageWidth, p.data.PageHeight = g.annotationPageSize(p.layer)
 	p.data.Points = []annotations.Point{point}

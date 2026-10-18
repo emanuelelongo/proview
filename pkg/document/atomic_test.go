@@ -15,6 +15,12 @@ func TestWriteFileAtomicCreatesAndReplacesOutput(t *testing.T) {
 	if err := os.Chmod(path, 0o640); err != nil {
 		t.Fatal(err)
 	}
+	// Windows exposes read-only/writable modes rather than Unix permission bits.
+	// Compare with the mode actually set by the filesystem on this platform.
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := WriteFileAtomic(path, []byte("second")); err != nil {
 		t.Fatal(err)
 	}
@@ -29,8 +35,8 @@ func TestWriteFileAtomicCreatesAndReplacesOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o640 {
-		t.Fatalf("permissions = %o, want 640", info.Mode().Perm())
+	if info.Mode().Perm() != before.Mode().Perm() {
+		t.Fatalf("permissions = %o, want %o", info.Mode().Perm(), before.Mode().Perm())
 	}
 	matches, err := filepath.Glob(filepath.Join(directory, ".proview-*.tmp"))
 	if err != nil {
