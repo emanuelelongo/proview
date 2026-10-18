@@ -35,12 +35,12 @@ func (s *zoomScrollSurface) Scrolled(event *fyne.ScrollEvent) {
 }
 func (s *zoomScrollSurface) scrollWithModifiers(event *fyne.ScrollEvent, modifiers fyne.KeyModifier) {
 	if modifiers&fyne.KeyModifierShortcutDefault != 0 {
-		// Consume modified scrolling even at the zoom limits. Never scroll the page
-		// sideways or vertically as a side effect of a zoom gesture.
+		// Keep the document point under the pointer fixed while zooming.
+		// Consume the gesture at zoom limits as well.
 		if event.Scrolled.DY > 0 {
-			s.editor.zoomIn()
+			s.editor.zoomBy(1, &event.Position)
 		} else if event.Scrolled.DY < 0 {
-			s.editor.zoomOut()
+			s.editor.zoomBy(-1, &event.Position)
 		}
 		return
 	}

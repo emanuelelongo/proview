@@ -26,7 +26,17 @@ independent of keystrokes or style changes. Newline/tab pastes are normalized to
 one line, with a 2000-character limit. Failed creation retains the input for
 correction and stops deferred Save/Close actions.
 
-Existing text annotations remain editable through their selection properties.
+Existing text annotations use the same page editor. A single click selects an
+object for movement and properties; double-click its text, or use **Edit text on
+page** in the property bar, to edit its contents inline. The bar has no text-entry
+field, including after reopening a PDF. Font/style/color changes stay in the
+inline draft until confirmation. Enter or a page/tool change replaces the same
+object in one Undo step; Escape restores the original, and confirming an empty
+value deletes it. Save waits for the final edit; preparation failures retain the
+draft and stop deferred save/close actions. Transforms and the visible ink anchor are retained instead of applying the
+new-text insertion offset. Text regenerates at its font size with natural physical
+width/height; a PDF FreeText layout box must never stretch glyphs on either axis.
+The same geometry is used by inline preview, confirmation and property changes.
 Pending creation must not steal focus from a newer draft or override a later
 tool choice. Tests cover insertion, cancellation, repeated clicks, styles, zoom,
 PDF coordinates, clipboard precedence and Save waiting for preparation.
@@ -88,3 +98,23 @@ Rotated/flipped objects keep their transforms. Shape preparation runs in the
 annotation worker, coalesces pointer updates, and commits the last geometry as
 one Undo step. Save and Undo wait for the final artwork; Escape discards pending
 results. Model APIs also regenerate shapes for direct or transactional resizing.
+
+## Saving editable PDF objects
+
+PDF Save/Save As writes added text, drawing, highlights and shapes as standard
+annotations, so they can be selected and edited after reopening. Text Contents
+and styling accompany vector appearances and embedded fonts. No private editor
+payload is stored. Signatures reopen unselectable; magnifiers reopen as static
+artwork, and stars/callouts as generic polygons. Unsupported foreign annotations
+remain in the source PDF. Applied redactions bake and sanitize all markup instead.
+See [Standard editable PDF annotations](pdf-annotations.md) for representations,
+compatibility, implementation and verification. Image exports remain flattened.
+
+Imported Preview arrows with a closed head retain that ending. New arrows still
+use the simple open head. Both variants regenerate at resize with a fixed-size
+head. A standard Line annotation with missing/empty appearance can regenerate
+from its standard endpoints and style. A simple, single stroked vector path
+stored as a Stamp can import as Drawing without using Apple's private data;
+its original appearance stays cached until its properties change. Filled artwork,
+images, text, cropped/multipath strokes and unsupported operators stay locked.
+This distinction keeps signature outlines out of drawing editing.

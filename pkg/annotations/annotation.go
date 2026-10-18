@@ -53,6 +53,7 @@ type Data struct {
 	Shape                                  ShapeKind
 	StrokeStyle                            StrokeStyle
 	Filled                                 bool
+	ArrowClosed                            bool
 	Magnification                          float64
 	Kind                                   Kind
 	Text, Font                             string
@@ -111,7 +112,7 @@ func (d Data) Validate() error {
 		return nil
 	}
 	if d.Kind == Shape {
-		if !finite(d.Width) || d.Width < .5 || d.Width > 40 || len(d.Points) != 2 {
+		if !finite(d.Width) || d.Width < .5 || d.Width > 40 || (d.Shape != Polygon && len(d.Points) != 2) || (d.Shape == Polygon && (len(d.Points) < 3 || len(d.Points) > 100000)) {
 			return fmt.Errorf("Invalid shape geometry")
 		}
 		if !finite(d.Magnification) || d.Magnification < 1 || d.Magnification > 8 {

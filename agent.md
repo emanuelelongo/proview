@@ -12,6 +12,27 @@ the current implementation/status handoff, including accepted decisions, tests,
 limitations and remaining tasks. The tested `prototype/pdf-forms` branch was
 merged into `develop` and deleted on 2026-10-17; release/packaging is separate.
 
+## Standard PDF annotations
+
+Read [docs/pdf-annotations.md](docs/pdf-annotations.md) for editable PDF save/reopen.
+Use standard FreeText/Ink/Highlight/shape annotations and appearance streams only;
+do not add a private editor payload or sidecar. Original source bytes stay immutable;
+editable annotations are detached into overlays over a separate base. Keep the
+original source owners alive across page transfers. Runtime appearance/markup caches
+are immutable and shared by history; property edits replace them. Validate pdfcpu
+contexts before writing to preserve native CID font resources. Preserve unsupported
+annotations in the source. Redaction must bake and sanitize annotations, including
+text/metadata, rather than preserving editable markup. Signatures reopen unselectable;
+mixed exports use locked standard stamps to retain painter order. A simple
+single stroked path in a standard Stamp can reopen as Drawing; filled artwork,
+images/text and unsupported/complex stamps remain static. Import ClosedArrow
+endings without changing the default open arrow. Existing text edits use the
+inline page editor via double-click or the edit button; never restore a text
+entry to the property bar. Preserve the original object ID and visible text anchor, one Undo step,
+Escape cancellation and the save barrier. FreeText Rect is a layout box, never
+an instruction to stretch glyphs: regenerate text at its font size with natural
+physical width/height. The same rule applies to inline and property edits.
+
 ## Native PDF text editing prototype
 
 Read [docs/pdf-text-editing.md](docs/pdf-text-editing.md) before continuing native
@@ -190,7 +211,11 @@ PDF page combination/reordering/deletion and blank pages.
   plus/equal (including Shift and keypad variants), minus, zero for Fit to Window,
   and modifier + mouse wheel. The passive `zoomScrollSurface` intercepts only
   scrolling in the document viewport, querying `desktop.Driver.CurrentKeyModifiers`
-  instead of tracking key state. Forward unmodified scroll events unchanged; do
+  instead of tracking key state. Zoom keeps the page point under the pointer;
+  toolbar/keyboard zoom keeps the viewport center. Anchor within the individual
+  PDF page, with fixed inter-page gaps, and restore offsets before loading visible
+  pages so zoom cannot switch pages and commit an inline draft halfway through.
+  Forward unmodified scroll events unchanged; do
   not capture hover/click/drag events or route document zoom through the sidebar.
   Hold **Space** and drag to pan above fit zoom on all desktop platforms; keep
   Space available to text fields and dialog controls. Control does not activate pan.

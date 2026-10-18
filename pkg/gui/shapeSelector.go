@@ -10,6 +10,9 @@ import (
 
 func (g *Gui) shapeSelector(selected annotations.ShapeKind, changed func(annotations.ShapeKind)) fyne.CanvasObject {
 	icons := map[annotations.ShapeKind]string{annotations.Rectangle: "rectangle", annotations.Oval: "oval", annotations.Callout: "message-circle", annotations.Line: "stroke-straight", annotations.Arrow: "arrow-narrow-right", annotations.Star: "star", annotations.Magnifier: "zoom-in"}
+	if _, ok := icons[selected]; !ok {
+		icons[selected] = "rectangle"
+	}
 	var button *widget.Button
 	var selector *fyne.Container
 	button = widget.NewButtonWithIcon("", tablerIcon(icons[selected]), func() {

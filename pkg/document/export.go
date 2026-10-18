@@ -76,7 +76,7 @@ func (d *Document) exportImage(format Format, options ExportOptions) ([]byte, er
 	return output.Bytes(), nil
 }
 
-func (d *Document) exportPDF() ([]byte, error) {
+func (d *Document) exportPDFFlattened() ([]byte, error) {
 	original, err := d.basePDF()
 	if err != nil {
 		return nil, err

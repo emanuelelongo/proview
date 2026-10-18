@@ -2,7 +2,9 @@ package document
 
 import (
 	"bytes"
+	"emanuelelongo/proview/internal/pdfengine"
 	"emanuelelongo/proview/pkg/annotations"
+	img "emanuelelongo/proview/pkg/images"
 	"fmt"
 	xdraw "golang.org/x/image/draw"
 	"image"
@@ -15,6 +17,9 @@ func (s SignatureOverlay) IsLens() bool {
 	return s.annotation != nil && s.annotation.Kind == annotations.Shape && s.annotation.Shape == annotations.Magnifier
 }
 func (s SignatureOverlay) ArtworkAsset(aspect float64) (signaturesAsset []byte, err error) {
+	if len(s.pdfAppearance) > 0 {
+		return normalizedAppearance(s.pdfAppearance, s.Transform)
+	}
 	base := s.asset
 	if base == nil {
 		fallback := s.Asset()
@@ -40,16 +45,30 @@ func (d *Document) basePageDPI(page int, dpi float64) (image.Image, error) {
 	if e != nil {
 		return nil, e
 	}
+
 	if dpi == 144 {
-		return source.Preview(index)
+		return d.Preview(page)
 	}
-	source.mu.Lock()
-	defer source.mu.Unlock()
-	if source.pdf == nil {
-		return nil, fmt.Errorf("The PDF is closed")
+	preview, changed, e := d.formPreview(source, index, dpi)
+	if !changed {
+		source.mu.Lock()
+		if source.pdf == nil {
+			source.mu.Unlock()
+			return nil, fmt.Errorf("The PDF is closed")
+		}
+		if source.hasPDFAnnotations {
+			preview, e = renderPDFPage(source.original, index, dpi)
+		} else {
+			preview, e = source.pdf.ImageDPI(index, dpi)
+		}
+		source.mu.Unlock()
 	}
-	return source.pdf.ImageDPI(index, dpi)
+	if e != nil {
+		return nil, e
+	}
+	return (img.Transform{Turns: d.pages[page].turns}).Apply(preview), nil
 }
+
 func (d *Document) renderPageDPI(page int, dpi float64, lenses bool) (image.Image, error) {
 	base, e := d.basePageDPI(page, dpi)
 	if e != nil {
@@ -70,6 +89,16 @@ func (d *Document) renderPageDPI(page int, dpi float64, lenses bool) (image.Imag
 		var p image.Image
 		if s.IsLens() {
 			p, e = d.RenderLens(s.ID, dpi)
+		} else if len(s.pdfAppearance) > 0 {
+			if s.Transform.Turns == 0 && !s.Transform.FlipX && !s.Transform.FlipY {
+				p = s.preview
+			} else {
+				raw, err := s.ArtworkAsset(0)
+				if err != nil {
+					return nil, err
+				}
+				p, e = pdfengine.RenderFormPage(raw, 0, dpi)
+			}
 		} else if s.IsVector() {
 			a, err := s.asset.Transformed(s.Transform)
 			if err != nil {

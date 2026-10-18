@@ -47,17 +47,20 @@ type pageData struct {
 }
 
 type Source struct {
-	formsLoaded bool
-	forms       []pdfengine.FormField
-	formsErr    error
-	mu          sync.Mutex
-	name        string
-	location    string
-	format      Format
-	original    []byte
-	pages       []pageData
-	pdf         *fitz.Document
-	textLayouts map[int]TextLayout
+	annotationBase    *Source
+	importedOverlays  []Overlay
+	hasPDFAnnotations bool
+	formsLoaded       bool
+	forms             []pdfengine.FormField
+	formsErr          error
+	mu                sync.Mutex
+	name              string
+	location          string
+	format            Format
+	original          []byte
+	pages             []pageData
+	pdf               *fitz.Document
+	textLayouts       map[int]TextLayout
 }
 
 func Load(name string, reader io.Reader) (*Source, error) {
@@ -65,6 +68,9 @@ func Load(name string, reader io.Reader) (*Source, error) {
 }
 
 func LoadFrom(name, location string, reader io.Reader) (*Source, error) {
+	return loadSource(name, location, reader, true)
+}
+func loadSource(name, location string, reader io.Reader, importAnnotations bool) (*Source, error) {
 	if reader == nil {
 		return nil, errors.New("document: nil reader")
 	}
@@ -100,6 +106,24 @@ func LoadFrom(name, location string, reader io.Reader) (*Source, error) {
 		pdf:      pdf,
 	}
 	if pdf != nil {
+		if importAnnotations {
+			clean, overlays, hasAnnots, e := readPDFAnnotations(data)
+			if e != nil {
+				pdf.Close()
+				return nil, fmt.Errorf("document: read PDF annotations: %w", e)
+			}
+			source.hasPDFAnnotations = hasAnnots
+			source.importedOverlays = overlays
+			if len(overlays) > 0 {
+				source.annotationBase, e = loadSource(name, location, bytes.NewReader(clean), false)
+				if e != nil {
+					pdf.Close()
+					return nil, e
+				}
+				// Retained unsupported annotations still need their standard appearances.
+				source.annotationBase.hasPDFAnnotations = hasAnnots
+			}
+		}
 		runtime.SetFinalizer(source, (*Source).Close)
 	}
 	return source, nil
@@ -109,6 +133,9 @@ func LoadFrom(name, location string, reader io.Reader) (*Source, error) {
 func (s *Source) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.annotationBase != nil {
+		s.annotationBase.Close()
+	}
 	if s.pdf != nil {
 		_ = s.pdf.Close()
 		s.pdf = nil
@@ -151,8 +178,8 @@ func (s *Source) Preview(page int) (image.Image, error) {
 		}
 		var preview image.Image
 		var err error
-		if len(fields) > 0 {
-			preview, err = pdfengine.RenderFormPage(s.original, page, pdfPreviewDPI)
+		if len(fields) > 0 || s.hasPDFAnnotations {
+			preview, err = renderPDFPage(s.original, page, pdfPreviewDPI)
 		} else {
 			preview, err = s.pdf.ImageDPI(page, pdfPreviewDPI)
 		}
@@ -184,8 +211,8 @@ func (s *Source) Thumbnail(page int) (image.Image, error) {
 		}
 		var thumbnail image.Image
 		var err error
-		if len(fields) > 0 {
-			thumbnail, err = pdfengine.RenderFormPage(s.original, page, pdfThumbnailDPI)
+		if len(fields) > 0 || s.hasPDFAnnotations {
+			thumbnail, err = renderPDFPage(s.original, page, pdfThumbnailDPI)
 		} else {
 			thumbnail, err = s.pdf.ImageDPI(page, pdfThumbnailDPI)
 		}

@@ -11,14 +11,16 @@ import (
 
 	"emanuelelongo/proview/pkg/annotations"
 	"emanuelelongo/proview/pkg/document"
+	"emanuelelongo/proview/pkg/signatures"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 )
 
 // A draft is view state until confirmed. Typing and style changes never enter
-// document history, and one confirmation creates one vector text object.
+// document history, and confirmation creates or replaces one vector text object.
 type textPlacement struct {
+	original  *document.Overlay
 	doc       *document.Document
 	layer     *signatureLayer
 	point     annotations.Point
@@ -53,6 +55,11 @@ func (g *Gui) beginTextPlacement(layer *signatureLayer, point annotations.Point)
 	const insertionOffset = 18.0 / 2
 	point.Y = math.Max(0, point.Y-insertionOffset)
 	p := &textPlacement{doc: g.document, layer: layer, point: point, data: data, entry: newAnnotationEntry()}
+	g.openTextDraft(p)
+}
+
+func (g *Gui) openTextDraft(p *textPlacement) {
+	layer := p.layer
 	p.entry.inline = true
 	p.entry.Wrapping = fyne.TextWrapOff
 	p.entry.Scroll = fyne.ScrollNone
@@ -93,6 +100,36 @@ func (g *Gui) beginTextPlacement(layer *signatureLayer, point annotations.Point)
 	g.window.Canvas().Focus(p.entry)
 }
 
+// Existing text uses the same page editor, anchored to its saved artwork frame.
+func (g *Gui) beginExistingText(layer *signatureLayer, id document.OverlayID) {
+	if layer == nil || g.document == nil || g.closed || g.working {
+		return
+	}
+	if p := g.textPlacement; p != nil && p.original != nil && p.original.ID == id {
+		g.window.Canvas().Focus(p.entry)
+		return
+	}
+	g.commitTextObject()
+	var original document.Overlay
+	found := false
+	for _, o := range g.document.Overlays() {
+		if o.ID == id {
+			original = o
+			found = true
+			break
+		}
+	}
+	data, ok := original.Annotation()
+	if !found || !ok || data.Kind != annotations.Text {
+		return
+	}
+	g.ensureAnnotationTools()
+	data.PageWidth, data.PageHeight = g.annotationPageSize(layer)
+	p := &textPlacement{doc: g.document, layer: layer, data: data, entry: newAnnotationEntry(), original: &original, point: annotations.Point{X: original.Rect.X * data.PageWidth, Y: original.Rect.Y * data.PageHeight}}
+	p.entry.SetText(data.Text)
+	g.openTextDraft(p)
+}
+
 func (g *Gui) detachTextPlacement() *textPlacement {
 	p := g.textPlacement
 	if p == nil {
@@ -114,6 +151,10 @@ func (g *Gui) finishTextPlacement() {
 	if p == nil {
 		return
 	}
+	if p.original != nil {
+		g.finishExistingText(p)
+		return
+	}
 	if !g.closed && g.document == p.doc && p.layer.document == p.doc && strings.TrimSpace(p.data.Text) != "" {
 		g.addPageAnnotationWithResult(p.layer, p.data.Clone(), p.point.X, p.point.Y, true, func(err error) {
 			if err == nil || g.closed || g.document != p.doc {
@@ -129,6 +170,115 @@ func (g *Gui) finishTextPlacement() {
 			}
 		})
 	}
+}
+
+func (g *Gui) finishExistingText(p *textPlacement) {
+	if g.closed || g.document != p.doc {
+		return
+	}
+	original := *p.original
+	old, _ := original.Annotation()
+	data := p.data.Clone()
+	if equalAnnotationProperties(old, data) {
+		return
+	}
+	if strings.TrimSpace(data.Text) == "" {
+		if err := p.doc.RemoveOverlay(original.ID); err != nil {
+			g.showAnnotationError(original.Page, data, err)
+			return
+		}
+		p.layer.reload()
+		g.clearSignatureSelection()
+		g.documentChanged(original.Page)
+		return
+	}
+	g.queueAnnotation(func() func() {
+		asset, _, rect, err := p.artwork(data)
+		var prepared signatures.Prepared
+		if err == nil {
+			prepared, err = asset.Prepare()
+		}
+		return func() {
+			if g.closed || g.document != p.doc {
+				return
+			}
+			if err == nil {
+				err = p.doc.ReplaceAnnotation(original.ID, rect, data, prepared)
+			}
+			if err != nil {
+				g.annotationAfterIdle = nil
+				g.showAnnotationError(original.Page, data, err)
+				if g.textPlacement == nil {
+					g.textPlacement = p
+					g.refreshAnnotationControls()
+					p.layer.Refresh()
+				}
+				return
+			}
+			p.layer.reload()
+			if g.hasSelectedSignature && g.selectedSignature == original.ID {
+				p.layer.selectSignature(original.ID)
+			}
+			g.documentChanged(original.Page)
+			g.refreshAnnotationControls()
+		}
+	})
+}
+
+// Existing text uses natural glyph dimensions and its visible ink anchor,
+// without applying the insertion offset or scaling from its PDF layout box.
+func (p *textPlacement) artwork(data annotations.Data) (signatures.Asset, annotations.TextMetrics, document.NormalizedRect, error) {
+	asset, bounds, metrics, err := data.TextArtwork()
+	if err != nil {
+		return asset, metrics, document.NormalizedRect{}, err
+	}
+	rect, err := annotationPlacementRect(bounds.W(), bounds.H(), data.PageWidth, data.PageHeight, p.point.X-metrics.Left, p.point.Y-data.Padding)
+	if p.original != nil {
+		rect, err = naturalTextRect(*p.original, data, bounds.W(), bounds.H(), data.PageWidth, data.PageHeight)
+	}
+	return asset, metrics, rect, err
+}
+
+// FreeText Rect is a layout box, not a glyph scaling instruction. Regenerated
+// text always uses its font size and one physical scale on both axes.
+func naturalTextRect(original document.Overlay, data annotations.Data, width, height, pageWidth, pageHeight float64) (document.NormalizedRect, error) {
+	rect := original.Rect
+	if original.Asset().Kind == signatures.PNG {
+		// Imported appearances may place text anywhere inside a large layout box.
+		// Preserve the visible ink's anchor when replacing that box with glyphs.
+		preview := original.Preview()
+		if preview != nil {
+			bounds := preview.Bounds()
+			ink := image.Rectangle{}
+			for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+				for x := bounds.Min.X; x < bounds.Max.X; x++ {
+					_, _, _, a := preview.At(x, y).RGBA()
+					if a > 0x1000 {
+						p := image.Rect(x, y, x+1, y+1)
+						if ink.Empty() {
+							ink = p
+						} else {
+							ink = ink.Union(p)
+						}
+					}
+				}
+			}
+			if !ink.Empty() {
+				rect.X += float64(ink.Min.X-bounds.Min.X)/float64(bounds.Dx())*original.Rect.Width - data.Padding/pageWidth
+				rect.Y += float64(ink.Min.Y-bounds.Min.Y)/float64(bounds.Dy())*original.Rect.Height - data.Padding/pageHeight
+			}
+		}
+	}
+	if original.Transform.Turns%2 != 0 {
+		width, height = height, width
+	}
+	rect.Width, rect.Height = width/pageWidth, height/pageHeight
+	if rect.Width > 1 || rect.Height > 1 {
+		return rect, fmt.Errorf("The object is too large for the page")
+	}
+	rect.X = min(max(rect.X, 0), 1-rect.Width)
+	rect.Y = min(max(rect.Y, 0), 1-rect.Height)
+	return rect, nil
 }
 
 func (g *Gui) cancelTextPlacement() bool {
@@ -209,15 +359,19 @@ func (p *textPlacement) requestPreview(scale float64) {
 	}
 	p.running = true
 	g.queueAnnotation(func() func() {
-		asset, bounds, metrics, err := data.TextArtwork()
-		var rect document.NormalizedRect
+		asset, metrics, rect, err := p.artwork(data)
 		var picture image.Image
 		if err == nil {
-			rect, err = annotationPlacementRect(bounds.W(), bounds.H(), data.PageWidth, data.PageHeight, p.point.X-metrics.Left, p.point.Y-data.Padding)
-		}
-		if err == nil {
-			renderScale := math.Min(scale*2, 2048/math.Max(bounds.W(), bounds.H()))
-			picture, err = asset.Rasterize(max(1, int(math.Ceil(bounds.W()*renderScale))), max(1, int(math.Ceil(bounds.H()*renderScale))))
+			width, height := rect.Width*data.PageWidth, rect.Height*data.PageHeight
+			renderScale := math.Min(scale*2, 2048/max(width, height))
+			rw, rh := max(1, int(math.Ceil(width*renderScale))), max(1, int(math.Ceil(height*renderScale)))
+			if p.original != nil && p.original.Transform.Turns%2 != 0 {
+				rw, rh = rh, rw
+			}
+			picture, err = asset.Rasterize(rw, rh)
+			if err == nil && p.original != nil {
+				picture = p.original.Transform.Apply(picture)
+			}
 		}
 		return func() {
 			p.running = false

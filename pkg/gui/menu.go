@@ -332,7 +332,7 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.image.Refresh()
 	g.setDocument(loadedDocument)
 	g.refreshThumbnailSelection()
-	g.resetZoom()
+	g.fitNewDocument()
 	g.updateTitle()
 	g.updateHistoryActions()
 }
@@ -494,7 +494,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	g.pdfScroll.ScrollToTop()
 	g.setDocument(loadedDocument)
 	g.refreshThumbnailSelection()
-	g.resetZoom()
+	g.fitNewDocument()
 	g.loadVisiblePDFPages()
 	g.loadVisiblePDFThumbnails()
 	g.updateTitle()

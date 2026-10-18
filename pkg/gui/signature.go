@@ -38,7 +38,7 @@ func defaultSignatureRect(pageWidth, pageHeight, signatureWidth, signatureHeight
 }
 
 func (g *Gui) selectSignature(layer *signatureLayer, id document.SignatureID) {
-	if id != 0 {
+	if id != 0 || g.textPlacement != nil && g.textPlacement.original != nil {
 		g.finishTextPlacement()
 	}
 	if id != 0 {
@@ -98,6 +98,9 @@ func (g *Gui) deleteSelectedSignature() {
 		return
 	}
 	page := g.selectedSignaturePage
+	if p := g.textPlacement; p != nil && p.original != nil && p.original.ID == g.selectedSignature {
+		g.cancelTextPlacement()
+	}
 	if err := g.document.RemoveSignature(g.selectedSignature); err != nil {
 		g.showOperationError("preview", err)
 		return

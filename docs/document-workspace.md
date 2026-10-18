@@ -109,3 +109,13 @@ stale endpoint metadata. Forwarding failure falls back to normal local opening.
 Native Finder/Explorer/desktop behavior and visual interaction still need manual
 acceptance on the destination platforms; headless GUI tests and cross compilation
 do not establish that acceptance.
+
+## Zoom anchoring
+
+Modifier + mouse wheel keeps the document point under the pointer. Toolbar and
+keyboard zoom keep the viewport center. In a multipage PDF, the anchor belongs
+to one page: its page coordinates are restored after layout, including centering
+and fixed inter-page spacing. This prevents jumps toward earlier pages when
+zooming deep in a document. Offsets clamp only at document edges. New documents still open at the beginning, fitted to the window. Intermediate
+scroll notifications are suppressed until the anchor has been restored; visible
+pages are then loaded/activated once, preserving active inline drafts.
