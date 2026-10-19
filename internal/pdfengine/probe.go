@@ -7,6 +7,10 @@ package pdfengine
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/include
+#cgo windows,amd64 CFLAGS: -D__USE_MINGW_SETJMP_NON_SEH
+// MuPDF's C handlers perform explicit fz_always cleanup. Windows SEH stack
+// walking during longjmp can fault in RtlVirtualUnwind on mixed Go/C stacks;
+// use MinGW's CRT-compatible register restore for these exception frames.
 #include "bridge.h"
 #include <stdlib.h>
 */
