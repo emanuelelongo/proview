@@ -222,6 +222,10 @@ func TestTextCorrectionTaggedMoveRejectsUnsupported(t *testing.T) {
 			}
 		})
 	}
+
+}
+
+func TestTextCorrectionTaggedMoveRejectsOverlapAndDuplication(t *testing.T) {
 	input := taggedMoveFixture("/P << /MCID 0 >> BDC BT /F1 16 Tf 30 140 Td (SECRET) Tj ET BT /F1 16 Tf 160 140 Td (KEEP) Tj ET EMC", "")
 	layout, start, count := probeRange(t, input, 0, "SECRET")
 	_, keep, _ := probeRange(t, input, 0, "KEEP")
@@ -232,57 +236,65 @@ func TestTextCorrectionTaggedMoveRejectsUnsupported(t *testing.T) {
 	if out, err := DuplicateText(input, 0, start, count, "SECRET", 0, 25); out != nil || err == nil {
 		t.Fatal("tagged duplication accepted")
 	}
+}
+
+func TestTextCorrectionTaggedMoveRejectsSourceForms(t *testing.T) {
 	form := fixtureStream("BT /F1 16 Tf 30 140 Td (SECRET) Tj ET", "/Type /XObject /Subtype /Form /BBox [0 0 420 200] /Resources << /Font << /F1 4 0 R >> >>")
-	input = taggedMoveFixture("/Form Do", "/XObject << /Form 12 0 R >>", form)
-	_, start, count = probeRange(t, input, 0, "SECRET")
+	input := taggedMoveFixture("/Form Do", "/XObject << /Form 12 0 R >>", form)
+	_, start, count := probeRange(t, input, 0, "SECRET")
 	if out, err := CorrectText(input, 0, start, count, "SECRET", 0, 25); out != nil || err == nil || !strings.Contains(err.Error(), "Source Forms") {
 		t.Fatalf("tagged source Form accepted: %v", err)
 	}
+}
+
+func TestTextCorrectionTaggedMoveRejectsStructureAttributes(t *testing.T) {
 	for _, attribute := range []string{"A", "C", "Stm"} {
-		input = taggedMoveFixture("/P << /MCID 0 >> BDC BT /F1 16 Tf 30 140 Td (SECRET) Tj ET EMC", "")
-		// Rebuild the fixture to retain valid xref offsets after adding attributes.
-		ctx, err := api.ReadValidateAndOptimize(context.Background(), bytes.NewReader(input), model.NewDefaultConfiguration(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		catalog, err := ctx.Catalog()
-		if err != nil {
-			t.Fatal(err)
-		}
-		root, err := ctx.DereferenceDict(catalog["StructTreeRoot"])
-		if err != nil {
-			t.Fatal(err)
-		}
-		kids, err := ctx.DereferenceArray(root["K"])
-		if err != nil {
-			t.Fatal(err)
-		}
-		element, err := ctx.DereferenceDict(kids[0])
-		if err != nil {
-			t.Fatal(err)
-		}
-		reason := "Structure layout attributes"
-		switch attribute {
-		case "A":
-			element["A"] = types.Dict{"O": types.Name("Layout"), "BBox": types.Array{types.Integer(30), types.Integer(130), types.Integer(100), types.Integer(160)}}
-		case "C":
-			element["C"] = types.Name("Paragraph")
-		case "Stm":
-			page, ref, _, err := ctx.PageDict(context.Background(), 1, false)
+		t.Run(attribute, func(t *testing.T) {
+			input := taggedMoveFixture("/P << /MCID 0 >> BDC BT /F1 16 Tf 30 140 Td (SECRET) Tj ET EMC", "")
+			// Rebuild the fixture to retain valid xref offsets after adding attributes.
+			ctx, err := api.ReadValidateAndOptimize(context.Background(), bytes.NewReader(input), model.NewDefaultConfiguration(), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			element["K"] = types.Dict{"Type": types.Name("MCR"), "Pg": *ref, "Stm": page["Contents"], "MCID": types.Integer(0)}
-			reason = "Explicit structure stream references"
-		}
-		var b bytes.Buffer
-		if err := api.WriteContext(context.Background(), ctx, &b); err != nil {
-			t.Fatal(err)
-		}
-		_, start, count = probeRange(t, b.Bytes(), 0, "SECRET")
-		if out, err := CorrectText(b.Bytes(), 0, start, count, "SECRET", 0, 25); out != nil || err == nil || !strings.Contains(err.Error(), reason) {
-			t.Fatalf("stale structure layout attributes accepted: %v", err)
-		}
+			catalog, err := ctx.Catalog()
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, err := ctx.DereferenceDict(catalog["StructTreeRoot"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			kids, err := ctx.DereferenceArray(root["K"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			element, err := ctx.DereferenceDict(kids[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			reason := "Structure layout attributes"
+			switch attribute {
+			case "A":
+				element["A"] = types.Dict{"O": types.Name("Layout"), "BBox": types.Array{types.Integer(30), types.Integer(130), types.Integer(100), types.Integer(160)}}
+			case "C":
+				element["C"] = types.Name("Paragraph")
+			case "Stm":
+				page, ref, _, err := ctx.PageDict(context.Background(), 1, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				element["K"] = types.Dict{"Type": types.Name("MCR"), "Pg": *ref, "Stm": page["Contents"], "MCID": types.Integer(0)}
+				reason = "Explicit structure stream references"
+			}
+			var b bytes.Buffer
+			if err := api.WriteContext(context.Background(), ctx, &b); err != nil {
+				t.Fatal(err)
+			}
+			_, start, count := probeRange(t, b.Bytes(), 0, "SECRET")
+			if out, err := CorrectText(b.Bytes(), 0, start, count, "SECRET", 0, 25); out != nil || err == nil || !strings.Contains(err.Error(), reason) {
+				t.Fatalf("stale structure layout attributes accepted: %v", err)
+			}
+		})
 	}
 }
 

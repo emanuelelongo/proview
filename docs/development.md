@@ -210,6 +210,9 @@ the verbose test names and printed shuffle seed make failures reproducible.
 The target summary reports both native gates separately. No application binaries
 or OCR bundles are built by Checks; packaging-specific failures remain release
 checks.
+After a Windows native failure, a diagnostic step uses the runner's GDB, when
+available, to repeat the tagged-edit rejection tests and print native backtraces.
+This compiles only a temporary test executable and never clears the failed gate.
 
 Keeping PR checks in a separate workflow also prevents them from consuming the
 Release workflow's release numbering counter. Promotion from prerelease to release
