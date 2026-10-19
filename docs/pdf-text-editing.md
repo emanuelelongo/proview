@@ -251,6 +251,10 @@ source glyphs.
 Concurrent-context coverage alternates rejected tagged edits with valid tagged
 moves and ordinary spaced-text edits, as independent windows may do. A failed
 native edit must unwind its filters without contaminating another context.
+Windows AMD64 bridge exception frames use MinGW's non-SEH `setjmp` mode to
+avoid a reproduced `RtlVirtualUnwind` crash during overlap rejection. Explicit
+MuPDF cleanup and rejection behavior are preserved. CI separately stresses
+tagged rejection paths 25 times, in addition to the complete native suite.
 Non-white background/vector/image pixels outside the edit zone are
 unchanged at 144 DPI. pdfcpu independently validates generated output.
 

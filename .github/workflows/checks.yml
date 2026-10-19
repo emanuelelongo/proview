@@ -111,10 +111,22 @@ jobs:
             exit 0
           fi
           native_test="$RUNNER_TEMP/pdfengine-debug.test.exe"
+          debug_commands="$RUNNER_TEMP/pdfengine-debug.gdb"
           go test -c -o "$native_test" ./internal/pdfengine
+          cat > "$debug_commands" <<'GDB'
+          set pagination off
+          set print thread-events off
+          set auto-load python-scripts off
+          set language c
+          run
+          if $_isvoid($_exitcode)
+            thread apply all bt 24
+            quit 1
+          end
+          quit $_exitcode
+          GDB
           cd internal/pdfengine
-          gdb --batch -ex 'set pagination off' -ex 'set print thread-events off' \
-            -ex 'set auto-load python-scripts off' -ex run -ex 'thread apply all bt 16' \
+          gdb -nx --batch -x "$debug_commands" \
             --args "$native_test" -test.v -test.count=50 -test.timeout=3m \
             -test.run '^TestTextCorrectionTaggedMoveRejects'
       - name: Go tests including native PDF security checks
@@ -122,7 +134,7 @@ jobs:
         run: go test -v -count=1 -timeout 10m ./...
       - name: Go vet
         id: vet
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.native_ordered.outcome == 'success' && steps.native.outcome == 'success' && steps.native_rejection.outcome == 'success' }}
         run: go vet ./...
       - name: Logging race tests
         id: race

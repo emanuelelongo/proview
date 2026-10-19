@@ -422,6 +422,9 @@ invalidation, viewport residency and repeatable performance checks.
   in release order (`-v -count=1`), then in a separate process with
   `-v -count=3 -shuffle=on`; the full suite uses `-count=1`. Keep
   native failures visible rather than retrying them into success.
+  On Windows AMD64, retain `__USE_MINGW_SETJMP_NON_SEH` for the PDF bridge's
+  C exception frames: SEH unwinding on mixed Go/C stacks caused a reproduced
+  `RtlVirtualUnwind` crash. Keep explicit MuPDF cleanup and the native ABI intact.
   The same **Checks** workflow supports manual dispatch: `inputs.branch` selects
   the code independently of the workflow source branch. Resolve it once and pin
   every matrix checkout to that SHA; PRs pin the proposed merge commit. Group

@@ -215,6 +215,17 @@ checks.
 After a Windows native failure, a diagnostic step uses the runner's GDB, when
 available, to repeat the tagged-edit rejection tests and print native backtraces.
 This compiles only a temporary test executable and never clears the failed gate.
+The full Go suite and vet wait for the native gates to pass, avoiding slow GUI
+compilation after a native failure. Independent logging/formatting/tooling checks
+still run when applicable.
+
+Windows AMD64 native PDF exception frames use MinGW's
+`__USE_MINGW_SETJMP_NON_SEH` option in the bridge package. This avoids a reproduced
+`RtlVirtualUnwind` access violation when an overlap rejection returns through
+MuPDF's `setjmp`/`longjmp` handlers. MuPDF's explicit `fz_always` cleanup and error
+checks remain enabled; the vendored headers and native archives are unchanged.
+The [MinGW option](https://sourceforge.net/p/mingw-w64/mailman/mingw-w64-public/thread/20230308121830.2940270-2-martin%40martin.st/)
+selects a CRT-compatible register restore without SEH stack walking on x64.
 
 Keeping PR checks in a separate workflow also prevents them from consuming the
 Release workflow's release numbering counter. Promotion from prerelease to release
