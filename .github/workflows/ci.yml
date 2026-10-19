@@ -65,7 +65,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
       - name: Test
-        run: go test ./...
+        run: go test -v -count=1 -timeout 10m ./...
       - name: Vet
         run: go vet ./...
       - name: Test build and release tooling
@@ -209,7 +209,7 @@ jobs:
           path.write_text(metadata)
           PYTHON
       - name: Test PDF redaction security
-        run: go test ./internal/pdfengine
+        run: go test -v -count=3 -shuffle=on -timeout 5m ./internal/pdfengine
       - name: Package macOS application
         if: runner.os == 'macOS'
         run: |

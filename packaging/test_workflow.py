@@ -137,6 +137,7 @@ class WorkflowTests(TestCase):
         self.assertIsNotNone(suite, "The complete Go test suite must run")
         self.assertFalse(any(argument == "-short" or argument.startswith(("-run", "-skip"))
                              for argument in suite[2:]), "CI must not filter out tests")
+        self.assertIn("-count=1", suite, "The suite must execute rather than reuse test results")
         self.assertIn("go vet ./...", workflow)
         self.assertIn("go test -race -timeout 5m ./internal/applog", workflow)
         self.assertIn("xargs -0 gofmt -l", workflow)
@@ -149,6 +150,20 @@ class WorkflowTests(TestCase):
         self.assertEqual(job_field("pr-checks", "name", PR_WORKFLOW), "PR checks")
         self.assertEqual(job_field("pr-checks", "needs", PR_WORKFLOW), "tests")
         self.assertEqual(job_field("pr-checks", "if", PR_WORKFLOW), "always()")
+
+    def test_native_pdf_checks_match_release_and_exercise_repeated_uncached_runs(self):
+        def commands(workflow):
+            return [shlex.split(command) for command in
+                    re.findall(r"(?m)^\s+run: (go test .+)$", workflow.read_text())]
+        native = next(command for command in commands(PR_WORKFLOW) if "./internal/pdfengine" in command)
+        self.assertIn(native, commands(WORKFLOW), "Checks and native release gates must run the same command")
+        self.assertIn("-v", native, "A native crash must retain the last running test")
+        self.assertIn("-count=3", native, "Exercise multiple runs without the result cache")
+        self.assertIn("-shuffle=on", native, "Exercise different test ordering and print its seed")
+        self.assertFalse(any(argument == "-short" or argument.startswith(("-run", "-skip"))
+                             for argument in native[2:]), "Every native PDF test must run")
+        workflow = PR_WORKFLOW.read_text()
+        self.assertIn("NATIVE_RESULT: ${{ steps.native.outcome }}", workflow)
 
     def test_pr_summary_gate_fails_unless_the_whole_matrix_succeeds(self):
         blocks = re.findall(r"(?m)^( +)python3 - <<'PYTHON'\n(.*?)^\1PYTHON$",
@@ -169,8 +184,9 @@ class WorkflowTests(TestCase):
             summary = Path(directory) / "summary.md"
             subprocess.run([sys.executable, "-c", target_summary], check=True,
                            env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), TARGET_NAME="Linux x64", CHECKED_COMMIT="checked-target-sha",
-                                    TESTS_RESULT="failure", VET_RESULT="success", RACE_RESULT="success",
+                                    NATIVE_RESULT="failure", TESTS_RESULT="failure", VET_RESULT="success", RACE_RESULT="success",
                                     FORMATTING_RESULT="success", TOOLING_RESULT="success"))
             self.assertIn("Go tests (including native PDF security) | failure", summary.read_text())
+            self.assertIn("Repeated native PDF checks | failure", summary.read_text())
             self.assertIn("Go vet | success", summary.read_text())
             self.assertIn("Checked commit: `checked-target-sha`", summary.read_text())

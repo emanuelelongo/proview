@@ -200,6 +200,16 @@ replaces an older one for that same target, while unrelated targets remain
 independent, even when the workflow definition comes from the same branch.
 The aggregate check keeps its **PR checks** name for branch-rule compatibility.
 
+Every target first runs the complete native PDF test package three times with
+`-count=3 -shuffle=on -v`, matching the GitHub-hosted native release gate. Each
+failure fails the job; this is not a retry-until-success policy. The full Go suite
+then runs with `-count=1`, so restored Go caches cannot replace test execution.
+Repeated runs help expose intermittent native faults and order-dependent state;
+the verbose test names and printed shuffle seed make failures reproducible.
+The target summary reports this native gate separately. No application binaries
+or OCR bundles are built by Checks; packaging-specific failures remain release
+checks.
+
 Keeping PR checks in a separate workflow also prevents them from consuming the
 Release workflow's release numbering counter. Promotion from prerelease to release
 remains a manual action on GitHub.

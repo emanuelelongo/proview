@@ -92,9 +92,14 @@ jobs:
           'C:/mingw64/bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "CC=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           'CXX=C:/mingw64/bin/g++.exe' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $compiler --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Repeated native PDF checks
+        id: native
+        run: go test -v -count=3 -shuffle=on -timeout 5m ./internal/pdfengine
       - name: Go tests including native PDF security checks
         id: tests
-        run: go test -v -timeout 10m ./...
+        run: go test -v -count=1 -timeout 10m ./...
       - name: Go vet
         id: vet
         if: ${{ !cancelled() }}
@@ -123,6 +128,7 @@ jobs:
         env:
           TARGET_NAME: ${{ matrix.target.name }}
           CHECKED_COMMIT: ${{ needs.target.outputs.commit }}
+          NATIVE_RESULT: ${{ steps.native.outcome }}
           TESTS_RESULT: ${{ steps.tests.outcome }}
           VET_RESULT: ${{ steps.vet.outcome }}
           RACE_RESULT: ${{ steps.race.outcome }}
@@ -133,6 +139,7 @@ jobs:
           import os
           from pathlib import Path
           rows = [
+              ("Repeated native PDF checks", "NATIVE_RESULT"),
               ("Go tests (including native PDF security)", "TESTS_RESULT"),
               ("Go vet", "VET_RESULT"),
               ("Logging race tests", "RACE_RESULT"),
