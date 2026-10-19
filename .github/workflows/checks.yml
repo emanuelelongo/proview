@@ -94,6 +94,9 @@ jobs:
           'CXX=C:/mingw64/bin/g++.exe' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           & $compiler --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native PDF checks in release order
+        id: native_ordered
+        run: go test -v -count=1 -timeout 5m ./internal/pdfengine
       - name: Repeated native PDF checks
         id: native
         run: go test -v -count=3 -shuffle=on -timeout 5m ./internal/pdfengine
@@ -128,6 +131,7 @@ jobs:
         env:
           TARGET_NAME: ${{ matrix.target.name }}
           CHECKED_COMMIT: ${{ needs.target.outputs.commit }}
+          NATIVE_ORDERED_RESULT: ${{ steps.native_ordered.outcome }}
           NATIVE_RESULT: ${{ steps.native.outcome }}
           TESTS_RESULT: ${{ steps.tests.outcome }}
           VET_RESULT: ${{ steps.vet.outcome }}
@@ -139,6 +143,7 @@ jobs:
           import os
           from pathlib import Path
           rows = [
+              ("Native PDF checks (release order)", "NATIVE_ORDERED_RESULT"),
               ("Repeated native PDF checks", "NATIVE_RESULT"),
               ("Go tests (including native PDF security)", "TESTS_RESULT"),
               ("Go vet", "VET_RESULT"),

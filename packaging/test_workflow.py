@@ -155,8 +155,13 @@ class WorkflowTests(TestCase):
         def commands(workflow):
             return [shlex.split(command) for command in
                     re.findall(r"(?m)^\s+run: (go test .+)$", workflow.read_text())]
-        native = next(command for command in commands(PR_WORKFLOW) if "./internal/pdfengine" in command)
-        self.assertIn(native, commands(WORKFLOW), "Checks and native release gates must run the same command")
+        gates = [command for command in commands(PR_WORKFLOW) if "./internal/pdfengine" in command]
+        self.assertEqual(len(gates), 2, "Run native tests both in release order and shuffled")
+        for gate in gates:
+            self.assertIn(gate, commands(WORKFLOW), "Checks and native release gates must run the same commands")
+        ordered, native = gates
+        self.assertIn("-count=1", ordered, "Execute release order in a separate uncached process")
+        self.assertFalse(any(argument.startswith("-shuffle") for argument in ordered))
         self.assertIn("-v", native, "A native crash must retain the last running test")
         self.assertIn("-count=3", native, "Exercise multiple runs without the result cache")
         self.assertIn("-shuffle=on", native, "Exercise different test ordering and print its seed")
@@ -164,6 +169,7 @@ class WorkflowTests(TestCase):
                              for argument in native[2:]), "Every native PDF test must run")
         workflow = PR_WORKFLOW.read_text()
         self.assertIn("NATIVE_RESULT: ${{ steps.native.outcome }}", workflow)
+        self.assertIn("NATIVE_ORDERED_RESULT: ${{ steps.native_ordered.outcome }}", workflow)
 
     def test_pr_summary_gate_fails_unless_the_whole_matrix_succeeds(self):
         blocks = re.findall(r"(?m)^( +)python3 - <<'PYTHON'\n(.*?)^\1PYTHON$",
@@ -184,9 +190,10 @@ class WorkflowTests(TestCase):
             summary = Path(directory) / "summary.md"
             subprocess.run([sys.executable, "-c", target_summary], check=True,
                            env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), TARGET_NAME="Linux x64", CHECKED_COMMIT="checked-target-sha",
-                                    NATIVE_RESULT="failure", TESTS_RESULT="failure", VET_RESULT="success", RACE_RESULT="success",
+                                    NATIVE_ORDERED_RESULT="success", NATIVE_RESULT="failure", TESTS_RESULT="failure", VET_RESULT="success", RACE_RESULT="success",
                                     FORMATTING_RESULT="success", TOOLING_RESULT="success"))
             self.assertIn("Go tests (including native PDF security) | failure", summary.read_text())
             self.assertIn("Repeated native PDF checks | failure", summary.read_text())
+            self.assertIn("Native PDF checks (release order) | success", summary.read_text())
             self.assertIn("Go vet | success", summary.read_text())
             self.assertIn("Checked commit: `checked-target-sha`", summary.read_text())

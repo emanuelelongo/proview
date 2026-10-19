@@ -418,8 +418,9 @@ invalidation, viewport residency and repeatable performance checks.
   selects GitHub-hosted native builds or self-hosted cross builds. Pull requests
   use the separate `.github/workflows/checks.yml` with GitHub-hosted tests
   on all five targets, vet, logging race checks and Linux formatting/tooling tests.
-  Checks and the GitHub-hosted native release gate run the complete PDF engine
-  tests with `-v -count=3 -shuffle=on`; the full suite uses `-count=1`. Keep
+  Checks and GitHub-hosted native release gates run the complete PDF engine tests
+  in release order (`-v -count=1`), then in a separate process with
+  `-v -count=3 -shuffle=on`; the full suite uses `-count=1`. Keep
   native failures visible rather than retrying them into success.
   The same **Checks** workflow supports manual dispatch: `inputs.branch` selects
   the code independently of the workflow source branch. Resolve it once and pin
