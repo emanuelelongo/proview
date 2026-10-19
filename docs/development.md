@@ -207,7 +207,9 @@ failure fails the job; this is not a retry-until-success policy. The full Go sui
 then runs with `-count=1`, so restored Go caches cannot replace test execution.
 Repeated runs help expose intermittent native faults and order-dependent state;
 the verbose test names and printed shuffle seed make failures reproducible.
-The target summary reports both native gates separately. No application binaries
+An additional 25-pass tagged-text rejection check stresses the native failure
+cleanup paths that exposed the Windows release fault. The target summary reports
+these native gates separately. No application binaries
 or OCR bundles are built by Checks; packaging-specific failures remain release
 checks.
 After a Windows native failure, a diagnostic step uses the runner's GDB, when

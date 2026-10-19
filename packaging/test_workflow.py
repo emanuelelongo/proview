@@ -156,15 +156,17 @@ class WorkflowTests(TestCase):
             return [shlex.split(command) for command in
                     re.findall(r"(?m)^\s+run: (go test .+)$", workflow.read_text())]
         gates = [command for command in commands(PR_WORKFLOW) if "./internal/pdfengine" in command]
-        self.assertEqual(len(gates), 2, "Run native tests both in release order and shuffled")
+        self.assertEqual(len(gates), 3, "Run native tests in release order, shuffled and stress rejection cleanup")
         for gate in gates:
             self.assertIn(gate, commands(WORKFLOW), "Checks and native release gates must run the same commands")
-        ordered, native = gates
+        ordered, native, rejection = gates
         self.assertIn("-count=1", ordered, "Execute release order in a separate uncached process")
         self.assertFalse(any(argument.startswith("-shuffle") for argument in ordered))
         self.assertIn("-v", native, "A native crash must retain the last running test")
         self.assertIn("-count=3", native, "Exercise multiple runs without the result cache")
         self.assertIn("-shuffle=on", native, "Exercise different test ordering and print its seed")
+        self.assertIn("-count=25", rejection)
+        self.assertEqual(rejection[rejection.index("-run") + 1], "^TestTextCorrectionTaggedMoveRejects")
         self.assertFalse(any(argument == "-short" or argument.startswith(("-run", "-skip"))
                              for argument in native[2:]), "Every native PDF test must run")
         workflow = PR_WORKFLOW.read_text()
@@ -190,7 +192,7 @@ class WorkflowTests(TestCase):
             summary = Path(directory) / "summary.md"
             subprocess.run([sys.executable, "-c", target_summary], check=True,
                            env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), TARGET_NAME="Linux x64", CHECKED_COMMIT="checked-target-sha",
-                                    NATIVE_ORDERED_RESULT="success", NATIVE_RESULT="failure", TESTS_RESULT="failure", VET_RESULT="success", RACE_RESULT="success",
+                                    NATIVE_ORDERED_RESULT="success", NATIVE_RESULT="failure", NATIVE_REJECTION_RESULT="skipped", TESTS_RESULT="failure", VET_RESULT="success", RACE_RESULT="success",
                                     FORMATTING_RESULT="success", TOOLING_RESULT="success"))
             self.assertIn("Go tests (including native PDF security) | failure", summary.read_text())
             self.assertIn("Repeated native PDF checks | failure", summary.read_text())
