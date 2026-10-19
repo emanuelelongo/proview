@@ -38,10 +38,13 @@ jobs:
             set pagination off
             set print thread-events off
             set auto-load python-scripts off
+            set language c
             run
-            bt 24
-            info registers
-            thread apply all bt 16
+            if $_isvoid($_exitcode)
+              thread apply all bt 24
+              quit 1
+            end
+            quit $_exitcode
           GDB
             gdb -nx --batch -x ../../build/native-diagnostics/commands.gdb \
               --args ../../build/native-diagnostics/pdfengine.test.exe -test.v -test.count=100 \
