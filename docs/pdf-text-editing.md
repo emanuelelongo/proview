@@ -248,6 +248,9 @@ overlaps. Duplication retains the original text and its geometry, produces
 independently editable/searchable native text, and rejects copies on top of the
 source. All preserve neighboring glyph positions and reject ambiguous duplicate
 source glyphs.
+Concurrent-context coverage alternates rejected tagged edits with valid tagged
+moves and ordinary spaced-text edits, as independent windows may do. A failed
+native edit must unwind its filters without contaminating another context.
 Non-white background/vector/image pixels outside the edit zone are
 unchanged at 144 DPI. pdfcpu independently validates generated output.
 

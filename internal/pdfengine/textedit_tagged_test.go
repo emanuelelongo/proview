@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
@@ -312,5 +313,57 @@ func TestTextCorrectionTaggedMoveNamedPropertiesAndContentsArray(t *testing.T) {
 	}
 	if !reflect.DeepEqual(probeImage(t, input, 1), probeImage(t, out, 1)) {
 		t.Fatal("array-valued shared contents changed on the other page")
+	}
+}
+
+func TestTextEditingConcurrentContextsAndRejectedEdits(t *testing.T) {
+	// Different editor windows may edit concurrently. A rejected edit must unwind
+	// its native filters without contaminating another call's context or spacing.
+	tagged := taggedMoveFixture("/P << /MCID 0 >> BDC BT /F1 16 Tf 30 140 Td (SECRET) Tj ET EMC", "")
+	partial := taggedMoveFixture("/P << /MCID 0 >> BDC BT /F1 16 Tf 30 140 Td (SECRET KEEP) Tj ET EMC", "")
+	ordinary := probeFixture("BT /F1 16 Tf .375 Tc 30 140 Td (SECRET) Tj ET", "")
+	const workers = 4
+	var pending sync.WaitGroup
+	start := make(chan struct{})
+	failures := make(chan error, workers)
+	for worker := 0; worker < workers; worker++ {
+		pending.Go(func() {
+			<-start
+			for iteration := 0; iteration < 8; iteration++ {
+				if out, err := CorrectText(partial, 0, 0, 6, "SECRET", 0, 15); out != nil || err == nil || !strings.Contains(err.Error(), "complete source text objects") {
+					failures <- fmt.Errorf("rejected context: %v", err)
+					return
+				}
+				input, value := tagged, "SECRET"
+				if worker%2 != 0 {
+					input, value = ordinary, "EDIT"
+				}
+				dx, dy := float64(worker+1), float64(iteration+10)
+				out, err := CorrectText(input, 0, 0, 6, value, dx, dy)
+				if err != nil {
+					failures <- err
+					return
+				}
+				layout, err := CorrectionTextLayout(out, 0)
+				if err != nil {
+					failures <- err
+					return
+				}
+				var text strings.Builder
+				for _, glyph := range layout.Glyphs {
+					text.WriteRune(glyph.Rune)
+				}
+				if text.String() != value || math.Abs(layout.Glyphs[0].Origin.X*layout.Width-30-dx) > .002 || math.Abs(layout.Glyphs[0].Origin.Y*layout.Height-60-dy) > .002 {
+					failures <- fmt.Errorf("worker %d: text/position came from another context", worker)
+					return
+				}
+			}
+		})
+	}
+	close(start)
+	pending.Wait()
+	close(failures)
+	for err := range failures {
+		t.Error(err)
 	}
 }
