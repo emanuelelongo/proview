@@ -12,7 +12,6 @@ import (
 
 type qrState struct {
 	doc       *document.Document
-	revision  uint64
 	cache     map[string]*ocrEntry
 	requested []int
 	running   *ocrJob
@@ -27,7 +26,6 @@ func (g *Gui) stopQRCodes() {
 		g.qr.running.cancel()
 	}
 	g.qr.doc = nil
-	g.qr.revision = 0
 	clear(g.qr.cache)
 	g.qr.requested = nil
 }
@@ -36,9 +34,8 @@ func (g *Gui) syncQRCodes() {
 	if g.closed || g.document == nil {
 		return
 	}
-	rev := g.document.Revision()
 	if g.qr == nil {
-		g.qr = &qrState{doc: g.document, revision: rev, cache: map[string]*ocrEntry{}}
+		g.qr = &qrState{doc: g.document, cache: map[string]*ocrEntry{}}
 	}
 	s := g.qr
 	docChanged := s.doc != g.document
@@ -50,20 +47,9 @@ func (g *Gui) syncQRCodes() {
 	if g.textSelection != nil && !g.validTextSelection() {
 		g.clearTextSelection()
 	}
-	if docChanged || s.revision != rev {
-		s.revision = rev
-		if len(s.cache) > 0 {
-			valid := make(map[string]bool, g.document.PageCount())
-			for page := 0; page < g.document.PageCount(); page++ {
-				valid[g.document.TextSelectionKey(page)] = true
-			}
-			for key := range s.cache {
-				if !valid[key] {
-					delete(s.cache, key)
-				}
-			}
-		}
-	}
+	// Cache keys identify immutable source geometry. Old entries may remain for
+	// Undo, but the bounded LRU never serves them to a different content key.
+
 	pages := g.recognitionPages()
 	s.requested = pages
 	if job := s.running; job != nil {
@@ -131,6 +117,7 @@ func (g *Gui) completeQRCodes(job *ocrJob, layout textselect.Layout, err error, 
 	}
 	s.running = nil
 	if g.closed || g.document != job.doc || g.document.TextSelectionKey(job.page) != job.key || canceled {
+		delete(s.cache, job.key)
 		g.syncQRCodes()
 		return
 	}

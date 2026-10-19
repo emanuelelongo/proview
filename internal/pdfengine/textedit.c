@@ -10,6 +10,7 @@
 #include <string.h>
 
 typedef struct pv_text_filter_state pv_text_filter_state;
+typedef struct pv_text_move_writer pv_text_move_writer;
 typedef struct {
     int blend, soft_mask, fill_alpha, group;
 } pv_text_effects;
@@ -38,6 +39,11 @@ typedef struct {
     int duplicate, obstacle_count;
     fz_rect *obstacles;
     fz_point *obstacle_origins;
+    /* Tagged moves keep the original strings, resources and marked-content
+     * order. Only complete source text objects can use this restricted path. */
+    int tagged_move, object_count, move_count;
+    int *move_objects;
+    pv_text_move_writer *move_writer;
 } pv_text_target;
 
 struct pv_text_filter_state {
@@ -49,6 +55,8 @@ struct pv_text_filter_state {
     float saved_font_size,saved_character,saved_word;
     pv_text_spacing spacing, spacing_stack[64];
     pv_text_effects effects, effects_stack[64];
+    int move_selected, move_other;
+    void (*original_BT)(fz_context *, pdf_processor *);
     void (*original_gs_begin)(fz_context *, pdf_processor *, const char *, pdf_obj *);
     void (*original_Tc)(fz_context *, pdf_processor *, float);
     void (*original_Tw)(fz_context *, pdf_processor *, float);
@@ -195,6 +203,10 @@ static int pv_text_remove(fz_context *ctx, void *opaque, int *ucs, int len,
         if (fabsf(matrix.a - ch->size) > 0.02f || fabsf(matrix.d + ch->size) > 0.02f ||
             fabsf(matrix.b) > 0.02f || fabsf(matrix.c) > 0.02f)
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "Scaled or skewed text is not supported");
+        if (target->tagged_move) {
+            ++state->move_selected;
+            return 0;
+        }
         float character=0,word=0;
         if (state->has_saved_spacing) {
             float scale=matrix.a/state->saved_font_size;
@@ -219,7 +231,16 @@ static int pv_text_remove(fz_context *ctx, void *opaque, int *ucs, int len,
         return target->duplicate ? 0 : 1;
     }
     state->kept = 1;
+    if(target->tagged_move) ++state->move_other;
     return 0;
+}
+
+static void pv_move_collect_BT(fz_context *ctx,pdf_processor *proc)
+{
+    pv_text_filter_state *state=pv_spacing_state(ctx,proc);
+    ++state->target->object_count;
+    state->move_selected=state->move_other=0;
+    state->original_BT(ctx,proc);
 }
 
 /* Conservative page-wide eligibility checks. This prototype accepts ordinary
@@ -228,13 +249,13 @@ typedef struct {
     pdf_processor super;
     pdf_document *doc;
     pdf_obj *resources[32];
-    int depth, recursion, path_active, in_text;
+    int depth, recursion, path_active, in_text, tagged_move;
 } pv_text_guard;
 
 static void pv_guard_BT(fz_context *ctx,pdf_processor *p)
-{ pv_text_guard *g=(pv_text_guard *)p;if(g->path_active)fz_throw(ctx,FZ_ERROR_ARGUMENT,"A live graphics path crosses text content");g->in_text=1; }
+{ pv_text_guard *g=(pv_text_guard *)p;if(g->path_active)fz_throw(ctx,FZ_ERROR_ARGUMENT,"A live graphics path crosses text content");if(g->tagged_move && g->in_text)fz_throw(ctx,FZ_ERROR_ARGUMENT,"Nested text objects are not supported for tagged text movement");g->in_text=1; }
 static void pv_guard_ET(fz_context *ctx,pdf_processor *p)
-{ (void)ctx;((pv_text_guard *)p)->in_text=0; }
+{ pv_text_guard *g=(pv_text_guard *)p;if(g->tagged_move && !g->in_text)fz_throw(ctx,FZ_ERROR_ARGUMENT,"Unbalanced text objects in tagged text movement");g->in_text=0; }
 static void pv_guard_path(fz_context *ctx,pdf_processor *p)
 { pv_text_guard *g=(pv_text_guard *)p;if(g->in_text)fz_throw(ctx,FZ_ERROR_ARGUMENT,"Graphics paths inside text are not supported");g->path_active=1; }
 static void pv_guard_xy(fz_context *ctx,pdf_processor *p,float x,float y)
@@ -245,6 +266,11 @@ static void pv_guard_rect(fz_context *ctx,pdf_processor *p,float a,float b,float
 { (void)a;(void)b;(void)c;(void)d;pv_guard_path(ctx,p); }
 static void pv_guard_paint(fz_context *ctx,pdf_processor *p)
 { (void)ctx;((pv_text_guard *)p)->path_active=0; }
+
+static void pv_guard_move_state(fz_context *ctx,pdf_processor *p)
+{ if(((pv_text_guard *)p)->in_text)fz_throw(ctx,FZ_ERROR_ARGUMENT,"Graphics state changes inside text are not supported for tagged text movement"); }
+static void pv_guard_move_cm(fz_context *ctx,pdf_processor *p,float a,float b,float c,float d,float e,float f)
+{ (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;pv_guard_move_state(ctx,p); }
 
 static void pv_guard_push(fz_context *ctx, pdf_processor *proc, pdf_obj *res)
 {
@@ -279,6 +305,7 @@ static void pv_guard_form(fz_context *ctx,pdf_processor *proc,const char *name,p
 {
     pv_text_guard *g=(pv_text_guard *)proc;
     (void)name;
+    if(g->tagged_move) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Source Forms are not yet supported for tagged text movement");
     if (++g->recursion>16) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Recursive form content is not supported for text editing");
     int saved_path=g->path_active,saved_text=g->in_text;
     g->path_active=0;g->in_text=0;
@@ -294,25 +321,54 @@ static void pv_guard_tags(fz_context *ctx,pdf_processor *proc,const char *tag,pd
     if(pdf_dict_get(ctx,cooked,PDF_NAME(ActualText)) || pdf_dict_get(ctx,cooked,PDF_NAME(Alt)))
         fz_throw(ctx,FZ_ERROR_ARGUMENT,"Alternative text is not supported for text editing");
 }
-static void pv_check_text_page(fz_context *ctx,pdf_document *doc,pdf_page *page)
+
+/* Layout attributes (including BBox and class-inherited geometry) would need
+ * updating along with the matrices. Keep this first movement subset conservative
+ * rather than leaving stale accessibility geometry in the structure tree. */
+static void pv_check_move_structure(fz_context *ctx,pdf_obj *node,int depth,int *visited)
+{
+    if(depth>64 || ++*visited>100000)
+        fz_throw(ctx,FZ_ERROR_ARGUMENT,"Structure tree is too complex for tagged text movement");
+    if(pdf_is_array(ctx,node)) {
+        for(int i=0;i<pdf_array_len(ctx,node);++i)
+            pv_check_move_structure(ctx,pdf_array_get(ctx,node,i),depth+1,visited);
+    } else if(pdf_is_dict(ctx,node)) {
+        if(pdf_dict_get(ctx,node,PDF_NAME(A)) || pdf_dict_get(ctx,node,PDF_NAME(C)) || pdf_dict_gets(ctx,node,"ClassMap"))
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Structure layout attributes are not yet supported for tagged text movement");
+        if(pdf_dict_gets(ctx,node,"Stm") || pdf_dict_gets(ctx,node,"StmOwn"))
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Explicit structure stream references are not yet supported for tagged text movement");
+        pdf_obj *kids=pdf_dict_get(ctx,node,PDF_NAME(K));
+        if(kids) pv_check_move_structure(ctx,kids,depth+1,visited);
+    }
+}
+static void pv_check_text_page(fz_context *ctx,pdf_document *doc,pdf_page *page,int tagged_move)
 {
     pdf_processor *proc=pdf_new_processor(ctx,sizeof(pv_text_guard));
     pv_text_guard *g=(pv_text_guard *)proc;
     g->doc=doc;
+    g->tagged_move=tagged_move;
     proc->drop_processor=pv_guard_drop;
     proc->push_resources=pv_guard_push;proc->pop_resources=pv_guard_pop;
     proc->op_Tr=pv_guard_render;proc->op_Tz=pv_guard_scale;
     proc->op_Tf=pv_guard_font;
     proc->op_Do_form=pv_guard_form;proc->op_BDC=pv_guard_tags;
     proc->op_BT=pv_guard_BT;proc->op_ET=pv_guard_ET;
+    if(tagged_move) {
+        proc->op_cm=pv_guard_move_cm;
+        proc->op_q=proc->op_Q=pv_guard_move_state;
+    }
     proc->op_m=pv_guard_xy;proc->op_l=pv_guard_xy;proc->op_c=pv_guard_curve;
     proc->op_v=pv_guard_rect;proc->op_y=pv_guard_rect;proc->op_re=pv_guard_rect;proc->op_h=pv_guard_path;
     proc->op_S=pv_guard_paint;proc->op_s=pv_guard_paint;proc->op_f=pv_guard_paint;proc->op_F=pv_guard_paint;proc->op_fstar=pv_guard_paint;
     proc->op_B=pv_guard_paint;proc->op_Bstar=pv_guard_paint;proc->op_b=pv_guard_paint;proc->op_bstar=pv_guard_paint;proc->op_n=pv_guard_paint;
     fz_try(ctx) {
-        if(pdf_dict_get(ctx,pdf_dict_get(ctx,pdf_trailer(ctx,doc),PDF_NAME(Root)),PDF_NAME(StructTreeRoot)))
-            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Tagged PDFs are not yet supported for text editing");
+        if(tagged_move) {
+            int visited=0;
+            pv_check_move_structure(ctx,pdf_dict_get(ctx,pdf_dict_get(ctx,pdf_trailer(ctx,doc),PDF_NAME(Root)),PDF_NAME(StructTreeRoot)),0,&visited);
+        }
         pdf_process_contents(ctx,proc,doc,pdf_page_resources(ctx,page),pdf_page_contents(ctx,page),NULL,NULL);
+        if(tagged_move && g->in_text)
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Unclosed text object in tagged text movement");
         pdf_close_processor(ctx,proc);
     }
     fz_always(ctx) {pdf_drop_processor(ctx,proc);}
@@ -359,6 +415,123 @@ static void pv_text_check_overlap(fz_context *ctx,pv_text_target *target,fz_rect
             (fabsf(origin.x-target->obstacle_origins[i].x)<=.02f && fabsf(origin.y-target->obstacle_origins[i].y)<=.02f))
             fz_throw(ctx,FZ_ERROR_ARGUMENT,"Text edit would overlap existing text");
     }
+}
+
+/* Move original text objects in place, without removing/re-encoding glyphs or
+ * invoking the sanitize filter's structure-string editing. The dry filter pass
+ * has proved that each affected BT/ET contains only selected source glyphs. */
+struct pv_text_move_writer {
+    fz_matrix ctm, stack[64];
+    fz_point delta;
+    int depth, object, next, active;
+    void (*BT)(fz_context *,pdf_processor *);
+    void (*ET)(fz_context *,pdf_processor *);
+    void (*Tm)(fz_context *,pdf_processor *,float,float,float,float,float,float);
+    void (*q)(fz_context *,pdf_processor *);
+    void (*Q)(fz_context *,pdf_processor *);
+    void (*cm)(fz_context *,pdf_processor *,float,float,float,float,float,float);
+};
+
+static pv_text_move_writer *pv_move_writer(fz_context *ctx)
+{ return ((pv_text_target *)fz_user_context(ctx))->move_writer; }
+
+static void pv_move_q(fz_context *ctx,pdf_processor *proc)
+{
+    pv_text_move_writer *s=pv_move_writer(ctx);
+    if(s->depth==64) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Graphics state nesting is too deep for tagged text movement");
+    s->stack[s->depth++]=s->ctm;
+    s->q(ctx,proc);
+}
+static void pv_move_Q(fz_context *ctx,pdf_processor *proc)
+{
+    pv_text_move_writer *s=pv_move_writer(ctx);
+    if(!s->depth) fz_throw(ctx,FZ_ERROR_ARGUMENT,"Unbalanced graphics state in tagged text movement");
+    s->ctm=s->stack[--s->depth];
+    s->Q(ctx,proc);
+}
+static void pv_move_cm(fz_context *ctx,pdf_processor *proc,float a,float b,float c,float d,float e,float f)
+{
+    pv_text_move_writer *s=pv_move_writer(ctx);
+    s->ctm=fz_concat((fz_matrix){a,b,c,d,e,f},s->ctm);
+    s->cm(ctx,proc,a,b,c,d,e,f);
+}
+static void pv_move_Tm(fz_context *ctx,pdf_processor *proc,float a,float b,float c,float d,float e,float f)
+{
+    pv_text_move_writer *s=pv_move_writer(ctx);
+    s->Tm(ctx,proc,a,b,c,d,e+(s->active?s->delta.x:0),f+(s->active?s->delta.y:0));
+}
+static void pv_move_BT(fz_context *ctx,pdf_processor *proc)
+{
+    pv_text_target *target=fz_user_context(ctx);
+    pv_text_move_writer *s=target->move_writer;
+    ++s->object;
+    s->active=s->next<target->move_count && target->move_objects[s->next]==s->object;
+    s->BT(ctx,proc);
+    if(s->active) {
+        ++s->next;
+        fz_matrix matrix=fz_concat(s->ctm,target->page_ctm);
+        if(!isfinite(matrix.a) || !isfinite(matrix.b) || !isfinite(matrix.c) || !isfinite(matrix.d) ||
+            fabsf(matrix.a*matrix.d-matrix.b*matrix.c)<.000001f)
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Invalid transform for tagged text movement");
+        s->delta=fz_transform_vector((fz_point){target->dx,target->dy},fz_invert_matrix(matrix));
+        /* BT starts with identity text/line matrices. Subsequent Tm operators
+         * receive the same translation; relative Td/TD/T* remain unchanged. */
+        s->Tm(ctx,proc,1,0,0,1,s->delta.x,s->delta.y);
+    }
+}
+static void pv_move_ET(fz_context *ctx,pdf_processor *proc)
+{
+    pv_text_move_writer *s=pv_move_writer(ctx);
+    s->ET(ctx,proc);
+    s->active=0;
+}
+
+static void pv_move_tagged_text(fz_context *ctx,pdf_document *doc,pdf_page *page,pv_text_target *target)
+{
+    fz_buffer *buffer=NULL;
+    pdf_processor *proc=NULL;
+    pv_text_move_writer writer={0};
+    writer.ctm=fz_identity;
+    target->move_writer=&writer;
+    fz_var(buffer);fz_var(proc);
+    fz_try(ctx) {
+        /* Use each original glyph's position, not a newly laid-out word. */
+        for(int i=0;i<target->count;++i) {
+            fz_stext_char *ch=target->chars[i];
+            if(ch->c<=32 || ch->c==160) continue;
+            fz_point origin={ch->origin.x+target->dx,ch->origin.y+target->dy};
+            fz_rect box=fz_rect_from_quad(ch->quad);
+            int gid=fz_encode_character(ctx,ch->font,ch->c);
+            if(gid) {
+                fz_matrix pen=fz_scale(ch->size,-ch->size);
+                pen.e=ch->origin.x;pen.f=ch->origin.y;
+                box=fz_bound_glyph(ctx,ch->font,gid,pen);
+            }
+            box.x0+=target->dx;box.x1+=target->dx;
+            box.y0+=target->dy;box.y1+=target->dy;
+            pv_text_check_overlap(ctx,target,box,origin);
+        }
+        buffer=fz_new_buffer(ctx,1024);
+        proc=pdf_new_buffer_processor(ctx,buffer,0,1);
+        writer.BT=proc->op_BT;proc->op_BT=pv_move_BT;
+        writer.ET=proc->op_ET;proc->op_ET=pv_move_ET;
+        writer.Tm=proc->op_Tm;proc->op_Tm=pv_move_Tm;
+        writer.q=proc->op_q;proc->op_q=pv_move_q;
+        writer.Q=proc->op_Q;proc->op_Q=pv_move_Q;
+        writer.cm=proc->op_cm;proc->op_cm=pv_move_cm;
+        pdf_process_contents(ctx,proc,doc,pdf_page_resources(ctx,page),pdf_page_contents(ctx,page),NULL,NULL);
+        pdf_close_processor(ctx,proc);
+        if(writer.depth || writer.next!=target->move_count || writer.object!=target->object_count)
+            fz_throw(ctx,FZ_ERROR_ARGUMENT,"Inconsistent source objects in tagged text movement");
+        /* A new stream detaches shared/array Contents. Resources and the entire
+         * structure tree remain untouched, including MCIDs and ParentTree. */
+        pdf_dict_put_drop(ctx,page->obj,PDF_NAME(Contents),pdf_add_stream(ctx,doc,buffer,NULL,0));
+    }
+    fz_always(ctx) {
+        target->move_writer=NULL;
+        pdf_drop_processor(ctx,proc);fz_drop_buffer(ctx,buffer);
+    }
+    fz_catch(ctx) {fz_rethrow(ctx);}
 }
 
 static void pv_text_replacement(fz_context *ctx,pdf_document *doc,pv_text_target *target)
@@ -443,6 +616,17 @@ static void pv_text_insert(fz_context *ctx, void *opaque, pdf_document *doc,
 {
     pv_text_filter_state *state = opaque;
     pv_text_target *target = state->target;
+    if(target->tagged_move) {
+        if(state->move_selected) {
+            if(state->move_other)
+                fz_throw(ctx,FZ_ERROR_ARGUMENT,"Tagged text movement requires complete source text objects");
+            if(target->move_count>=target->count)
+                fz_throw(ctx,FZ_ERROR_ARGUMENT,"Too many selected text objects");
+            target->move_objects[target->move_count++]=target->object_count;
+        }
+        state->move_selected=state->move_other=0;
+        return;
+    }
     if (!target->pending) { state->kept = 0; return; }
     /* Insertion follows ET. Do not inherit effects enabled after the selected
      * glyphs within that same text object. The surrounding source stays intact. */
@@ -500,6 +684,9 @@ static pdf_processor *pv_make_text_filter(fz_context *ctx,pdf_document *doc,pdf_
     state->options.after_text_object=pv_text_insert;
     state->processor=pdf_new_sanitize_filter(ctx,doc,chain,struct_parents,transform,options,&state->options);
     pdf_processor *p=state->processor;
+    if(target->tagged_move) {
+        state->original_BT=p->op_BT;p->op_BT=pv_move_collect_BT;
+    }
     state->original_gs_begin=p->op_gs_begin;p->op_gs_begin=pv_text_gs;
     state->original_Tc=p->op_Tc;p->op_Tc=pv_spacing_Tc;
     state->original_Tw=p->op_Tw;p->op_Tw=pv_spacing_Tw;
@@ -538,7 +725,12 @@ static void pv_edit_text(const unsigned char *data, size_t length, int number,
         if (pdf_needs_password(ctx, doc))
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "Encrypted PDF not supported by text editing");
         page = pdf_load_page(ctx, doc, number);
-        if (count > 0) pv_check_text_page(ctx,doc,page);
+        target.tagged_move=pdf_dict_get(ctx,pdf_dict_get(ctx,pdf_trailer(ctx,doc),PDF_NAME(Root)),PDF_NAME(StructTreeRoot))!=NULL;
+        if (count > 0) {
+            if(target.tagged_move && duplicate)
+                fz_throw(ctx,FZ_ERROR_ARGUMENT,"Text duplication is not yet supported for tagged PDFs");
+            pv_check_text_page(ctx,doc,page,target.tagged_move);
+        }
         fz_rect box;
         pdf_page_transform(ctx, page, &box, &target.page_ctm);
         target.page_box=box;
@@ -599,28 +791,39 @@ static void pv_edit_text(const unsigned char *data, size_t length, int number,
         }
         if (selected != count)
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "Text editing range is out of bounds");
+        if(target.tagged_move) {
+            if(count!=replacement_count)
+                fz_throw(ctx,FZ_ERROR_ARGUMENT,"Only unchanged-text movement is supported for tagged PDFs");
+            for(int i=0;i<count;++i)
+                if(target.chars[i]->c!=replacement[i])
+                    fz_throw(ctx,FZ_ERROR_ARGUMENT,"Only unchanged-text movement is supported for tagged PDFs");
+            target.move_objects=fz_calloc(ctx,count,sizeof(int));
+        }
         pv_text_obstacles(ctx,&target,layout,start,count);
         /* The filter rewrites a stream object in place: detach shared Contents. */
         pdf_obj *original_contents = pdf_page_contents(ctx, page);
-        if (pdf_is_stream(ctx, original_contents)) {
+        if (!target.tagged_move && pdf_is_stream(ctx, original_contents)) {
             append = pdf_load_stream(ctx, original_contents);
             pdf_dict_put_drop(ctx, page->obj, PDF_NAME(Contents), pdf_add_stream(ctx, doc, append, NULL, 0));
         }
         pdf_filter_factory filters[] = {{pv_make_text_filter, &target}, {NULL, NULL}};
         pdf_filter_options filter = {0};
-        filter.recurse = 1; filter.instance_forms = 1; filter.filters = filters;
+        filter.recurse = !target.tagged_move; filter.instance_forms = !target.tagged_move; filter.filters = filters;
+        filter.no_update=target.tagged_move;
         pdf_filter_page_contents(ctx, doc, page, &filter);
         for (int i = 0; i < count; ++i)
             if (target.seen[i] != 1)
                 fz_throw(ctx, FZ_ERROR_ARGUMENT, "Extracted character has no unique source glyph");
 
-        if (!target.inserted) fz_throw(ctx, FZ_ERROR_ARGUMENT, "No unique text insertion point");
+        if(target.tagged_move) pv_move_tagged_text(ctx,doc,page,&target);
+        else if (!target.inserted) fz_throw(ctx, FZ_ERROR_ARGUMENT, "No unique text insertion point");
         pv_text_save(ctx, doc, result);
         }
     }
     fz_always(ctx) {
         while(target.filters) {pv_text_filter_state *next=target.filters->next;fz_free(ctx,target.filters);target.filters=next;}
         fz_free(ctx, target.chars); fz_free(ctx, target.seen);
+        fz_free(ctx,target.move_objects);
         fz_free(ctx,target.obstacles);fz_free(ctx,target.obstacle_origins);
         fz_drop_device(ctx, device); fz_drop_stext_page(ctx, layout);
         pdf_drop_obj(ctx, target.replacement);

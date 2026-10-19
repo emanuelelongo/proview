@@ -3,6 +3,9 @@ package gui
 import (
 	"bytes"
 	"emanuelelongo/proview/pkg/document"
+	xdraw "golang.org/x/image/draw"
+	"image"
+	"image/color"
 	"math"
 	"testing"
 
@@ -183,4 +186,53 @@ func TestHighlightNativePDFQueuesReleasedGestureAndKeepsTextSearchable(t *testin
 		t.Fatal("highlight destroyed searchable PDF text", err)
 	}
 	g.closeWindow()
+}
+
+func TestHighlightDraftSamplesOnlySelectedAreaWithoutShiftingBackdrop(t *testing.T) {
+	g, layer := annotationTestGui(t)
+	g.setAnnotationTool(toolHighlight)
+	p := layer.highlightInput
+	layout := textselect.Layout{Width: 1000, Height: 500, Words: []textselect.Word{{Text: "word", Quad: textselect.Rect(.4, .3, .6, .4)}}}
+	p.geometry, p.key = &layout, g.document.TextSelectionKey(0)
+	origin, size := layer.displayRect()
+	event := mouseAt(origin.X+.5*size.Width, origin.Y+.35*size.Height)
+	backdrop := image.NewNRGBA(image.Rect(0, 0, 1000, 500))
+	for y := 0; y < 500; y++ {
+		for x := 0; x < 1000; x++ {
+			backdrop.SetNRGBA(x, y, color.NRGBA{R: uint8(x % 256), G: uint8(y % 256), B: 100, A: 255})
+		}
+	}
+	p.MouseDown(event)
+	p.backdrop = backdrop
+	p.end = -1
+	p.update(event.Position)
+	if p.preview == nil {
+		t.Fatal("draft missing")
+	}
+	const width, height = 1000, 500
+	rect := p.previewRect
+	tile := image.Rect(0, 0, int(math.Round(rect.Width*width)), int(math.Round(rect.Height*height)))
+	offset := image.Pt(int(math.Round(rect.X*width)), int(math.Round(rect.Y*height)))
+	actual := p.preview.Generator(tile.Dx(), tile.Dy())
+	if tile.Dx() > 205 || tile.Dy() > 55 {
+		t.Fatal("draft retained a page-sized texture")
+	}
+	scaled := image.NewNRGBA(image.Rect(0, 0, width, height))
+	xdraw.BiLinear.Scale(scaled, scaled.Bounds(), backdrop, backdrop.Bounds(), xdraw.Src, nil)
+	mask := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	mask.SetNRGBA(0, 0, p.data.Color)
+	for _, point := range []image.Point{image.Pt(420, 160), image.Pt(498, 175), image.Pt(580, 190)} {
+		expected := document.MultiplyHighlight(scaled, mask, image.Rectangle{Min: point, Max: point.Add(image.Pt(1, 1))})
+		got := color.NRGBAModel.Convert(actual.At(point.X-offset.X, point.Y-offset.Y)).(color.NRGBA)
+		want := color.NRGBAModel.Convert(expected.At(0, 0)).(color.NRGBA)
+		if got != want {
+			t.Fatalf("shifted backdrop at %v: got %v want %v", point, got, want)
+		}
+	}
+	for _, point := range []image.Point{image.Pt(0, 0), image.Pt(offset.X, 170), image.Pt(500, offset.Y)} {
+		if _, _, _, alpha := actual.At(point.X-offset.X, point.Y-offset.Y).RGBA(); alpha != 0 {
+			t.Fatalf("highlight leaked at %v", point)
+		}
+	}
+	p.cancel()
 }

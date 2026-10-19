@@ -80,7 +80,6 @@ func (g *Gui) closeDocument() {
 	g.signatureLayers = map[int]*signatureLayer{}
 	g.formLayers = nil
 	g.correctionLayers = nil
-	g.correctionPreviewKeys = nil
 	g.panOverlays = []*panOverlay{g.imagePanOverlay}
 	g.pdfCrops = nil
 	g.pdfPageIDs = nil

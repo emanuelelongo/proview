@@ -52,6 +52,7 @@ func (g *Gui) handleDocumentNavigationKey(key fyne.KeyName) bool {
 		if page != g.activePDFPage {
 			g.loadPDFPage(page)
 			g.pdfScroll.ScrollToOffset(fyne.NewPos(g.pdfScroll.Offset.X, g.pdfPageTop(page)))
+			g.loadVisiblePDFPages()
 			// Near the document's end, clamping the viewport can leave another page
 			// more visible. Keep the explicitly requested page active nonetheless.
 			g.activatePDFPage(page)
@@ -79,5 +80,8 @@ func (g *Gui) handleDocumentNavigationKey(key fyne.KeyName) bool {
 		offset.Y += step
 	}
 	scroll.ScrollToOffset(offset)
+	if g.document.Format() == document.FormatPDF {
+		g.loadVisiblePDFPages()
+	}
 	return true
 }

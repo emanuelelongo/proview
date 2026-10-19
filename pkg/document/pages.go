@@ -237,15 +237,22 @@ func (d *Document) SetPageOrder(order []int) error {
 }
 
 func (d *Document) basePDF() ([]byte, error) {
-	unchanged := len(d.pages) == d.source.PageCount()
+	// Native edits replace the complete page collection with a new source while
+	// d.source retains the original bytes. Reuse any complete, ordered source:
+	// collecting its pages again needlessly drops the logical structure tree.
+	source := d.source
+	if len(d.pages) > 0 {
+		source = d.pages[0].source
+	}
+	unchanged := len(d.pages) == source.PageCount()
 	for i, p := range d.pages {
-		if p.source != d.source || p.index != i || p.turns != 0 {
+		if p.source != source || p.index != i || p.turns != 0 {
 			unchanged = false
 			break
 		}
 	}
 	if unchanged {
-		return d.sourcePDF(d.source)
+		return d.sourcePDF(source)
 	}
 	ctx := context.Background()
 	var chunks []io.ReadSeeker

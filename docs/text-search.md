@@ -13,7 +13,10 @@ and native text correction. No dependency on the native correction experiment.
 - Uses `Document.SelectableText`: native PDF text first; existing local OCR for
   images or pages without native text when enabled. Native PDF search works
   without OCR being enabled. Recognition stays transient and never modifies PDFs.
-- Reuses existing visible-page recognition cache. One search worker, 180 ms
+- Reuses visible-page recognition and retains layouts across queries in a
+  128-page / 16 MiB bounded cache. Source-revision checks are independent of
+  annotation edits and do not traverse all pages for each progress update.
+  Only the current match layer refreshes. One search worker, 180 ms
   debounce, per-page timeout, cancellation and stale-result guards; 10,000-match
   cap shown explicitly. Failed/unavailable pages are counted, not treated as
   a successful scan with no matches.

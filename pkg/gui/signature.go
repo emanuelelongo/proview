@@ -209,6 +209,9 @@ func (g *Gui) activatePDFPage(page int) {
 }
 
 func (g *Gui) pdfPageTop(page int) float32 {
+	if page >= 0 && len(g.pdfPageTops) == len(g.pdfPageContainers)+1 && page < len(g.pdfPageTops) {
+		return g.pdfPageTops[page]
+	}
 	top := float32(0)
 	for index := 0; index < page && index < len(g.pdfPageContainers); index++ {
 		top += g.pdfPageContainers[index].MinSize().Height + theme.Padding()
@@ -223,27 +226,22 @@ func (g *Gui) loadVisiblePDFPages() {
 	}
 	top := g.pdfScroll.Offset.Y
 	bottom := top + g.pdfScroll.Size().Height
-	lastVisible := -1
+	first, end := g.visiblePDFPageRange(top, bottom)
+	g.retainPDFPages(first, end)
 	selected, largestOverlap := -1, float32(0)
-	pageTop := float32(0)
-	for page, object := range g.pdfPageContainers {
-		pageBottom := pageTop + object.MinSize().Height
-		if pageBottom > top && pageTop < bottom {
-			g.loadPDFPage(page)
-			lastVisible = page
-			overlap := min(pageBottom, bottom) - max(pageTop, top)
-			if overlap > largestOverlap {
-				selected, largestOverlap = page, overlap
-			}
+	for page := first; page < end; page++ {
+		g.loadPDFPage(page)
+		overlap := min(g.pdfPageTops[page+1]-theme.Padding(), bottom) - max(g.pdfPageTops[page], top)
+		if overlap > largestOverlap {
+			selected, largestOverlap = page, overlap
 		}
-		pageTop = pageBottom + theme.Padding()
 	}
 	if selected >= 0 {
 		g.activatePDFPage(selected)
 	}
 	g.refreshPDFDetail()
-	if lastVisible >= 0 && lastVisible+1 < len(g.pdfPageContainers) {
-		g.loadPDFPage(lastVisible + 1)
+	if end > first && end < len(g.pdfPageContainers) {
+		g.loadPDFPage(end)
 	}
 }
 
@@ -257,14 +255,20 @@ func (g *Gui) loadVisiblePDFThumbnails() {
 	top := g.sidebar.container.Offset.Y
 	bottom := top + g.sidebar.container.Size().Height
 	thumbTop := float32(0)
-	lastVisible := -1
+	lastVisible, firstVisible := -1, -1
 	for page, object := range g.thumbList.Objects {
 		thumbBottom := thumbTop + object.MinSize().Height
 		if thumbBottom > top && thumbTop < bottom {
 			g.loadPDFThumbnail(page)
+			if firstVisible < 0 {
+				firstVisible = page
+			}
 			lastVisible = page
 		}
 		thumbTop = thumbBottom + theme.Padding()
+	}
+	if firstVisible >= 0 {
+		g.retainPDFThumbnails(firstVisible, lastVisible+1)
 	}
 	if lastVisible >= 0 && lastVisible+1 < len(g.thumbList.Objects) {
 		g.loadPDFThumbnail(lastVisible + 1)
@@ -276,23 +280,30 @@ func (g *Gui) loadPDFThumbnail(page int) {
 		return
 	}
 	g.pdfThumbLoading[page] = true
+	job, slots := g.startPDFRasterJob(page, true)
 	doc := g.document
 	generation := g.pdfGeneration
 	snapshot := doc.RenderingSnapshot()
 	started := time.Now()
 	go func() {
-		var preview image.Image
-		var err error
-		if overlays, _ := snapshot.OverlaysForPage(page); len(overlays) > 0 {
-			preview, err = snapshot.RenderPage(page)
-		} else {
-			preview, err = snapshot.Thumbnail(page)
-		}
+		preview, err := job.render(slots, func() (image.Image, error) {
+			if overlays, _ := snapshot.OverlaysForPage(page); len(overlays) > 0 || len(snapshot.RedactionsForPage(page)) > 0 {
+				return snapshot.RenderThumbnail(page)
+			}
+			return snapshot.Thumbnail(page)
+		})
 		fyne.Do(func() {
 			if g.closed || g.document != doc || generation != g.pdfGeneration || page >= len(g.pdfThumbLoading) {
 				return
 			}
+			if g.pdfThumbJobs[page] != job {
+				return
+			}
+			delete(g.pdfThumbJobs, page)
 			g.pdfThumbLoading[page] = false
+			if !g.pdfThumbWanted(page) {
+				return
+			}
 			if err != nil {
 				g.showOperationError("preview", err)
 				return
@@ -303,6 +314,7 @@ func (g *Gui) loadPDFThumbnail(page int) {
 			g.pdfThumbImages[page].Image = preview
 			g.pdfThumbImages[page].Refresh()
 			g.pdfThumbLoaded[page] = true
+			g.retainPDFThumbnailImage(page)
 			g.hideThumbnailPlaceholder(page)
 			if elapsed := time.Since(started); elapsed >= time.Second {
 				g.logEvent("pdf_thumbnail_slow", "page=%d elapsed=%s", page+1, elapsed.Round(time.Millisecond))
@@ -317,16 +329,29 @@ func (g *Gui) loadPDFPage(page int) {
 		return
 	}
 	g.pdfPageLoading[page] = true
+	job, slots := g.startPDFRasterJob(page, false)
 	doc := g.document
 	generation := g.pdfGeneration
 	snapshot := doc.RenderingSnapshot()
+	key := snapshot.BasePageKey(page)
 	go func() {
-		preview, err := snapshot.Preview(page)
+		preview, err := job.render(slots, func() (image.Image, error) { return snapshot.Preview(page) })
 		fyne.Do(func() {
 			if g.document != doc || generation != g.pdfGeneration || page >= len(g.pdfPageLoading) {
 				return
 			}
+			if g.pdfPageJobs[page] != job {
+				return
+			}
+			delete(g.pdfPageJobs, page)
 			g.pdfPageLoading[page] = false
+			if doc.BasePageKey(page) != key {
+				g.loadPDFPage(page)
+				return
+			}
+			if !g.pdfPageWanted(page) {
+				return
+			}
 			if err != nil {
 				g.showOperationError("preview", err)
 				return
@@ -335,47 +360,23 @@ func (g *Gui) loadPDFPage(page int) {
 			if g.pdfPageSizes[page] != preview.Bounds().Size() {
 				g.pdfPageSizes[page] = preview.Bounds().Size()
 				g.pdfPageImages[page].SetMinSize(fyne.NewSize(float32(preview.Bounds().Dx())*g.zoom, float32(preview.Bounds().Dy())*g.zoom))
+				g.updatePDFPageTops()
 				g.pdfPages.Refresh()
 			}
 			g.pdfPageImages[page].Refresh()
 			if layer := g.signatureLayers[page]; layer != nil {
 				layer.SetPageSize(preview.Bounds().Size())
+				layer.reload()
+				layer.Show()
+				g.refreshSearchHighlight()
 			}
 			g.pdfPageLoaded[page] = true
+			g.retainPDFPageImage(page)
 			g.refreshPDFDetail()
 			g.scheduleLensPreviews(g.signatureLayers[page])
 			if overlays, err := doc.SignaturesForPage(page); err == nil && (len(overlays) > 0 || len(doc.RedactionsForPage(page)) > 0) {
 				g.refreshPagePreview(page)
 			}
-		})
-	}()
-}
-
-func (g *Gui) refreshPagePreview(page int) {
-	if g.document == nil || g.document.Format() != document.FormatPDF ||
-		page < 0 || page >= len(g.pdfThumbImages) {
-		return
-	}
-	if page < len(g.pdfPageLoaded) && !g.pdfPageLoaded[page] {
-		return
-	}
-	doc := g.document
-	revision := doc.Revision()
-	snapshot := doc.RenderingSnapshot()
-	go func() {
-		preview, err := snapshot.RenderPage(page)
-		fyne.Do(func() {
-			if g.document != doc || doc.Revision() != revision || page >= len(g.pdfThumbImages) {
-				return
-			}
-			if err != nil {
-				g.showOperationError("preview", err)
-				return
-			}
-			g.pdfThumbImages[page].Image = preview
-			g.pdfThumbImages[page].Refresh()
-			g.pdfThumbLoaded[page] = true
-			g.hideThumbnailPlaceholder(page)
 		})
 	}()
 }

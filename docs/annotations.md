@@ -108,6 +108,17 @@ PDF content is rendered at a magnification-dependent sampling resolution before
 cropping into the lens, including vector annotation appearances. Sampling is
 bounded to 600 DPI, 16 million source pixels and an 8192-pixel long side. Preview
 output accounts for screen density; image sources retain their original detail.
+The Magnifier uses the Tabler `device-tablet-search` icon. A bounded per-window
+preview cache reuses the sampling page while moving a lens, and reuses source
+pixels for highlights and enhanced page previews. Earlier object edits, form
+values, page transforms and redactions invalidate the corresponding cache;
+exports keep their independent rendering path. Completed highlight fragments
+are reused until an object at or below their painter-order position changes.
+Live highlights use a small canvas texture covering only the selected bounds,
+avoiding a page-sized texture upload at every pointer move. Lens updates coalesce
+at 60 Hz; an obsolete render immediately starts the latest requested frame.
+Edited sidebar thumbnails update separately at 72 DPI after two seconds of
+editing inactivity, with one pending request per page and one active worker.
 
 ## Saving editable PDF objects
 

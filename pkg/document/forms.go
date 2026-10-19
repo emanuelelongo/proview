@@ -37,13 +37,23 @@ const (
 )
 
 func (s *Source) formFields() ([]pdfengine.FormField, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.formsLoaded {
+	// Metadata never changes with the immutable source. Keep its publication
+	// independent of the native raster lock used by preview workers.
+	s.formsOnce.Do(func() {
 		s.forms, s.formsErr = pdfengine.ReadForms(s.original)
-		s.formsLoaded = true
-	}
+		s.formsByPage = make(map[int][]pdfengine.FormField)
+		for _, field := range s.forms {
+			s.formsByPage[field.Page] = append(s.formsByPage[field.Page], field)
+		}
+	})
 	return s.forms, s.formsErr
+}
+
+func (s *Source) formFieldsForPage(page int) ([]pdfengine.FormField, error) {
+	if _, err := s.formFields(); err != nil {
+		return nil, err
+	}
+	return s.formsByPage[page], nil
 }
 
 func (d *Document) FormFields(page int) ([]FormField, error) {
@@ -54,7 +64,7 @@ func (d *Document) FormFields(page int) ([]FormField, error) {
 	if err != nil {
 		return nil, err
 	}
-	fields, err := source.formFields()
+	fields, err := source.formFieldsForPage(index)
 	if err != nil {
 		return nil, err
 	}
@@ -85,14 +95,9 @@ func (d *Document) HasFormFields() bool {
 		return false
 	}
 	for _, ref := range d.pages {
-		fields, err := ref.source.formFields()
-		if err != nil {
-			continue
-		}
-		for _, f := range fields {
-			if f.Page == ref.index {
-				return true
-			}
+		fields, err := ref.source.formFieldsForPage(ref.index)
+		if err == nil && len(fields) > 0 {
+			return true
 		}
 	}
 	return false

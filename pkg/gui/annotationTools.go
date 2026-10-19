@@ -576,6 +576,10 @@ func (g *Gui) renderAnnotationProperties(original document.Overlay, data annotat
 	doc := g.document
 	snapshot := doc.RenderingSnapshot()
 	lensDPI := g.lensPreviewDPI()
+	if g.previewRenderer == nil {
+		g.previewRenderer = &document.PreviewRenderer{}
+	}
+	renderer := g.previewRenderer
 	g.annotationPropertyGeneration++
 	generation := g.annotationPropertyGeneration
 	// Preview changes do not touch history. The final slider/text action replaces
@@ -639,7 +643,7 @@ func (g *Gui) renderAnnotationProperties(original document.Overlay, data annotat
 			if data.Kind == annotations.Shape && data.Shape == annotations.Magnifier {
 				err = snapshot.ReplaceAnnotation(current.ID, rect, data, prepared)
 				if err == nil {
-					displayPreview, err = snapshot.RenderLens(current.ID, lensDPI)
+					displayPreview, err = renderer.RenderLens(snapshot, current.ID, lensDPI)
 				}
 			}
 		}

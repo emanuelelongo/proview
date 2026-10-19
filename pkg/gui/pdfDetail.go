@@ -10,10 +10,11 @@ import (
 )
 
 type pdfDetailKey struct {
-	doc                  *document.Document
-	generation, revision uint64
-	page                 int
-	dpi                  float64
+	doc        *document.Document
+	generation uint64
+	content    document.PageBaseKey
+	page       int
+	dpi        float64
 }
 
 // Keep one enhanced page per window. Ordinary 144-DPI previews remain the
@@ -43,10 +44,15 @@ func (g *Gui) releasePDFDetail(s *pdfDetailState) {
 		g.pdfPageImages[page].Refresh()
 	}
 	s.image, s.fallback = nil, nil
+	g.previewRenderer = nil
 	s.rendered = pdfDetailKey{}
 }
 
 func (g *Gui) clearPDFDetail() {
+	g.clearPDFLoads()
+	g.clearPDFBasePreviews()
+	g.clearThumbnailRefresh()
+	g.previewRenderer = nil
 	if s := g.pdfDetail; s != nil {
 		if s.timer != nil {
 			s.timer.Stop()
@@ -68,7 +74,7 @@ func (g *Gui) refreshPDFDetail() {
 	if g.window != nil {
 		scale = float64(g.window.Canvas().Scale())
 	}
-	key := pdfDetailKey{doc: g.document, generation: g.pdfGeneration, revision: g.document.Revision(), page: page, dpi: pdfDisplayDPI(g.pdfPageSizes[page], float64(g.zoom), scale)}
+	key := pdfDetailKey{doc: g.document, generation: g.pdfGeneration, content: g.document.BasePageKey(page), page: page, dpi: pdfDisplayDPI(g.pdfPageSizes[page], float64(g.zoom), scale)}
 	if g.pdfDetail == nil {
 		g.pdfDetail = &pdfDetailState{}
 	}
@@ -97,15 +103,19 @@ func (g *Gui) renderPDFDetail(s *pdfDetailState) {
 		return
 	}
 	snapshot := key.doc.RenderingSnapshot()
+	if g.previewRenderer == nil {
+		g.previewRenderer = &document.PreviewRenderer{}
+	}
+	renderer := g.previewRenderer
 	s.running = true
 	go func() {
-		picture, err := snapshot.RenderBasePageDPI(key.page, key.dpi)
+		picture, err := renderer.RenderBasePageDPI(snapshot, key.page, key.dpi)
 		fyne.Do(func() {
 			s.running = false
 			if g.closed || g.pdfDetail != s {
 				return
 			}
-			if g.document != key.doc || g.pdfGeneration != key.generation || key.doc.Revision() != key.revision || s.target != key {
+			if g.document != key.doc || g.pdfGeneration != key.generation || key.doc.BasePageKey(key.page) != key.content || s.target != key {
 				g.refreshPDFDetail()
 				return
 			}

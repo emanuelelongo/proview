@@ -288,38 +288,7 @@ func (g *Gui) setFormsActive(active bool) {
 }
 
 // Render saved field appearances also when the form controls are hidden.
-func (g *Gui) refreshFormPreviews() {
-	if g.document == nil || g.document.Format() != document.FormatPDF || !g.document.HasFormFields() {
-		return
-	}
-	doc, revision, generation := g.document, g.document.Revision(), g.pdfGeneration
-	snapshot := doc.RenderingSnapshot()
-	for page := range g.pdfPageImages {
-		if !g.pdfPageLoaded[page] {
-			continue
-		}
-		go func() {
-			preview, err := snapshot.RenderBasePage(page)
-			thumb, thumbErr := snapshot.RenderPage(page)
-			fyne.Do(func() {
-				if g.document != doc || doc.Revision() != revision || g.pdfGeneration != generation {
-					return
-				}
-				if err != nil {
-					g.showOperationError("pdf_form", err)
-					return
-				}
-				g.pdfPageImages[page].Image = preview
-				g.pdfPageImages[page].Refresh()
-				g.refreshPDFDetail()
-				if thumbErr == nil {
-					g.pdfThumbImages[page].Image = thumb
-					g.pdfThumbImages[page].Refresh()
-				}
-			})
-		}()
-	}
-}
+func (g *Gui) refreshFormPreviews() { g.refreshPDFBasePreviews() }
 
 // A single PDF field can have widgets on several pages. Keep their controls
 // synchronized without replacing the entry that currently has keyboard focus.

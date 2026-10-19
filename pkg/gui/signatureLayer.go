@@ -29,6 +29,7 @@ type signatureLayer struct {
 	document         *document.Document
 	page             int
 	pageSize         image.Point
+	pageLayoutOwned  bool
 	zoom             float32
 	widgets          []*signatureWidget
 	selected         document.SignatureID
@@ -105,6 +106,9 @@ func (l *signatureLayer) SetZoom(zoom float32) {
 		zoom = 1
 	}
 	l.zoom = zoom
+	if l.pageLayoutOwned {
+		return
+	}
 	l.Refresh()
 }
 
@@ -292,6 +296,9 @@ func (r *signatureLayerRenderer) Layout(fyne.Size) {
 }
 
 func (r *signatureLayerRenderer) MinSize() fyne.Size {
+	if r.layer.pageLayoutOwned {
+		return fyne.Size{}
+	}
 	return fyne.NewSize(float32(r.layer.pageSize.X)*r.layer.zoom, float32(r.layer.pageSize.Y)*r.layer.zoom)
 }
 

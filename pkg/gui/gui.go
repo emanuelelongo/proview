@@ -41,7 +41,6 @@ type Gui struct {
 	correctionLayers                  map[int]*textCorrectionLayer
 	correctionDialog                  *dialog.CustomDialog
 	textMove                          *textMoveState
-	correctionPreviewKeys             map[int]string
 	modelViewport                     *modelViewport
 	modelPanel                        fyne.CanvasObject
 	modelCrop                         *cropOverlay
@@ -72,7 +71,17 @@ type Gui struct {
 	thumbnailSelectionFrozen          bool
 	pdfGeneration                     uint64
 	pdfDetail                         *pdfDetailState
+	pdfBasePreviews                   *pdfBasePreviewState
+	thumbnailRefresh                  *thumbnailRefreshState
 	pdfPageIDs                        []uint64
+	pdfPageTops                       []float32
+	pdfKeepStart, pdfKeepEnd          int
+	pdfThumbKeepStart                 int
+	pdfThumbKeepEnd                   int
+	pdfResident, pdfThumbResident     map[int]bool
+	pdfBaseKeys                       map[int]document.PageBaseKey
+	pdfLoadSlots                      chan struct{}
+	pdfPageJobs, pdfThumbJobs         map[int]*pdfRasterJob
 	pdfCrops                          map[int]*cropOverlay
 	app                               fyne.App
 	window                            fyne.Window
@@ -139,6 +148,7 @@ type Gui struct {
 	textEntry                         *annotationEntry
 	textPlacement                     *textPlacement
 	lensGeneration                    uint64
+	previewRenderer                   *document.PreviewRenderer
 	annotationTool                    annotationTool
 	temporarySelection                bool
 	selectionShiftKeys                uint8

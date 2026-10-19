@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"emanuelelongo/proview/pkg/annotations"
 	"image"
 	"math"
 	"testing"
@@ -76,6 +77,32 @@ func TestPDFDetailChangesPixelsWithoutChangingPageGeometry(t *testing.T) {
 	g.refreshPDFDetail()
 	if state.image != nil || state.fallback != nil || g.pdfPageImages[page].Image != fallback {
 		t.Fatal("ordinary zoom retained extra high resolution image")
+	}
+	g.closeWindow()
+}
+
+func TestPDFDetailSurvivesOverlayEditsWithoutAnotherRefresh(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	g.addDocument(workspacePDF(t, 1), nil, nil)
+	g.zoom = 2
+	g.applyZoom()
+	for g.pdfDetail == nil || g.pdfDetail.image == nil {
+		driver.runNext(t)
+	}
+	state, frame := g.pdfDetail, g.pdfDetail.image
+	data := annotations.Default(annotations.Shape)
+	data.Shape, data.PageWidth, data.PageHeight = annotations.Rectangle, 72, 72
+	data.Points = []annotations.Point{{X: 10, Y: 10}, {X: 30, Y: 30}}
+	g.addPageAnnotation(g.signatureLayers[0], data, 0, 0, nil)
+	for g.annotationPending > 0 {
+		driver.runNext(t)
+	}
+	if g.pdfDetail != state || state.image != frame || state.timer != nil || state.running {
+		t.Fatal("overlay edit invalidated source detail")
+	}
+	g.undo()
+	if state.image != frame || state.timer != nil {
+		t.Fatal("overlay Undo invalidated source detail")
 	}
 	g.closeWindow()
 }

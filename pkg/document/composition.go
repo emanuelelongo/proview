@@ -49,6 +49,12 @@ func (s SignatureOverlay) ArtworkAsset(aspect float64) (signaturesAsset []byte, 
 
 func (d *Document) RenderPage(page int) (image.Image, error) { return d.renderPageDPI(page, 144, true) }
 
+// RenderThumbnail composes editor objects at sidebar density, independently of
+// the interactive page and lens previews.
+func (d *Document) RenderThumbnail(page int) (image.Image, error) {
+	return d.renderPageDPI(page, pdfThumbnailDPI, true)
+}
+
 // RenderBasePageDPI renders source content and form values without editor overlays.
 // Pixel density never changes document coordinates or the ordinary preview cache.
 func (d *Document) RenderBasePageDPI(page int, dpi float64) (image.Image, error) {
@@ -69,11 +75,13 @@ func (d *Document) basePageDPI(page int, dpi float64) (image.Image, error) {
 		return nil, e
 	}
 
-	if dpi == 144 {
+	if dpi == pdfPreviewDPI {
 		return d.Preview(page)
 	}
 	preview, changed, e := d.formPreview(source, index, dpi)
-	if !changed {
+	if !changed && dpi == pdfThumbnailDPI {
+		preview, e = source.Thumbnail(index)
+	} else if !changed {
 		source.mu.Lock()
 		if source.pdf == nil {
 			source.mu.Unlock()
@@ -108,8 +116,24 @@ func (d *Document) renderPageWithHighlights(page int, dpi float64, lenses bool, 
 	if e != nil {
 		return nil, e
 	}
+	return d.composePage(page, dpi, lenses, previews, base)
+}
+
+func (d *Document) composePage(page int, dpi float64, lenses bool, previews map[OverlayID]image.Image, base image.Image) (image.Image, error) {
+	var e error
 	var out *image.NRGBA
-	for _, s := range d.signatures {
+	overlays := d.signatures
+	if previews != nil {
+		// Objects above the final highlight cannot affect any collected fragment.
+		last := -1
+		for i, s := range overlays {
+			if s.Page == page && s.IsHighlight() {
+				last = i
+			}
+		}
+		overlays = overlays[:last+1]
+	}
+	for _, s := range overlays {
 		if s.Page != page {
 			continue
 		}
@@ -187,6 +211,10 @@ func (d *Document) SafeRenderPage(page int, dpi float64) (image.Image, error) {
 }
 
 func (d *Document) RenderLens(id OverlayID, dpi float64) (image.Image, error) {
+	return d.renderLens(id, dpi, nil)
+}
+
+func (d *Document) renderLens(id OverlayID, dpi float64, cache *PreviewRenderer) (image.Image, error) {
 	i := d.signatureIndex(id)
 	if i < 0 || !d.signatures[i].IsLens() {
 		return nil, ErrSignatureNotFound
@@ -208,7 +236,13 @@ func (d *Document) RenderLens(id OverlayID, dpi float64) (image.Image, error) {
 		}
 		sampleDPI = lensSamplingDPI(dpi, zoom, size)
 	}
-	base, e := under.SafeRenderPage(s.Page, sampleDPI)
+	var base image.Image
+	var e error
+	if cache != nil {
+		base, e = cache.lens.render(under, s.Page, sampleDPI, true)
+	} else {
+		base, e = under.SafeRenderPage(s.Page, sampleDPI)
+	}
 	if e != nil {
 		return nil, e
 	}

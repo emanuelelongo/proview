@@ -3,6 +3,7 @@ package document
 import (
 	"bytes"
 	"context"
+	"math"
 	"strings"
 	"testing"
 
@@ -12,6 +13,135 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
+
+func TestTextCorrectionTaggedMoveHistoryAndReopen(t *testing.T) {
+	c := context.Background()
+	ctx, err := api.ReadValidateAndOptimize(c, bytes.NewReader(textPDF(t, "SECRET")), model.NewDefaultConfiguration(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, pageRef, _, err := ctx.PageDict(c, 1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := ctx.PageContent(page, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := ctx.NewStreamDictForBuf(append(append([]byte("/P << /MCID 0 >> BDC\n"), content...), []byte("\nEMC")...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = stream.Encode(); err != nil {
+		t.Fatal(err)
+	}
+	contentRef, err := ctx.IndRefForNewObject(*stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page["Contents"], page["StructParents"] = *contentRef, types.Integer(0)
+	root := types.Dict{"Type": types.Name("StructTreeRoot")}
+	rootRef, err := ctx.IndRefForNewObject(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	elementRef, err := ctx.IndRefForNewObject(types.Dict{"Type": types.Name("StructElem"), "S": types.Name("P"), "P": *rootRef, "Pg": *pageRef, "K": types.Integer(0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root["K"] = *elementRef
+	root["ParentTree"] = types.Dict{"Nums": types.Array{types.Integer(0), types.Array{*elementRef}}}
+	catalog, err := ctx.Catalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog["StructTreeRoot"], catalog["MarkInfo"] = *rootRef, types.Dict{"Marked": types.Boolean(true)}
+	var b bytes.Buffer
+	if err = api.WriteContext(c, ctx, &b); err != nil {
+		t.Fatal(err)
+	}
+	source, err := Load("tagged.pdf", bytes.NewReader(b.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	before := doc.RenderingSnapshot()
+	layout, err := before.CorrectionTextGeometry(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, count := correctionRange(t, doc, 0, "SECRET")
+	if rejected, err := before.PrepareTextCorrection(0, start, count, "EDIT", 0, 15); err == nil || rejected != nil || doc.CanUndo() || doc.Dirty() {
+		t.Fatal("tagged replacement changed document or was accepted")
+	}
+	prepared, err := before.PrepareTextCorrection(0, start, count, "SECRET", 0, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	if err = doc.ApplyTextCorrection(prepared); err != nil {
+		t.Fatal(err)
+	}
+	if doc.SourceRevision() == before.SourceRevision() || !doc.Dirty() || !bytes.Equal(doc.Original(), b.Bytes()) {
+		t.Fatal("tagged move lost source invalidation, history or immutable original")
+	}
+	assertPosition := func(d *Document, dy float64) {
+		t.Helper()
+		current, err := d.RenderingSnapshot().CorrectionTextGeometry(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(current.Glyphs) != len(layout.Glyphs) || math.Abs((current.Glyphs[0].Origin.Y-layout.Glyphs[0].Origin.Y)*layout.Height-dy) > .002 {
+			t.Fatal("tagged text movement/history changed glyph geometry")
+		}
+	}
+	assertPosition(doc, 15)
+	assertPosition(before, 0)
+	if !doc.Undo() || doc.CanUndo() || doc.Dirty() {
+		t.Fatal("tagged move was not one Undo operation")
+	}
+	assertPosition(doc, 0)
+	if !doc.Redo() {
+		t.Fatal("tagged move could not be redone")
+	}
+	assertPosition(doc, 15)
+	output, err := doc.Export(ExportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err = api.ReadValidateAndOptimize(c, bytes.NewReader(output), model.NewDefaultConfiguration(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err = ctx.Catalog()
+	if err != nil || catalog["StructTreeRoot"] == nil || catalog["MarkInfo"] == nil {
+		t.Fatalf("save lost tagged structure: %v", err)
+	}
+	reopenedSource, err := Load("reopened.pdf", bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := New(reopenedSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	assertPosition(reopened, 15)
+	start, count = correctionRange(t, reopened, 0, "SECRET")
+	again, err := reopened.RenderingSnapshot().PrepareTextCorrection(0, start, count, "SECRET", 0, -5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if err = reopened.ApplyTextCorrection(again); err != nil {
+		t.Fatal(err)
+	}
+	assertPosition(reopened, 10)
+}
 
 func correctionRange(t *testing.T, d *Document, page int, word string) (int, int) {
 	t.Helper()

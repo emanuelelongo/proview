@@ -149,6 +149,50 @@ vector artwork or separate Proview overlays as text obstacles. It does not repai
 already ambiguous source content automatically. There is no new I/O or expensive
 work during drag preview: validation runs once in the native worker on Apply/drop.
 
+## Restricted movement in tagged PDFs
+
+Added 2026-10-19. Tagged PDFs accept movement of unchanged, otherwise eligible
+horizontal text when the selection covers complete page-level `BT`/`ET` objects.
+A word may span several such objects, including Quartz PDFs with one object per
+glyph. A word embedded in a larger text object remains unsupported. Replacement,
+deletion and duplication in tagged PDFs also remain unsupported; attempted edits
+show a plain-language message explaining the supported actions.
+
+This is a separate native movement path. A dry filter pass proves unique
+source-glyph ownership and complete text objects. The writer then translates the
+original text matrices in place, keeping encoded strings, fonts, per-glyph
+spacing, marked-content scopes and logical content order. It never appends
+replacement text after the source `ET`. The structure tree, ParentTree, ID tree
+and alternative strings remain intact. A new stream isolates shared or
+array-valued page contents.
+
+The restricted path rejects source Form invocations, graphics-state/CTM changes
+inside text objects, malformed text/state nesting, explicit structure stream
+references and layout attributes/classes whose geometry would require updating.
+Structure traversal is bounded.
+Existing conservative font/style/geometry, inline alternative-text, transparency
+and overlap checks remain in force. This does not repair source tagging or
+provide arbitrary tagged-PDF editing.
+
+`basePDF` reuses any complete source in its natural page order, including a source
+created by a native edit. Recollecting those same pages through pdfcpu would drop
+their logical structure tree. Page collection/reorder/merge still uses the
+existing collection path; this work does not add tag remapping to those operations.
+
+Regression tests cover whole-word and per-glyph objects, fractional spacing and
+kerning, transformed CTMs, shared streams, structure/backlink equivalence,
+unchanged logical string order, repeated moves, overlap/unsupported rejection,
+one-step Undo/Redo, snapshots and editable save/reopen. Zero-distance moves render
+pixel-identically; other page content remains fixed.
+
+A local check used three words from the user's one-page Quartz PDF on 2026-10-19.
+The complete structure graph (ignoring semantically absent null entries), original
+glyph positions and raw reading sequence stayed unchanged after moving the words.
+MuPDF and independent Poppler rendering verified zero-distance moves; changed
+pixels in other moves stayed within the old/new word regions. Overlapping drops
+were rejected. Private artifacts stay under ignored `build/`; the Downloads
+original was not modified or added to fixtures. Desktop dragging needs user review.
+
 ## Current limits and remaining work
 
 - [ ] Desktop review of actual clicking, focus, Escape, dragging and
@@ -160,7 +204,8 @@ work during drag preview: validation runs once in the native worker on Apply/dro
 - [ ] Only uniformly styled horizontal Latin text and Latin/euro replacements.
       Mixed styles, rotated/vertical text, multi-character ligatures, ambiguous
       source-glyph matches and unsupported glyph mappings fail without output.
-- [ ] The page-wide preflight intentionally rejects tagged PDFs/alternative text,
+- [ ] Tagged PDFs support only the unchanged-text movement subset above. The
+      page-wide preflight intentionally rejects inline alternative text,
       non-filled/invisible text, Type 3/substituted/synthetic fonts, non-default
       horizontal text scaling. A supported selection on an otherwise unsupported
       page can therefore also be rejected. Transparency is checked on the selected
@@ -234,7 +279,7 @@ is intentionally not used for corrections, nor is redaction sanitation.
 ## Entry points
 
 - `internal/pdfengine/textedit.*`: content extraction, eligibility, removal,
-  insertion, font emission and full rewrite.
+  insertion, font emission, restricted tagged movement and full rewrite.
 - `pkg/document/text_editing.go`: immutable preparation and reversible source
   replacement. Rendering snapshots omit ID counters, so state comparison ignores
   those allocation counters while validating editable content.

@@ -18,13 +18,21 @@ func MultiplyHighlight(base, artwork image.Image, target image.Rectangle) image.
 	} else {
 		xdraw.BiLinear.Scale(mask, mask.Bounds(), artwork, artwork.Bounds(), draw.Src, nil)
 	}
+	// Composed pages and live draft backdrops are NRGBA. Reading their pixels
+	// directly avoids allocating interface colors for every highlighted pixel.
+	pixels, _ := base.(*image.NRGBA)
 	for y := 0; y < target.Dy(); y++ {
 		for x := 0; x < target.Dx(); x++ {
 			ink := mask.NRGBAAt(x, y)
 			if ink.A == 0 {
 				continue
 			}
-			under := color.NRGBAModel.Convert(base.At(target.Min.X+x, target.Min.Y+y)).(color.NRGBA)
+			var under color.NRGBA
+			if pixels != nil {
+				under = pixels.NRGBAAt(target.Min.X+x, target.Min.Y+y)
+			} else {
+				under = color.NRGBAModel.Convert(base.At(target.Min.X+x, target.Min.Y+y)).(color.NRGBA)
+			}
 			blend := func(c, b uint8) uint8 {
 				return uint8((uint32(c)*(255*255-uint32(under.A)*(255-uint32(b))) + 32512) / 65025)
 			}

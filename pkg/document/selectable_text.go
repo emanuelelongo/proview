@@ -31,7 +31,7 @@ func (d *Document) TextSelectionKey(page int) string {
 	security := ""
 	if d.HasRedactions() {
 		var b strings.Builder
-		fmt.Fprintf(&b, "%d", d.Revision())
+		fmt.Fprintf(&b, "%d", d.SourceRevision())
 		for _, r := range d.redactions {
 			fmt.Fprintf(&b, ";%d:%d:%v", r.ID, r.PageID, r.Quads)
 		}

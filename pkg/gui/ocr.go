@@ -10,7 +10,6 @@ import (
 	"emanuelelongo/proview/pkg/document"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/theme"
 )
 
 type ocrEntry struct {
@@ -26,7 +25,6 @@ type ocrJob struct {
 type ocrState struct {
 	engine    ocr.Engine
 	doc       *document.Document
-	revision  uint64
 	cache     map[string]*ocrEntry
 	requested []int
 	running   *ocrJob
@@ -42,7 +40,6 @@ func (g *Gui) stopOCR() {
 			g.ocr.running.cancel()
 		}
 		g.ocr.doc = nil
-		g.ocr.revision = 0
 		clear(g.ocr.cache)
 		g.ocr.requested = nil
 	}
@@ -56,12 +53,11 @@ func (g *Gui) syncOCR() {
 	if g.closed || g.document == nil {
 		return
 	}
-	rev := g.document.Revision()
 	if g.ocr == nil {
 		if !ocr.Enabled() {
 			return
 		}
-		g.ocr = &ocrState{engine: ocr.NewEngine(), doc: g.document, revision: rev, cache: map[string]*ocrEntry{}}
+		g.ocr = &ocrState{engine: ocr.NewEngine(), doc: g.document, cache: map[string]*ocrEntry{}}
 	}
 	s := g.ocr
 	docChanged := s.doc != g.document
@@ -73,20 +69,9 @@ func (g *Gui) syncOCR() {
 	if g.textSelection != nil && !g.validTextSelection() {
 		g.clearTextSelection()
 	}
-	if docChanged || s.revision != rev {
-		s.revision = rev
-		if len(s.cache) > 0 {
-			valid := make(map[string]bool, g.document.PageCount())
-			for page := 0; page < g.document.PageCount(); page++ {
-				valid[g.document.TextSelectionKey(page)] = true
-			}
-			for key := range s.cache {
-				if !valid[key] {
-					delete(s.cache, key)
-				}
-			}
-		}
-	}
+	// Cache keys identify immutable source geometry. Old entries may remain for
+	// Undo, but the bounded LRU never serves them to a different content key.
+
 	pages := g.recognitionPages()
 	s.requested = pages
 	if job := s.running; job != nil {
@@ -156,6 +141,7 @@ func (g *Gui) completeOCR(job *ocrJob, layout textselect.Layout, err error, canc
 	}
 	s.running = nil
 	if g.closed || g.document != job.doc || g.document.TextSelectionKey(job.page) != job.key || canceled {
+		delete(s.cache, job.key)
 		g.syncOCR()
 		return
 	}
@@ -196,13 +182,11 @@ func (g *Gui) recognitionPages() []int {
 		}
 		if g.pdfScroll != nil {
 			top, bottom := g.pdfScroll.Offset.Y, g.pdfScroll.Offset.Y+g.pdfScroll.Size().Height
-			y := float32(0)
-			for page, obj := range g.pdfPageContainers {
-				end := y + obj.MinSize().Height
-				if end > top && y < bottom && page != g.activePDFPage {
+			first, end := g.visiblePDFPageRange(top, bottom)
+			for page := first; page < end; page++ {
+				if page != g.activePDFPage {
 					pages = append(pages, page)
 				}
-				y = end + theme.Padding()
 			}
 		}
 	}

@@ -129,6 +129,7 @@ type Document struct {
 	activeEdit      *signatureEdit
 	imageTransform  img.Transform
 	revision        atomic.Uint64
+	sourceRevision  atomic.Uint64
 }
 
 type editorState struct {
@@ -324,7 +325,7 @@ func (d *Document) Undo() bool {
 	d.undoStack = d.undoStack[:index]
 	d.restore(entry.before)
 	d.redoStack = append(d.redoStack, entry)
-	d.revision.Add(1)
+	d.advanceRevision(entry.before, entry.after)
 	return true
 }
 
@@ -337,7 +338,7 @@ func (d *Document) Redo() bool {
 	d.redoStack = d.redoStack[:index]
 	d.restore(entry.after)
 	d.undoStack = append(d.undoStack, entry)
-	d.revision.Add(1)
+	d.advanceRevision(entry.before, entry.after)
 	return true
 }
 
@@ -779,11 +780,17 @@ func (d *Document) record(before editorState) {
 		d.undoStack = d.undoStack[:maxHistoryEntries]
 	}
 	d.redoStack = nil
-	d.revision.Add(1)
+	d.advanceRevision(before, after)
 }
 
 func (d *Document) stateEquals(other editorState, includeNextID bool) bool {
-	return editorStatesEqual(editorState{
+	return editorStatesEqual(d.stateView(), other, includeNextID)
+}
+
+// stateView borrows immutable payloads and mutable collection headers for an
+// immediate comparison only. Retained state must use snapshot instead.
+func (d *Document) stateView() editorState {
+	return editorState{
 		formValues:      d.formValues,
 		imageTransform:  d.imageTransform,
 		pages:           d.pages,
@@ -792,7 +799,7 @@ func (d *Document) stateEquals(other editorState, includeNextID bool) bool {
 		nextSignatureID: d.nextSignatureID,
 		redactions:      d.redactions,
 		nextRedactionID: d.nextRedactionID,
-	}, other, includeNextID)
+	}
 }
 
 func editorStatesEqual(first, second editorState, includeNextID bool) bool {

@@ -48,6 +48,9 @@ func (g *Gui) syncDocumentView() {
 			return
 		}
 		for page, layer := range g.signatureLayers {
+			if page < len(g.pdfPageLoaded) && !g.pdfPageLoaded[page] {
+				continue
+			}
 			layer.reload()
 			g.scheduleLensPreviews(layer)
 			g.refreshPagePreview(page)

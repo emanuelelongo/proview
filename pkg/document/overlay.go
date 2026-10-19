@@ -23,6 +23,7 @@ func (d *Document) RenderingSnapshot() *Document {
 	state := d.snapshot()
 	snap := &Document{formValues: state.formValues, source: d.source, pages: state.pages, crop: state.crop, signatures: state.signatures, redactions: state.redactions, imageTransform: state.imageTransform}
 	snap.revision.Store(d.Revision())
+	snap.sourceRevision.Store(d.SourceRevision())
 	return snap
 }
 

@@ -34,6 +34,10 @@ type documentSearch struct {
 	doc                      *document.Document
 	revision                 uint64
 	key                      string
+	textCache                *searchTextCache
+	highlightLayer           *signatureLayer
+	highlightSerial          uint64
+	highlightCurrent         int
 	hits                     []searchHit
 	current, scanned, failed int
 	running, limited         bool
@@ -95,6 +99,9 @@ func (g *Gui) closeSearch() {
 	}
 	s.running = false
 	s.hits = nil
+	s.textCache = nil
+	s.doc = nil
+	s.key = ""
 	s.current = -1
 	s.bar.Hide()
 	if s.host != nil {
@@ -109,12 +116,7 @@ func (g *Gui) searchKey() string {
 	if g.document == nil {
 		return ""
 	}
-	var b strings.Builder
-	for p := 0; p < g.document.PageCount(); p++ {
-		b.WriteString(g.document.TextSelectionKey(p))
-		b.WriteByte('|')
-	}
-	return b.String()
+	return fmt.Sprintf("%p:%d", g.document, g.document.SourceRevision())
 }
 func (g *Gui) syncSearch() {
 	if s := g.search; s != nil && s.bar.Visible() {
@@ -122,7 +124,7 @@ func (g *Gui) syncSearch() {
 			g.closeSearch()
 			return
 		}
-		rev := g.document.Revision()
+		rev := g.document.SourceRevision()
 		if s.doc != g.document || (s.revision != rev && s.key != g.searchKey()) {
 			g.startSearch()
 		} else {
@@ -140,9 +142,12 @@ func (g *Gui) startSearch() {
 		s.cancel()
 	}
 	s.serial++
+	if s.doc != g.document || s.textCache == nil {
+		s.textCache = &searchTextCache{}
+	}
 	s.doc = g.document
 	if g.document != nil {
-		s.revision = g.document.Revision()
+		s.revision = g.document.SourceRevision()
 	} else {
 		s.revision = 0
 	}
@@ -169,15 +174,13 @@ func (g *Gui) startSearch() {
 	} else if ocr.Enabled() {
 		engine = ocr.NewEngine()
 	}
-	// Reuse immutable recognition results that already exist for visible pages.
-	cached := map[int]textselect.Layout{}
+	cache := s.textCache
 	if g.ocr != nil {
-		for p := 0; p < doc.PageCount(); p++ {
-			if e := g.ocr.cache[doc.TextSelectionKey(p)]; e != nil {
-				cached[p] = e.layout
-			}
+		for key, entry := range g.ocr.cache {
+			cache.put(key, entry.layout)
 		}
 	}
+
 	go func() {
 		defer cancel()
 		timer := time.NewTimer(180 * time.Millisecond)
@@ -187,7 +190,7 @@ func (g *Gui) startSearch() {
 			return
 		case <-timer.C:
 		}
-		walkSearchPages(ctx, snapshot, query, engine, cached, func(page int, hits []searchHit, err error, last, limited bool) {
+		walkSearchPages(ctx, snapshot, query, engine, nil, func(page int, hits []searchHit, err error, last, limited bool) {
 			fyne.Do(func() {
 				if g.closed || s.serial != serial || g.document != doc || !s.bar.Visible() {
 					return
@@ -215,19 +218,27 @@ func (g *Gui) startSearch() {
 					g.updateSearchStatus()
 				}
 			})
-		})
+		}, cache)
 	}()
 }
 
 // A single cancellable worker scans pages in document order. Recognition data
 // stays transient; only match geometry is retained for navigation.
-func walkSearchPages(ctx context.Context, snapshot *document.Document, query string, engine ocr.Engine, cached map[int]textselect.Layout, emit func(int, []searchHit, error, bool, bool)) {
+func walkSearchPages(ctx context.Context, snapshot *document.Document, query string, engine ocr.Engine, cached map[int]textselect.Layout, emit func(int, []searchHit, error, bool, bool), caches ...*searchTextCache) {
+	var index *searchTextCache
+	if len(caches) > 0 {
+		index = caches[0]
+	}
 	total := 0
 	for page := 0; page < snapshot.PageCount(); page++ {
 		if ctx.Err() != nil {
 			return
 		}
 		layout, ok := cached[page]
+		key := snapshot.TextSelectionKey(page)
+		if !ok {
+			layout, ok = index.get(key)
+		}
 		var err error
 		if !ok {
 			pageCtx, stop := context.WithTimeout(ctx, 30*time.Second)
@@ -239,6 +250,9 @@ func walkSearchPages(ctx context.Context, snapshot *document.Document, query str
 		}
 		var hits []searchHit
 		if err == nil {
+			if !ok {
+				index.put(key, layout)
+			}
 			for _, m := range layout.Find(query, searchResultLimit-total) {
 				hit := searchHit{page: page}
 				for _, w := range layout.Range(m.Start, m.End) {
@@ -306,6 +320,8 @@ func (g *Gui) showSearchHit(index int) {
 				y += float32(hit.quads[0][0].Y)*g.pdfPageContainers[hit.page].Size().Height - g.pdfScroll.Size().Height/3
 			}
 			g.pdfScroll.ScrollToOffset(fyne.NewPos(g.pdfScroll.Offset.X, max(0, y)))
+			g.loadVisiblePDFPages()
+			g.activatePDFPage(hit.page)
 		}
 	} else if len(hit.quads) > 0 {
 		origin, size := g.imageSignatureLayer.displayRect()
@@ -316,38 +332,50 @@ func (g *Gui) showSearchHit(index int) {
 	g.updateSearchStatus()
 }
 func (g *Gui) refreshSearchHighlight() {
-	layers := []*signatureLayer{g.imageSignatureLayer}
-	for _, l := range g.signatureLayers {
-		layers = append(layers, l)
+	s := g.search
+	if s == nil {
+		return
 	}
-	for _, l := range layers {
-		if l == nil {
-			continue
+	var layer *signatureLayer
+	if s.bar.Visible() && s.current >= 0 && s.current < len(s.hits) && g.document != nil {
+		layer = g.imageSignatureLayer
+		if g.document.Format() == document.FormatPDF {
+			layer = g.signatureLayers[s.hits[s.current].page]
 		}
-		if l.searchHighlight != nil {
-			l.searchHighlight.Hide()
+	}
+	if previous := s.highlightLayer; previous != nil && previous != layer {
+		if previous.searchHighlight != nil {
+			previous.searchHighlight.Hide()
+			previous.Refresh()
 		}
-		s := g.search
-		if s != nil && s.bar.Visible() && s.current >= 0 && s.current < len(s.hits) && l.document == g.document && s.hits[s.current].page == l.page {
-			quads := s.hits[s.current].quads
-			l.searchHighlight = canvas.NewRaster(func(w, h int) image.Image {
-				out := image.NewRGBA(image.Rect(0, 0, w, h))
-				r := vector.NewRasterizer(w, h)
-				for _, q := range quads {
-					for i, p := range q {
-						x, y := float32(p.X*float64(w)), float32(p.Y*float64(h))
-						if i == 0 {
-							r.MoveTo(x, y)
-						} else {
-							r.LineTo(x, y)
-						}
-					}
-					r.ClosePath()
+	}
+	s.highlightLayer = layer
+	if layer == nil || layer.document != g.document {
+		return
+	}
+	if s.highlightSerial == s.serial && s.highlightCurrent == s.current && layer.searchHighlight != nil && layer.searchHighlight.Visible() {
+		return
+	}
+	s.highlightSerial, s.highlightCurrent = s.serial, s.current
+	l := layer
+
+	quads := s.hits[s.current].quads
+	l.searchHighlight = canvas.NewRaster(func(w, h int) image.Image {
+		out := image.NewRGBA(image.Rect(0, 0, w, h))
+		r := vector.NewRasterizer(w, h)
+		for _, q := range quads {
+			for i, p := range q {
+				x, y := float32(p.X*float64(w)), float32(p.Y*float64(h))
+				if i == 0 {
+					r.MoveTo(x, y)
+				} else {
+					r.LineTo(x, y)
 				}
-				r.Draw(out, out.Bounds(), image.NewUniform(color.NRGBA{R: 255, G: 170, B: 0, A: 110}), image.Point{})
-				return out
-			})
+			}
+			r.ClosePath()
 		}
-		l.Refresh()
-	}
+		r.Draw(out, out.Bounds(), image.NewUniform(color.NRGBA{R: 255, G: 170, B: 0, A: 110}), image.Point{})
+		return out
+	})
+	l.Refresh()
 }

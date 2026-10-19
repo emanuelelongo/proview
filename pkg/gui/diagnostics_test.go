@@ -123,6 +123,22 @@ func TestErrorDialogsUseTheReportingBoundary(t *testing.T) {
 	}
 }
 
+func TestTaggedTextEditFailureExplainsSupportedActions(t *testing.T) {
+	for _, reason := range []string{
+		"pdfengine: Only unchanged-text movement is supported for tagged PDFs",
+		"pdfengine: Text duplication is not yet supported for tagged PDFs",
+	} {
+		message := textEditErrorMessage(errors.New(reason))
+		if !strings.Contains(message, "supports moving text") || strings.Contains(message, "tagged") || strings.Contains(message, "pdfengine") {
+			t.Fatalf("unexpected tagged edit message: %q", message)
+		}
+	}
+	message := textEditErrorMessage(errors.New("pdfengine: Tagged text movement requires complete source text objects"))
+	if !strings.Contains(message, "larger text block") || strings.Contains(message, "source text objects") {
+		t.Fatalf("unexpected partial-object message: %q", message)
+	}
+}
+
 func TestTextEditFailureSeparatesUserMessageFromDiagnostic(t *testing.T) {
 	app := fyneTest.NewApp()
 	defer app.Quit()

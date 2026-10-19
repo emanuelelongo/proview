@@ -3,6 +3,7 @@ package gui
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"testing"
 
@@ -30,6 +31,9 @@ func TestClosingSearchRestoresDocumentViewport(t *testing.T) {
 		t.Fatal("search did not reserve space")
 	}
 	g.closeSearch()
+	if g.search.doc != nil || g.search.textCache != nil {
+		t.Fatal("closed search retained its document or text index")
+	}
 	if g.mainSplit.Position() != position || g.mainSplit.Size() != size {
 		t.Fatalf("viewport not restored: %v %v, want %v %v", g.mainSplit.Position(), g.mainSplit.Size(), position, size)
 	}
@@ -137,5 +141,56 @@ func TestSearchNavigationEscapeAndInvalidation(t *testing.T) {
 	g.closeSearch()
 	if s.serial == oldSerial || s.running {
 		t.Fatal("closing did not invalidate pending callbacks")
+	}
+}
+
+func TestSearchIndexReusesRecognitionAcrossQueriesAndInvalidatesGeometry(t *testing.T) {
+	doc := testDocument(t, 100, 100)
+	defer doc.Close()
+	engine := &searchOCR{}
+	index := &searchTextCache{}
+	scan := func(query string) {
+		t.Helper()
+		walkSearchPages(context.Background(), doc.RenderingSnapshot(), query, engine, nil, func(_ int, _ []searchHit, err error, _, _ bool) {
+			if err != nil {
+				t.Error(err)
+			}
+		}, index)
+	}
+	scan("found")
+	scan("absent")
+	if engine.calls != 1 {
+		t.Fatal("query change reran OCR")
+	}
+	if err := doc.TransformImage("right"); err != nil {
+		t.Fatal(err)
+	}
+	scan("found")
+	if engine.calls != 2 {
+		t.Fatal("source geometry reused stale search layout")
+	}
+	if !doc.Undo() {
+		t.Fatal("undo failed")
+	}
+	scan("found")
+	if engine.calls != 2 {
+		t.Fatal("undo did not reuse immutable original layout")
+	}
+}
+
+func TestSearchTextCacheEvictsOldEntriesAndRejectsOversizedLayouts(t *testing.T) {
+	index := &searchTextCache{}
+	for n := 0; n < searchTextCachePages+1; n++ {
+		index.put(fmt.Sprint(n), textselect.Layout{})
+	}
+	if _, ok := index.get("0"); ok {
+		t.Fatal("old cache entry was retained past capacity")
+	}
+	if _, ok := index.get("128"); !ok {
+		t.Fatal("newest cache entry was evicted")
+	}
+	index.put("oversized", textselect.Layout{Words: make([]textselect.Word, searchTextCacheBytes/128+1)})
+	if _, ok := index.get("oversized"); ok {
+		t.Fatal("oversized text layout exceeded memory budget")
 	}
 }

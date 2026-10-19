@@ -288,6 +288,9 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.thumbnailSelection = nil
 	g.pdfGeneration++
 	g.clearPDFDetail()
+	g.pdfPageTops = nil
+	g.pdfKeepStart, g.pdfKeepEnd, g.pdfThumbKeepStart, g.pdfThumbKeepEnd = 0, 0, 0, 0
+	g.pdfResident, g.pdfThumbResident, g.pdfBaseKeys = nil, nil, nil
 	g.deactivatePDFCrops()
 	g.pdfCrops = nil
 	g.pdfPageIDs = nil
@@ -347,6 +350,10 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	g.pdfGeneration++
 	g.clearPDFDetail()
 	generation := g.pdfGeneration
+	g.pdfPageTops = nil
+	g.pdfKeepStart, g.pdfKeepEnd, g.pdfThumbKeepStart, g.pdfThumbKeepEnd = 0, 0, 0, 0
+	g.pdfResident, g.pdfThumbResident = map[int]bool{0: true}, map[int]bool{0: true}
+	g.pdfBaseKeys = map[int]document.PageBaseKey{0: loadedDocument.BasePageKey(0)}
 	g.deactivatePDFCrops()
 	g.pdfCrops = make(map[int]*cropOverlay)
 	g.pdfPageIDs = loadedDocument.PageIDs()
@@ -368,7 +375,6 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	signatureLayers := make(map[int]*signatureLayer, loadedDocument.PageCount())
 	g.formLayers = make(map[int]*formLayer, loadedDocument.PageCount())
 	g.correctionLayers = make(map[int]*textCorrectionLayer, loadedDocument.PageCount())
-	g.correctionPreviewKeys = make(map[int]string, loadedDocument.PageCount())
 	panOverlays := make([]*panOverlay, 0, loadedDocument.PageCount())
 
 	firstPreview, err := loadedDocument.Preview(0)
@@ -404,7 +410,11 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		pageBorders = append(pageBorders, pageBorder)
 
 		layer := newSignatureLayer(loadedDocument, page, pageSize, g.selectSignature, g.activatePDFPage, g.documentChanged)
+		layer.pageLayoutOwned = true
 		g.bindAnnotationLayer(layer)
+		if page != 0 {
+			layer.Hide()
+		}
 		signatureLayers[page] = layer
 		pan := newPanOverlay(g.pdfScroll)
 		panOverlays = append(panOverlays, pan)
@@ -415,7 +425,6 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		g.formLayers[page] = forms
 		correction := newTextCorrectionLayer(g, page)
 		g.correctionLayers[page] = correction
-		g.correctionPreviewKeys[page] = loadedDocument.TextSelectionKey(page)
 		pageContainer := container.NewCenter(container.NewStack(canvas.NewRectangle(color.White), pageImage, pageBorder, layer, crop, forms, correction, pan))
 		objects = append(objects, pageContainer)
 		pageContainers = append(pageContainers, pageContainer)
@@ -445,6 +454,8 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 			g.loadPDFPage(index)
 			g.activatePDFPage(index)
 			g.pdfScroll.ScrollToOffset(fyne.NewPos(g.pdfScroll.Offset.X, g.pdfPageTop(index)))
+			g.loadVisiblePDFPages()
+			g.activatePDFPage(index)
 		}
 
 		goToPage.onDrag = func(event *fyne.DragEvent) { g.dragThumbnail(index, loadedDocument, generation, event) }

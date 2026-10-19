@@ -43,6 +43,9 @@ func (p *panOverlay) Dragged(event *fyne.DragEvent) {
 		p.scroll.Offset.X-float32(event.Dragged.DX),
 		p.scroll.Offset.Y-float32(event.Dragged.DY),
 	))
+	if p.scroll.OnScrolled != nil {
+		p.scroll.OnScrolled(p.scroll.Offset)
+	}
 }
 
 func (p *panOverlay) DragEnd() {}

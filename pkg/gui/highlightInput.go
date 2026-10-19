@@ -4,6 +4,7 @@ import (
 	"context"
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 	xdraw "golang.org/x/image/draw"
+	"golang.org/x/image/math/f64"
 	"golang.org/x/image/vector"
 )
 
@@ -32,6 +34,7 @@ type highlightInput struct {
 	cancelLoad                context.CancelFunc
 	draft                     []annotations.Quad
 	preview                   *canvas.Raster
+	previewRect               document.NormalizedRect
 	backdrop                  image.Image
 }
 
@@ -160,12 +163,32 @@ func (p *highlightInput) update(position fyne.Position) {
 	quads := append([]annotations.Quad(nil), p.draft...)
 	data := p.data
 	backdrop := p.backdrop
+	// Use a small canvas object as well as a small raster. A transparent page-
+	// sized texture still costs an allocation, GPU upload and draw on each move.
+	left, top, right, bottom := 1., 1., 0., 0.
+	for _, quad := range quads {
+		for _, point := range quad {
+			x, y := point.X/data.PageWidth, point.Y/data.PageHeight
+			left, top = math.Min(left, x), math.Min(top, y)
+			right, bottom = math.Max(right, x), math.Max(bottom, y)
+		}
+	}
+	_, display := p.layer.displayRect()
+	vw, vh := math.Max(1, float64(display.Width)), math.Max(1, float64(display.Height))
+	left, top = math.Max(0, (math.Floor(left*vw)-1)/vw), math.Max(0, (math.Floor(top*vh)-1)/vh)
+	right, bottom = math.Min(1, (math.Ceil(right*vw)+1)/vw), math.Min(1, (math.Ceil(bottom*vh)+1)/vh)
+	rect := document.NormalizedRect{X: left, Y: top, Width: right - left, Height: bottom - top}
+	if rect.Width <= 0 || rect.Height <= 0 {
+		return
+	}
+	p.previewRect = rect
 	generator := func(w, h int) image.Image {
-		frame := image.NewNRGBA(image.Rect(0, 0, w, h))
+		mask := image.NewNRGBA(image.Rect(0, 0, w, h))
 		r := vector.NewRasterizer(w, h)
 		for _, q := range quads {
-			for i, p := range q {
-				x, y := float32(p.X/data.PageWidth*float64(w)), float32(p.Y/data.PageHeight*float64(h))
+			for i, point := range q {
+				x := float32((point.X/data.PageWidth - rect.X) / rect.Width * float64(w))
+				y := float32((point.Y/data.PageHeight - rect.Y) / rect.Height * float64(h))
 				if i == 0 {
 					r.MoveTo(x, y)
 				} else {
@@ -176,18 +199,21 @@ func (p *highlightInput) update(position fyne.Position) {
 		}
 		c := data.Color
 		c.A = 255
-		r.Draw(frame, frame.Bounds(), image.NewUniform(c), image.Point{})
+		r.Draw(mask, mask.Bounds(), image.NewUniform(c), image.Point{})
 		if backdrop != nil {
-			base := image.NewNRGBA(frame.Bounds())
-			xdraw.BiLinear.Scale(base, base.Bounds(), backdrop, backdrop.Bounds(), xdraw.Src, nil)
-			return document.MultiplyHighlight(base, frame, frame.Bounds())
+			base := image.NewNRGBA(mask.Bounds())
+			bounds := backdrop.Bounds()
+			sx := float64(w) / (rect.Width * float64(bounds.Dx()))
+			sy := float64(h) / (rect.Height * float64(bounds.Dy()))
+			mapping := f64.Aff3{sx, 0, -rect.X*float64(w)/rect.Width - float64(bounds.Min.X)*sx, 0, sy, -rect.Y*float64(h)/rect.Height - float64(bounds.Min.Y)*sy}
+			xdraw.BiLinear.Transform(base, mapping, backdrop, bounds, draw.Src, nil)
+			return document.MultiplyHighlight(base, mask, mask.Bounds())
 		}
-		// Geometry can arrive before the page image; keep the gesture visible
-		// without covering text while the page loads.
-		for i := 3; i < len(frame.Pix); i += 4 {
-			frame.Pix[i] = uint8(uint16(frame.Pix[i]) * 77 / 255)
+		// Keep the gesture visible before page pixels become available.
+		for i := 3; i < len(mask.Pix); i += 4 {
+			mask.Pix[i] = uint8(uint16(mask.Pix[i]) * 77 / 255)
 		}
-		return frame
+		return mask
 	}
 	if p.preview == nil {
 		p.preview = canvas.NewRaster(generator)
@@ -257,8 +283,8 @@ func (r *highlightInputRenderer) Objects() []fyne.CanvasObject {
 func (r *highlightInputRenderer) Layout(size fyne.Size) {
 	r.background.Resize(size)
 	if r.pad.preview != nil {
-		origin, size := r.pad.layer.displayRect()
-		r.pad.preview.Move(origin)
+		position, size := r.pad.layer.widgetRect(r.pad.previewRect)
+		r.pad.preview.Move(position)
 		r.pad.preview.Resize(size)
 	}
 }

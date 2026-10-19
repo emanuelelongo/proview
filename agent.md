@@ -43,6 +43,12 @@ append-at-page-end fallback. Custom Tc/Tw spacing uses context-local
 processor hooks and positioned replacement glyphs; retain q/Q state, source
 encoding rules and the generated Form's `ProviewTextSpacing` metadata for later
 edits. Mixed selected spacing and inherited source-Form spacing remain rejected.
+Tagged PDFs support only unchanged-text moves covering complete page-level text
+objects. Keep the encoded glyphs and marked-content order; translate text matrices
+in place instead of removing/reinserting text. Reject unsupported partial
+objects, source Forms, explicit structure stream references and layout
+attributes/classes. Reuse a complete ordered edited source in `basePDF` so
+saving/re-editing retains its structure tree.
 Native edits/moves/duplicates must reject overlaps with other source text before
 committing. Duplicate (`copy-plus`) starts a drag, preserves the source word and
 creates one Undo operation on a valid drop; further drops move that new copy.
@@ -208,6 +214,9 @@ PDF page combination/reordering/deletion and blank pages.
 
 ## Architecture and performance
 
+Read [docs/performance.md](docs/performance.md) for current cache ownership,
+invalidation, viewport residency and repeatable performance checks.
+
 - Entry point: `cmd/gui`. Packages: `document` (sources, model, history, export),
   `gui` (Fyne), `signatures` (library and SVG acquisition), `annotations` (geometry,
   text and fonts), `images` (image operations).
@@ -274,11 +283,20 @@ PDF page combination/reordering/deletion and blank pages.
 - Use `collectPDFPages` when collecting original source pages: pdfcpu rejects
   C2PA's `AFRelationship /C2PA_Manifest`. The compatibility path accepts only that
   extension during validation and validates the collected output normally.
+- `SourceRevision` tracks source/geometry/forms/sanitation independently of overlay
+  history. Preserve it in rendering snapshots and advance it on source Undo/Redo.
+  `BasePageKey` identifies each source page and its field values; use it for
+  base/enhanced previews so unrelated edits do not cancel valid work.
+- PDF source rasters use a 64 MiB per-source LRU. GUI page/thumbnail rasters have
+  separate viewport residency with neighboring pages and editing/selection pins.
+  Keep page geometry while evicting pixels. Bound native loading to two calls
+  per window; cancel obsolete waiting work and reject stale publications.
+- Form metadata and page-size reads must not wait for the native raster mutex.
 - PDF previews render lazily at 144 DPI; the primary visible page receives a
   coalesced zoom/Retina enhancement (600 DPI, 16 million pixels, 8192 long side
   maximum). Retain only one enhanced page per window and preserve logical page
   geometry, scroll offsets and immutable ordinary previews. Keep the last frame
-  visible during rendering; reject obsolete document/generation/revision requests.
+  visible during rendering; reject obsolete document/generation/content requests.
   Highlight fragments follow the enhanced pixel density. Thumbnails remain at
   72 DPI to stay sharp at
   the sidebar's maximum width. Load thumbnails
@@ -495,8 +513,21 @@ PDF page combination/reordering/deletion and blank pages.
 - `SafeRenderPage` uses actual PDF removal/sanitation before raster derivatives when
   redactions exist, including all shared-image reuses. Both area copy and magnifiers
   must use this safe path; visual redaction masks and hover reveals are insufficient.
-- Lens drag previews are coalesced per layer and checked against document revision
-  and generation. Keep expensive rendering off the UI thread; stale results must
+- Preview workers share one bounded `document.PreviewRenderer` per window: one
+  base raster for enhanced pages/highlights and one sanitized lens sampling raster.
+  Lens movement reuses the sampling page; earlier objects, source/form edits,
+  transforms and redactions invalidate it. Keep these caches separate from history
+  and export. Cache completed highlight fragments by their painter-order prefix;
+  later lens movement must neither recompose nor reupload unchanged highlights.
+  The base, lens and highlight workers have separate locks. Live highlights use
+  a bounds-sized canvas texture, never a transparent page-sized upload.
+- Edited sidebar thumbnails are eventual: coalesce requests per page, wait for
+  two seconds of editing inactivity and render one update at a time at 72 DPI.
+  Keep initial visible-thumbnail loading lazy and immediate. Discard obsolete
+  document/generation/revision results and cancel timers on view teardown.
+- Lens drag previews use a 60-Hz coalescing interval and immediately replace an
+  obsolete frame with the latest request, without another debounce delay. They
+  are checked against document revision and generation. Keep expensive rendering off the UI thread; stale results must
   not replace a newer preview.
 - Canvas SVG output needs CSS rgba normalized to explicit paint opacity before
   reparsing; preserve alpha rather than relying on the upstream fractional-alpha parser.

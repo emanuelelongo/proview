@@ -307,6 +307,7 @@ func (g *Gui) revealThumbnail(page int) {
 		offset = bottom - g.sidebar.container.Size().Height
 	}
 	g.sidebar.container.ScrollToOffset(fyne.NewPos(0, max(0, offset)))
+	g.loadVisiblePDFThumbnails()
 }
 
 func (g *Gui) thumbnailContextMenu(page int, event *fyne.PointEvent) {

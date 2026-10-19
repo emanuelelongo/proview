@@ -85,15 +85,8 @@ func (g *Gui) updateZoomAt(point *fyne.Position) {
 	page := 0
 	if pdf {
 		y := scroll.Offset.Y + anchor.Y
-		top := float32(0)
-		for i, object := range g.pdfPageContainers {
-			page = i
-			bottom := top + object.MinSize().Height
-			if y <= bottom {
-				break
-			}
-			top = bottom + theme.Padding()
-		}
+		page, _ = g.visiblePDFPageRange(y, y+1)
+		page = min(page, max(0, len(g.pdfPageContainers)-1))
 	}
 	origin, size := g.zoomPageRect(scroll, page, pdf)
 	relative := fyne.NewPos((scroll.Offset.X+anchor.X-origin.X)/max(1, size.Width), (scroll.Offset.Y+anchor.Y-origin.Y)/max(1, size.Height))
@@ -177,6 +170,7 @@ func (g *Gui) layoutZoom() {
 				layer.SetZoom(g.zoom)
 			}
 		}
+		g.updatePDFPageTops()
 		g.pdfPages.Refresh()
 		return
 	}

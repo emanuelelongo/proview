@@ -432,39 +432,4 @@ func (l *textCorrectionLayer) DragEnd() {
 
 // Source replacement is reversible in document history. Refresh base-page
 // images when that source changes, including Undo/Redo, without rebuilding UI.
-func (g *Gui) refreshCorrectionPreviews() {
-	if g.document == nil || g.document.Format() != document.FormatPDF {
-		return
-	}
-	if g.correctionPreviewKeys == nil {
-		g.correctionPreviewKeys = map[int]string{}
-	}
-	for page := range g.pdfPageImages {
-		key := g.document.TextSelectionKey(page)
-		if g.correctionPreviewKeys[page] == key {
-			continue
-		}
-		g.correctionPreviewKeys[page] = key
-		if !g.pdfPageLoaded[page] {
-			continue
-		}
-		doc, revision, generation := g.document, g.document.Revision(), g.pdfGeneration
-		snapshot := doc.RenderingSnapshot()
-		go func() {
-			preview, err := snapshot.RenderBasePage(page)
-			fyne.Do(func() {
-				if g.closed || g.document != doc || doc.Revision() != revision || g.pdfGeneration != generation {
-					return
-				}
-				if err != nil {
-					g.logEvent("operation_failed", "level=ERROR operation=pdf_text_preview page=%d error=%q", page+1, err)
-					g.showErrorMessage(operationErrorMessage("preview", err))
-					return
-				}
-				g.pdfPageImages[page].Image = preview
-				g.pdfPageImages[page].Refresh()
-				g.refreshPDFDetail()
-			})
-		}()
-	}
-}
+func (g *Gui) refreshCorrectionPreviews() { g.refreshPDFBasePreviews() }

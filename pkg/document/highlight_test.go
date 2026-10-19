@@ -3,6 +3,7 @@ package document
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -131,5 +132,45 @@ func TestNativeHighlightFullColorAndBlackTextThroughPDFRoundtrip(t *testing.T) {
 				t.Fatal("flattening rasterized vector content")
 			}
 		}
+	}
+}
+
+// Keep the image.Image fallback as an independent reference for direct reads.
+type genericHighlightImage struct{ image.Image }
+
+func TestMultiplyHighlightDirectPixelsMatchGenericColors(t *testing.T) {
+	base := image.NewNRGBA(image.Rect(13, 21, 269, 25))
+	for y := 21; y < 25; y++ {
+		for x := 13; x < 269; x++ {
+			base.SetNRGBA(x, y, color.NRGBA{R: uint8(x), G: uint8(y), B: 100, A: uint8(x - 13)})
+		}
+	}
+	mask := image.NewNRGBA(image.Rect(0, 0, 256, 4))
+	draw.Draw(mask, mask.Bounds(), image.NewUniform(color.NRGBA{R: 80, G: 220, B: 10, A: 177}), image.Point{}, draw.Src)
+	for _, target := range []image.Rectangle{base.Bounds(), image.Rect(10, 20, 266, 24)} {
+		actual := MultiplyHighlight(base, mask, target).(*image.NRGBA)
+		expected := MultiplyHighlight(genericHighlightImage{base}, mask, target).(*image.NRGBA)
+		if !bytes.Equal(actual.Pix, expected.Pix) {
+			t.Fatal("direct blending changed alpha, subimage offsets or clipping")
+		}
+	}
+}
+
+func BenchmarkMultiplyHighlight(b *testing.B) {
+	base := image.NewNRGBA(image.Rect(0, 0, 1800, 40))
+	draw.Draw(base, base.Bounds(), image.White, image.Point{}, draw.Src)
+	mask := image.NewNRGBA(base.Bounds())
+	draw.Draw(mask, mask.Bounds(), image.NewUniform(color.NRGBA{255, 235, 0, 255}), image.Point{}, draw.Src)
+	for _, direct := range []bool{false, true} {
+		b.Run(fmt.Sprintf("direct=%v", direct), func(b *testing.B) {
+			var source image.Image = genericHighlightImage{base}
+			if direct {
+				source = base
+			}
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				MultiplyHighlight(source, mask, base.Bounds())
+			}
+		})
 	}
 }

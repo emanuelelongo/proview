@@ -184,6 +184,10 @@ func textEditErrorMessage(err error) string {
 		return "This text would overlap other text. Move it to a free area or use shorter text."
 	case strings.Contains(reason, "document changed"):
 		return "The document changed. Select the text again."
+	case strings.Contains(reason, "unchanged-text movement"), strings.Contains(reason, "duplication is not yet supported for tagged"):
+		return "This PDF currently supports moving text, but not changing or duplicating it. Your document has not been changed."
+	case strings.Contains(reason, "tagged text movement requires complete source text objects"):
+		return "This word is part of a larger text block that Proview can't move independently yet. Your document has not been changed."
 	case strings.Contains(reason, "font lacks replacement"), strings.Contains(reason, "missing glyph"), strings.Contains(reason, "cannot encode"), strings.Contains(reason, "not available in"):
 		return "The current font can't display some of the new characters. Try different text."
 	case strings.Contains(reason, "not supported"), strings.Contains(reason, "unsupported"), strings.Contains(reason, "only "):

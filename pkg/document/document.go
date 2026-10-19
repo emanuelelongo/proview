@@ -41,19 +41,22 @@ const (
 )
 
 type pageData struct {
-	preview   image.Image
-	thumbnail image.Image
-	size      image.Point
+	preview                    image.Image
+	thumbnail                  image.Image
+	size                       image.Point
+	previewUsed, thumbnailUsed uint64
 }
 
 type Source struct {
 	annotationBase    *Source
 	importedOverlays  []Overlay
 	hasPDFAnnotations bool
-	formsLoaded       bool
+	formsOnce         sync.Once
 	forms             []pdfengine.FormField
+	formsByPage       map[int][]pdfengine.FormField
 	formsErr          error
 	mu                sync.Mutex
+	sizeMu            sync.RWMutex
 	name              string
 	location          string
 	format            Format
@@ -61,6 +64,8 @@ type Source struct {
 	pages             []pageData
 	pdf               *fitz.Document
 	textLayouts       map[int]TextLayout
+	rasterClock       uint64
+	rasterBytes       int64
 }
 
 func Load(name string, reader io.Reader) (*Source, error) {
@@ -187,9 +192,14 @@ func (s *Source) Preview(page int) (image.Image, error) {
 			return nil, fmt.Errorf("render PDF page %d: %w", page+1, err)
 		}
 		s.pages[page].preview = preview
+		s.rasterBytes += rasterBytes(preview)
+		s.sizeMu.Lock()
 		s.pages[page].size = preview.Bounds().Size()
+		s.sizeMu.Unlock()
 	}
-	return s.pages[page].preview, nil
+	preview := s.pages[page].preview
+	s.touchRaster(page, false)
+	return preview, nil
 }
 
 func (s *Source) Thumbnail(page int) (image.Image, error) {
@@ -220,8 +230,11 @@ func (s *Source) Thumbnail(page int) (image.Image, error) {
 			return nil, fmt.Errorf("render PDF thumbnail %d: %w", page+1, err)
 		}
 		s.pages[page].thumbnail = thumbnail
+		s.rasterBytes += rasterBytes(thumbnail)
 	}
-	return s.pages[page].thumbnail, nil
+	thumbnail := s.pages[page].thumbnail
+	s.touchRaster(page, true)
+	return thumbnail, nil
 }
 
 // openPDF must be called with s.mu held.
@@ -235,8 +248,8 @@ func (s *Source) openPDF() error {
 }
 
 func (s *Source) PageSize(page int) (image.Point, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.sizeMu.RLock()
+	defer s.sizeMu.RUnlock()
 	if page < 0 || page >= len(s.pages) {
 		return image.Point{}, fmt.Errorf("document: page %d out of range", page)
 	}

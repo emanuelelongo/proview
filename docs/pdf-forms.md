@@ -98,6 +98,12 @@ and removes fields/actions while sanitizing the document.
   use `maps.EqualFunc`/`slices.Equal`, not pointer equality. Sources stay immutable.
 - `pkg/document/pages.go`: apply each source's field edits before native page collection,
   rotation/merge and overlay export. Form edits must survive those operations.
+- `pkg/gui/pdfBasePreviews.go`: one coalesced source-preview worker renders only
+  resident pages whose `BasePageKey` changed. Linked widgets refresh every
+  affected page; obsolete values cannot overwrite newer input or Undo.
+- `pkg/gui/thumbnailRefresh.go`: field edits share the deferred sidebar queue;
+  render changed thumbnails at 72 DPI after two seconds of editing inactivity.
+  Page appearances and lens/highlight updates remain on the interactive path.
 - `pkg/gui/forms.go`, `formMultiList.go`, `formToggle.go`: page-aligned controls,
   selection synchronization, passive required-field borders and preview refresh.
 - `pkg/gui/toolbar.go`, `menu.go`, `lifecycle.go`: pulse presentation and lifecycle.
@@ -156,3 +162,13 @@ is ready for user review; no packages were built or published.
 Follow-up verification (2026-10-16): multiple-choice rows visually checked with
 headless renders in light and dark themes after removing the stretched light
 background around checkboxes; `go test ./pkg/gui` passed.
+
+Performance follow-up (2026-10-19, Linux): field edits now defer sidebar thumbnail
+composition to the shared idle queue. Automated checks cover coalescing, 72-DPI
+output, stale revision/view rejection, form cache invalidation and Undo.
+`go test ./...` and `go vet ./...` passed; desktop review remains separate.
+
+Further performance verification (2026-10-19): per-page field indexing and content
+keys, coalesced source previews, linked-field invalidation and independent metadata
+locks are covered by native/document/GUI regressions and targeted race checks.
+See [Interactive performance](performance.md) for memory policy and benchmarks.
