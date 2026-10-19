@@ -34,8 +34,16 @@ jobs:
         run: |
           if command -v gdb > /dev/null; then
             cd internal/pdfengine
-            gdb --batch -ex 'set pagination off' -ex 'set print thread-events off' \
-              -ex 'set auto-load python-scripts off' -ex run -ex 'thread apply all bt 24' \
+            cat > ../../build/native-diagnostics/commands.gdb <<'GDB'
+            set pagination off
+            set print thread-events off
+            set auto-load python-scripts off
+            run
+            bt 24
+            info registers
+            thread apply all bt 16
+          GDB
+            gdb -nx --batch -x ../../build/native-diagnostics/commands.gdb \
               --args ../../build/native-diagnostics/pdfengine.test.exe -test.v -test.count=100 \
               -test.timeout=5m -test.run '^TestTextCorrectionTaggedMoveRejects'
           else
@@ -43,3 +51,5 @@ jobs:
           fi
       - name: Exercise rejection paths without a debugger
         run: go test -v -count=100 -run '^TestTextCorrectionTaggedMoveRejects' -timeout 5m ./internal/pdfengine
+      - name: All native tests without a debugger
+        run: go test -v -count=10 -shuffle=on -timeout 5m ./internal/pdfengine
