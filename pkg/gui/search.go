@@ -254,10 +254,7 @@ func walkSearchPages(ctx context.Context, snapshot *document.Document, query str
 				index.put(key, layout)
 			}
 			for _, m := range layout.Find(query, searchResultLimit-total) {
-				hit := searchHit{page: page}
-				for _, w := range layout.Range(m.Start, m.End) {
-					hit.quads = append(hit.quads, w.Quad)
-				}
+				hit := searchHit{page: page, quads: layout.MatchQuads(m)}
 				hits = append(hits, hit)
 			}
 		}

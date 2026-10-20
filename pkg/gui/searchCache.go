@@ -43,9 +43,9 @@ func (c *searchTextCache) put(key string, layout textselect.Layout) {
 		return
 	}
 	// Conservative accounting includes geometry, string headers and map overhead.
-	size := 256 + len(key) + cap(layout.Words)*128
+	size := 256 + len(key) + cap(layout.Words)*160
 	for _, word := range layout.Words {
-		size += len(word.Text)
+		size += len(word.Text) + cap(word.Characters)*80
 	}
 	if size > searchTextCacheBytes {
 		return

@@ -10,11 +10,20 @@ type Point struct{ X, Y float64 }
 
 // Quad is ordered around the perimeter, rather than by screen position.
 type Quad [4]Point
+
+// Character offsets address UTF-8 bytes in Word.Text. A recognized symbol may
+// contain multiple runes, so its geometry must stay together during selection.
+type Character struct {
+	Start, End int
+	Quad       Quad
+}
 type Word struct {
-	Text        string
-	Quad        Quad
-	Block, Line int
-	Confidence  float64
+	Text         string
+	Quad         Quad
+	Block, Line  int
+	Confidence   float64
+	Characters   []Character
+	JoinPrevious bool
 }
 type Layout struct {
 	Width, Height float64
@@ -82,7 +91,7 @@ func (l Layout) Text(a, b int) string {
 				out.WriteString("\n\n")
 			} else if words[i-1].Line != w.Line {
 				out.WriteByte('\n')
-			} else {
+			} else if !w.JoinPrevious {
 				out.WriteByte(' ')
 			}
 		}
@@ -92,20 +101,57 @@ func (l Layout) Text(a, b int) string {
 }
 func (l *Layout) Transform(turns int, flipX, flipY bool) {
 	for i := range l.Words {
-		for j, p := range l.Words[i].Quad {
-			if flipX {
-				p.X = 1 - p.X
+		l.Words[i].Quad = transformQuad(l.Words[i].Quad, turns, flipX, flipY)
+		// Layouts can share immutable character data through caches and snapshots.
+		if len(l.Words[i].Characters) > 0 {
+			chars := append([]Character(nil), l.Words[i].Characters...)
+			for j := range chars {
+				chars[j].Quad = transformQuad(chars[j].Quad, turns, flipX, flipY)
 			}
-			if flipY {
-				p.Y = 1 - p.Y
-			}
-			for n := 0; n < turns; n++ {
-				p = Point{1 - p.Y, p.X}
-			}
-			l.Words[i].Quad[j] = p
+			l.Words[i].Characters = chars
 		}
 	}
 	if turns%2 != 0 {
 		l.Width, l.Height = l.Height, l.Width
 	}
+}
+
+func transformQuad(q Quad, turns int, flipX, flipY bool) Quad {
+	for j, p := range q {
+		if flipX {
+			p.X = 1 - p.X
+		}
+		if flipY {
+			p.Y = 1 - p.Y
+		}
+		for n := 0; n < turns; n++ {
+			p = Point{1 - p.Y, p.X}
+		}
+		q[j] = p
+	}
+	return q
+}
+
+// SelectionLayout reuses the word selection path with individual OCR symbols.
+// Words without character geometry retain their original selection behavior.
+func (l Layout) SelectionLayout() Layout {
+	count := 0
+	for _, w := range l.Words {
+		count += max(1, len(w.Characters))
+	}
+	if count == len(l.Words) {
+		// A one-symbol word has the same selectable extent as its word.
+		return l
+	}
+	out := Layout{Width: l.Width, Height: l.Height, Words: make([]Word, 0, count)}
+	for _, w := range l.Words {
+		if len(w.Characters) == 0 {
+			out.Words = append(out.Words, w)
+			continue
+		}
+		for i, c := range w.Characters {
+			out.Words = append(out.Words, Word{Text: w.Text[c.Start:c.End], Quad: c.Quad, Block: w.Block, Line: w.Line, Confidence: w.Confidence, JoinPrevious: i > 0})
+		}
+	}
+	return out
 }

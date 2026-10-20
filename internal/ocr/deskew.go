@@ -124,6 +124,13 @@ func rotateForOCR(src image.Image, angle float64) (image.Image, rotation) {
 func (r rotation) restore(layout textselect.Layout) textselect.Layout {
 	words := make([]textselect.Word, 0, len(layout.Words))
 	for _, word := range layout.Words {
+		word.Characters = append([]textselect.Character(nil), word.Characters...)
+		for i := range word.Characters {
+			for j, p := range word.Characters[i].Quad {
+				x, y := p.X*layout.Width-r.tx, p.Y*layout.Height-r.ty
+				word.Characters[i].Quad[j] = textselect.Point{X: (r.cosine*x + r.sine*y) / float64(r.width), Y: (-r.sine*x + r.cosine*y) / float64(r.height)}
+			}
+		}
 		center := textselect.Point{}
 		for j, p := range word.Quad {
 			x, y := p.X*layout.Width-r.tx, p.Y*layout.Height-r.ty

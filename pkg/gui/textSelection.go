@@ -47,12 +47,12 @@ func (l *signatureLayer) textPoint(pos fyne.Position) textselect.Point {
 	return textselect.Point{X: float64((pos.X - origin.X) / size.Width), Y: float64((pos.Y - origin.Y) / size.Height)}
 }
 func (l *signatureLayer) startTextSelection(pos fyne.Position, mods fyne.KeyModifier) bool {
-	return l.startSourceSelection(pos, mods, l.selectableLayout(), false)
+	return l.startSourceSelection(pos, mods, l.selectableLayout(), false, true)
 }
 func (l *signatureLayer) startQRCodeSelection(pos fyne.Position, mods fyne.KeyModifier) bool {
-	return l.startSourceSelection(pos, mods, l.qrLayout(), true)
+	return l.startSourceSelection(pos, mods, l.qrLayout(), true, false)
 }
-func (l *signatureLayer) startSourceSelection(pos fyne.Position, mods fyne.KeyModifier, layout *textselect.Layout, qrCode bool) bool {
+func (l *signatureLayer) startSourceSelection(pos fyne.Position, mods fyne.KeyModifier, layout *textselect.Layout, qrCode, characters bool) bool {
 	g := l.editor
 	if g == nil || g.working || g.effectiveAnnotationTool() != toolSelect || mods&fyne.KeyModifierAlt != 0 {
 		return false
@@ -63,6 +63,11 @@ func (l *signatureLayer) startSourceSelection(pos fyne.Position, mods fyne.KeyMo
 	word := layout.WordAt(l.textPoint(pos), false)
 	if word < 0 {
 		return false
+	}
+	if characters {
+		units := layout.SelectionLayout()
+		layout = &units
+		word = layout.WordAt(l.textPoint(pos), true)
 	}
 	g.clearAreaSelection()
 	g.clearTextSelection()
@@ -141,7 +146,7 @@ func (l *signatureLayer) refreshTextHighlight() {
 	l.Refresh()
 }
 func (l *signatureLayer) DoubleTapped(e *fyne.PointEvent) {
-	if l.startQRCodeSelection(e.Position, l.editorModifiers()) || l.startTextSelection(e.Position, l.editorModifiers()) {
+	if l.startQRCodeSelection(e.Position, l.editorModifiers()) || l.startSourceSelection(e.Position, l.editorModifiers(), l.selectableLayout(), false, false) {
 		l.finishTextSelection()
 	}
 }

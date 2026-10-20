@@ -24,9 +24,11 @@ engine configuration. The Redact tool remains independent of text selection.
 
 ## Interaction
 
-In Select, drag starting on a recognized word to select words and lines on that
-page. Double-click selects a word. Only selected words are highlighted; there is
-no recognition button, progress overlay or permanent box around detected text.
+In Select, drag starting on recognized OCR text to select individual characters
+and text across words and lines on that page. Double-click selects a whole word.
+Words without valid character coordinates retain whole-word selection. Only
+selected characters or words are highlighted; there is no recognition button,
+progress overlay or permanent box around detected text.
 The cursor changes over recognized text. The bottom bar shows the selected text
 without a prefix and pauses tips until deselection. If the entire selected text
 is a web address, click it in the bottom bar to open it in the default browser
@@ -45,15 +47,24 @@ gesture until release. There is no cross-page text selection or edge autoscroll.
 
 - Tesseract LSTM (`--oem 1`), `ita+eng`, automatic page segmentation (`--psm 3`),
   adaptive Sauvola thresholding (`thresholding_method=2`), and
-  TSV output through `-c tessedit_create_tsv=1`. This does not require the optional
-  installed `tsv` configuration file. PNG input and TSV output use pipes; document
-  pixels and recognized text are never written to temporary files by Proview.
+  hOCR output through `-c tessedit_create_hocr=1 -c hocr_char_boxes=1`. Character
+  coordinates come from the same recognition pass, without an extra subprocess
+  or recognition request during dragging/search. PNG input and hOCR output use
+  pipes; document pixels and recognized text are never written to temporary files
+  by Proview.
+- Predominantly dark inputs are converted to light backgrounds before deskewing
+  and recognition. A bounded pixel sample must be at least 75% dark (luminance
+  below 128); transparency is interpreted over white. Only the transient OCR
+  raster changes, with unchanged dimensions and word coordinates. This heuristic
+  helps dark terminal/editor screenshots; it does not segment mixed light/dark
+  regions. See [Tesseract's input-quality guidance](https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html).
 - A conservative Otsu retry (`thresholding_method=0`) runs only when at least
-  80% of sampled pixels are dark (grayscale below 96) and the primary result is
-  not already strong (mean confidence at least 90 and at least 90% of words with
+  80% of sampled source pixels are dark (grayscale below 96) and the primary
+  result is not already strong (mean confidence at least 90 and at least 90% of words with
   confidence 80 or above). Light scans and strong primary results keep one pass.
-  The retry uses the same encoded pixels, language models, segmentation and
-  deskew geometry, with a three-second subprocess deadline. It is skipped when
+  Eligibility is checked before polarity normalization and deskewing.
+  The retry uses the same normalized, encoded pixels, language models,
+  segmentation and deskew geometry, with a three-second subprocess deadline. It is skipped when
   fewer than four seconds remain in the parent job. Retry errors/timeouts keep
   the primary result; document cancellation still discards the entire job.
 - Supplemental words require confidence at least 85, a letter or digit and no
@@ -74,7 +85,8 @@ gesture until release. There is no cross-page text selection or edge autoscroll.
   mirrored orientations. Image OCR uses the cropped, untransformed source; the word geometry then follows
   editor rotations and flips. This avoids attempting OCR on text mirrored by an
   editor transform. Native PDF rotation is handled by MuPDF; editor rotation is
-  mapped to the recognized geometry. Automatic deskewing maps TSV boxes back to inclined quadrilaterals on the source.
+  mapped to the recognized geometry. Automatic deskewing maps word and character
+  boxes back to inclined quadrilaterals on the source.
   Perspective and page curvature are not corrected.
 - PDFs are rendered at up to 300 DPI, with their longest side capped at 2400
   pixels. Image OCR uses the same 2400-pixel cap, preserving aspect ratio and never
@@ -97,8 +109,9 @@ gesture until release. There is no cross-page text selection or edge autoscroll.
 ## Reproduce the evaluation
 
 `task ocr:probe` creates PNG/PDF fixtures, expected/actual text and `report.json`
-in ignored `build/ocr-corpus`. Fixtures are generated from the bundled Go font;
-no private documents are used. Accuracy is `max(0, 1 - word edit distance / expected
+in ignored `build/ocr-corpus`. Fixtures are generated from the bundled Go font,
+including a dark screenshot with small text; no private documents are used.
+Accuracy is `max(0, 1 - word edit distance / expected
 word count)`, case- and punctuation-sensitive and independent of whitespace.
 This also penalizes incorrect reading order. The photograph case is a synthetic
 4-degree slant plus illumination gradient, **not a real photograph**.
@@ -110,18 +123,21 @@ and are not peak process/RSS measurements. Use OS process monitoring for total
 memory when evaluating large real documents. Results do not measure GUI latency.
 
 Run `task check` for unit/regression tests. The ordinary suite does not require
-Tesseract. The probe requires it and performs real recognition. A malformed TSV,
-a missing language, timeout, canceled/replaced document, image transformations,
+Tesseract. The probe requires it and performs real recognition. Malformed hOCR,
+missing/invalid character coordinates with word fallback, a missing language, timeout, canceled/replaced document, image transformations,
 clipboard precedence, cache reuse/eviction, sanitized native text, shared-image
 redaction propagation and failure without an unsafe fallback are covered
 by focused tests. Retry tests cover the light/strong-result bypass, immutable
 primary words, uncovered-region insertion and ordering, duplicate/noise rejection,
 empty-primary recovery, coordinate mismatch, errors, deadlines and cancellation.
+A subprocess regression test verifies that dark-input normalization preserves retry
+eligibility and both passes retain character coordinates.
 
 Manual desktop acceptance checklist (repeat on each target platform):
 
 1. Open each generated fixture with `task run`; select forwards/backwards,
-   double-click, copy and paste into an external text editor.
+   drag inside words in both directions, double-click, copy and paste into an
+   external text editor. Search for a substring and compare its character highlight.
 2. Compare untouched image appearance, hover cursor and selection alignment at
    fit, 100% and enlarged zoom; rotate/flip/crop and repeat.
 3. Drag before OCR finishes, Alt-drag over text/objects, edit an annotation entry,
@@ -143,6 +159,22 @@ TESSDATA_PREFIX="$PWD/build/ocr/tessdata" go run ./cmd/ocrprobe -file /path/to/i
 This prints word counts, confidence and timings only. Confidence is the engine's
 estimate, not measured transcription accuracy. Local source files are not copied
 and recognized text is not saved by this command.
+
+On 2026-10-20, a local dark terminal screenshot tested through the document
+recognition path improved from 48 to 130 detected words after polarity
+normalization. Words with confidence at least 80 increased from 18 to 109;
+mean confidence increased from 60.9 to 88.0, with runtime about 0.5 seconds.
+These are detection/confidence measurements, not transcription accuracy against
+a reference. The synthetic dark screenshot scored 100% word accuracy; existing
+corpus accuracy was unchanged, including the known mixed-PDF limitation.
+With character geometry enabled, the same screenshot still yields 130 words in
+about 0.5 seconds, and corpus transcription accuracy is unchanged. Search cache
+accounting includes character allocations within its existing 16 MiB budget. A
+12,000-character synthetic selection benchmark measured about 0.7 ms to prepare
+selection units and 0.45 ms per worst-case nearest-character lookup, with no
+lookup allocations (Linux amd64, Intel i7-13700H). These are local measurements,
+not a cross-platform GUI latency guarantee. Both changes are not yet released.
+The local screenshot was not committed.
 
 ## Automatic text rotation
 

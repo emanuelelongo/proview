@@ -83,13 +83,17 @@ func TestRotationPreservesCornersAndSelectionGeometry(t *testing.T) {
 			x, y := p.X*200, p.Y*100
 			quad[j] = textselect.Point{X: (r.cosine*x - r.sine*y + r.tx) / float64(rotated.Bounds().Dx()), Y: (r.sine*x + r.cosine*y + r.ty) / float64(rotated.Bounds().Dy())}
 		}
-		restored := r.restore(textselect.Layout{Width: float64(rotated.Bounds().Dx()), Height: float64(rotated.Bounds().Dy()), Words: []textselect.Word{{Text: "example", Quad: quad}}})
+		characters := []textselect.Character{{Start: 0, End: 7, Quad: quad}}
+		restored := r.restore(textselect.Layout{Width: float64(rotated.Bounds().Dx()), Height: float64(rotated.Bounds().Dy()), Words: []textselect.Word{{Text: "example", Quad: quad, Characters: characters}}})
 		if len(restored.Words) != 1 || restored.WordAt(textselect.Point{X: .3, Y: .3}, false) != 0 || restored.Text(0, 0) != "example" {
 			t.Fatal("selection not restored")
 		}
 		for j, p := range restored.Words[0].Quad {
 			if math.Hypot(p.X-want[j].X, p.Y-want[j].Y) > 1e-9 {
 				t.Fatal("incorrect inverse mapping")
+			}
+			if restored.Words[0].Characters[0].Quad[j] != p || characters[0].Quad[j] != quad[j] {
+				t.Fatal("character mapping changed cached geometry or disagrees with word")
 			}
 		}
 	}

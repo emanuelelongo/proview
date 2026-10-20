@@ -47,7 +47,7 @@ Proview opens the most common image formats and supports basic editing, such as 
   <img src="docs/screenshots/image-editing.png" alt="Image editing: Lenna with a crop selection and confirmation controls." width="400">
 </a>
 
-It also has a built-in OCR engine that recognizes text in images and scanned documents, making it easy to copy text or open links.
+It also has a built-in OCR engine that recognizes text in images and scanned PDFs, making it easy to select and copy text, open links or search with **Ctrl/Command+F**. OCR runs locally; recognized text is searchable inside Proview but is not embedded in saved files.
 
 <a href="docs/screenshots/ocr.png" target="_blank" rel="noopener noreferrer">
   <img src="docs/screenshots/ocr.png" alt="OCR: recognized text selected directly in an image." width="400">
@@ -129,8 +129,10 @@ limitations and development status are in [PDF forms](docs/pdf-forms.md).
 
 ### Search and edit PDF text
 
-Find searches the entire document, using native PDF text or available OCR for
-images/scanned pages. The **Edit PDF Text** prototype supports small text edits,
+Find (**Ctrl/Command+F**) searches the entire document, using native PDF text or
+OCR text in images and scanned PDF pages. OCR search works inside Proview;
+it does not add a searchable text layer to exported PDFs.
+The **Edit PDF Text** prototype supports small text edits,
 moving and duplicating native words, with Undo and searchable PDF output.
 It does not reflow surrounding text or edit scanned lettering. See
 [document search](docs/text-search.md) and [native text editing](docs/pdf-text-editing.md)

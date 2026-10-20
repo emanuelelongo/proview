@@ -2,6 +2,11 @@
 
 Implemented on `prototype/pdf-forms`, 2026-10-16, in a separate commit from forms
 and native text correction. No dependency on the native correction experiment.
+Released in v1.10 on 2026-10-19.
+
+Find searches OCR text in both images and scanned PDF pages inside Proview.
+Recognized text is not embedded in saved images or exported PDFs; OCR does not
+create a searchable PDF for use in other applications.
 
 - Find: Ctrl/Command+F. Next/previous: F3/Shift+F3 or Ctrl/Command+G and
   Ctrl/Command+Shift+G. Inside Find, Enter/Shift+Enter navigate; Escape closes.
@@ -9,7 +14,9 @@ and native text correction. No dependency on the native correction experiment.
   normalization; phrases can cross line breaks within a page. No regex/replace.
 - Sequential background scan of the entire document, with progress, partial
   results, wraparound navigation and a highlight on the current match. Partial
-  word matches highlight whole words because OCR only provides word geometry.
+  OCR word matches highlight only matching character boxes when available.
+  Native PDF text and OCR words without valid character geometry retain whole-word
+  highlights. Match offsets map normalized Unicode back to the original text.
 - Uses `Document.SelectableText`: native PDF text first; existing local OCR for
   images or pages without native text when enabled. Native PDF search works
   without OCR being enabled. Recognition stays transient and never modifies PDFs.

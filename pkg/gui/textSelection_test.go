@@ -233,3 +233,34 @@ func TestSelectionStatusPausesTipsAndPreservesPreference(t *testing.T) {
 		})
 	}
 }
+
+func TestOCRCharacterSelectionClipboardAndDoubleClick(t *testing.T) {
+	g, l := annotationTestGui(t)
+	layout := installTestText(g)
+	boundaries := []float64{.1, .12, .15, .17, .19, .25}
+	start := 0
+	for i, r := range layout.Words[0].Text {
+		end := i + len(string(r))
+		n := len(layout.Words[0].Characters)
+		layout.Words[0].Characters = append(layout.Words[0].Characters, textselect.Character{Start: start, End: end, Quad: textselect.Rect(boundaries[n], .1, boundaries[n+1], .2)})
+		start = end
+	}
+	g.ocr.cache[g.document.TextSelectionKey(0)] = &ocrEntry{layout: layout}
+	for _, points := range [][2]float32{{160, 215}, {215, 160}} {
+		l.MouseDown(mouseAt(points[0], 225))
+		l.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(points[1], 225)}})
+		l.MouseUp(mouseAt(points[1], 225))
+		g.copyArea()
+		if got := g.window.Clipboard().Content(); got != "ffè" {
+			t.Fatalf("partial copy %q", got)
+		}
+		if g.document.Dirty() {
+			t.Fatal("selection changed history")
+		}
+	}
+	l.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(160, 225)})
+	g.copyArea()
+	if got := g.window.Clipboard().Content(); got != "Caffè" {
+		t.Fatalf("double click copied %q", got)
+	}
+}

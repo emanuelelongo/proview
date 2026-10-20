@@ -77,7 +77,7 @@ func TestRetrySupplementsWithoutReplacingAnyPrimaryWords(t *testing.T) {
 	if len(got.Words) != 4 || got.Text(0, 3) != "heading\n\nfirst middle last" {
 		t.Fatalf("unexpected supplement: %q", got.Text(0, len(got.Words)-1))
 	}
-	if got.Words[1] != before[0] || got.Words[3] != before[1] || !reflect.DeepEqual(primary.Words, before) {
+	if !reflect.DeepEqual(got.Words[1], before[0]) || !reflect.DeepEqual(got.Words[3], before[1]) || !reflect.DeepEqual(primary.Words, before) {
 		t.Fatal("modified primary text/geometry/confidence/order")
 	}
 	if got.Words[2].Block != primary.Words[0].Block || got.Words[2].Line != primary.Words[0].Line {
@@ -124,7 +124,7 @@ func TestSupplementGeometryAndReadingOrder(t *testing.T) {
 	secondary := retryLayout(retryWord("between", .1, .3, 95), retryWord("below", .1, .6, 95))
 	secondary.Words[1].Line = 1
 	got, err := supplementWords(context.Background(), primary, secondary)
-	if err != nil || len(got.Words) != 4 || got.Words[0] != primary.Words[0] || got.Words[2] != primary.Words[1] || got.Words[1].Text != "between" || got.Words[3].Text != "below" {
+	if err != nil || len(got.Words) != 4 || !reflect.DeepEqual(got.Words[0], primary.Words[0]) || !reflect.DeepEqual(got.Words[2], primary.Words[1]) || got.Words[1].Text != "between" || got.Words[3].Text != "below" {
 		t.Fatalf("reading order: %+v %v", got, err)
 	}
 	secondary.Width = 200

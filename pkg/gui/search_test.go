@@ -194,3 +194,29 @@ func TestSearchTextCacheEvictsOldEntriesAndRejectsOversizedLayouts(t *testing.T)
 		t.Fatal("oversized text layout exceeded memory budget")
 	}
 }
+
+func TestSearchUsesOCRCharacterGeometry(t *testing.T) {
+	doc := testDocument(t, 100, 100)
+	defer doc.Close()
+	word := textselect.Word{Text: "banana", Quad: textselect.Rect(.1, .1, .7, .2)}
+	for i := range word.Text {
+		word.Characters = append(word.Characters, textselect.Character{Start: i, End: i + 1, Quad: textselect.Rect(.1+float64(i)*.1, .1, .2+float64(i)*.1, .2)})
+	}
+	layout := textselect.Layout{Width: 100, Height: 100, Words: []textselect.Word{word}}
+	walkSearchPages(context.Background(), doc.RenderingSnapshot(), "ana", nil, map[int]textselect.Layout{0: layout}, func(page int, hits []searchHit, err error, last, limited bool) {
+		if err != nil || len(hits) != 2 || len(hits[0].quads) != 3 || len(hits[1].quads) != 3 {
+			t.Fatalf("hits=%+v err=%v", hits, err)
+		}
+		if hits[0].quads[0] != word.Characters[1].Quad || hits[1].quads[0] != word.Characters[3].Quad {
+			t.Fatal("substring highlights were not narrowed")
+		}
+	})
+}
+
+func TestSearchCacheAccountsForCharacterGeometry(t *testing.T) {
+	index := &searchTextCache{}
+	index.put("characters", textselect.Layout{Words: []textselect.Word{{Text: "huge", Characters: make([]textselect.Character, searchTextCacheBytes/80+1)}}})
+	if _, ok := index.get("characters"); ok {
+		t.Fatal("character geometry bypassed memory budget")
+	}
+}

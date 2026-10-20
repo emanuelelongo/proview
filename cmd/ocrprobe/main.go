@@ -83,6 +83,14 @@ func run(dir string) error {
 		return err
 	}
 	clean := render(1600, 900, 32, lines, false)
+	dark := render(1000, 500, 16, lines, false)
+	darkImage := image.NewRGBA(dark.Bounds())
+	for y := 0; y < dark.Bounds().Dy(); y++ {
+		for x := 0; x < dark.Bounds().Dx(); x++ {
+			v := color.GrayModel.Convert(dark.At(x, y)).(color.Gray).Y
+			darkImage.Set(x, y, color.Gray{Y: 255 - v})
+		}
+	}
 	a4 := render(2480, 3508, 42, append(append(append([]string{}, lines...), lines...), lines...), false)
 	columns := render(2400, 1400, 30, lines, true)
 	blank := image.NewRGBA(image.Rect(0, 0, 1000, 700))
@@ -90,6 +98,7 @@ func run(dir string) error {
 	expected := strings.Join(lines, "\n")
 	samples := []sample{
 		{"screenshot.png", encode(clean), expected, false},
+		{"dark-screenshot.png", encode(darkImage), expected, false},
 		{"scan-a4.png", encode(a4), strings.Join(append(append(append([]string{}, lines...), lines...), lines...), "\n"), false},
 		{"simulated-photo.png", encode(skew(clean)), expected, true},
 		{"two-columns.png", encode(columns), columnExpected(), true},

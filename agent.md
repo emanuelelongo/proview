@@ -617,7 +617,8 @@ invalidation, viewport residency and repeatable performance checks.
   Direct unbundled builds still use `PROVIEW_OCR=1` for development. Setup/evaluation instructions
   are in `docs/ocr-prototype.md`; packaging details are in `docs/ocr-packaging.md`.
 - Preserve Sauvola as the primary OCR pass. Only weak dark inputs get a bounded
-  Otsu retry; supplement high-confidence uncovered words without replacing primary
+  Otsu retry, with eligibility based on source pixels before polarity normalization
+  and deskewing; supplement high-confidence uncovered words without replacing primary
   text/geometry/order. Publish one final layout, retain primary output on retry
   failure and discard canceled work. See `internal/ocr/retry.go` and the OCR topic
   document for thresholds, bounds and local verification.
@@ -639,6 +640,11 @@ invalidation, viewport residency and repeatable performance checks.
   the status URL opens a browser. Preserve exact QR payloads, including trailing
   URL punctuation. Source crop/rotation and sanitized shared-image redactions
   invalidate QR results using the same source keys as text selection.
+
+- OCR uses hOCR character boxes from the same background recognition pass for
+  partial selection and precise search highlights. Preserve word fallback and
+  whole-word double-click. Transform character geometry with word geometry,
+  without mutating cached layouts; count character allocations in search caches.
 
 - Normalize camera JPEG EXIF orientation on source loading, including mirrors,
   before view/OCR/crop/export. Keep original encoded bytes unchanged. OCR input
