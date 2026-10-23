@@ -441,9 +441,19 @@ and project documentation use English.
 
 ## Editing tools
 
-- Tool properties move next to the zoom controls, after a separator, whenever
-  the complete block fits. On narrower windows the whole block moves to a second
-  row, so individual controls are never split across rows.
+- Tool and selected-object properties appear in a vertical panel on the right of
+  the document, separated from the viewport. The panel scrolls vertically in short
+  windows. Its width stays reserved even without properties, keeping the document
+  viewport stable when switching tools; the toolbar stays on one row.
+  A passive circular badge at the top repeats the current tool icon, with an accent
+  outline and tinted background that distinguish it from the property buttons.
+  Basic Select leaves this heading blank until an object is selected. With a
+  selection, the badge identifies the object type (including the specific shape)
+  above its editable properties.
+  Property controls occupy one 36-pixel icon column. Font, size, stroke width and
+  opacity use icon dropdowns with an integrated arrow; tooltips show the current
+  value. Menus and the magnifier slider open over the document without widening
+  the panel.
 - A slim, left-aligned bottom bar presents each startup tip for ten seconds,
   beginning ten seconds after launch, with a five-second pause between tips.
   The sequence runs once per application session and can be replayed immediately
@@ -454,7 +464,7 @@ and project documentation use English.
 - Hold **Shift** in **Text**, **Draw**, **Highlight** or **Shapes** (including **Magnifier**) to
   temporarily activate **Select** and move or resize objects. Its toolbar icon
   lights up; release Shift to return to the insertion tool. The current tool's
-  property row stays in place but is disabled, avoiding document movement. Shift
+  property panel stays in place but is disabled, avoiding document movement. Shift
   retains normal behavior while typing and during an ongoing drawing gesture.
 - Select an inserted signature to edit its properties. Drawn signatures support
   color and stroke width; imported SVGs support a uniform color; PNG signatures

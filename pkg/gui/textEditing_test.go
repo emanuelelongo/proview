@@ -251,9 +251,15 @@ func TestTextCorrectionModeIsSeparateFromForms(t *testing.T) {
 	if !g.textEditing || g.formsActive || !l.Visible() {
 		t.Fatal("text editing did not deactivate forms")
 	}
+	if g.currentToolIndicator.icon.Resource.Name() != tablerIcon("file-type-pdf").Name() {
+		t.Fatal("tool indicator did not follow PDF text editing")
+	}
 	g.toggleForms()
 	if g.textEditing || !g.formsActive || l.Visible() {
 		t.Fatal("forms did not deactivate text editing")
+	}
+	if g.currentToolIndicator.icon.Resource.Name() != tablerIcon("forms").Name() {
+		t.Fatal("tool indicator did not follow PDF form filling")
 	}
 	g.toggleTextEditing()
 	g.cancelCurrentOperation()

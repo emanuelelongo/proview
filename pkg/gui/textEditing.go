@@ -158,6 +158,7 @@ func (g *Gui) setTextEditing(active bool) {
 		g.cancelTextMove()
 	}
 	g.textEditing = active
+	g.refreshToolIndicator()
 	if g.textEditItem != nil {
 		g.textEditItem.Checked = active
 	}

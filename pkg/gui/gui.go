@@ -157,8 +157,9 @@ type Gui struct {
 	annotationActions                 map[annotationTool]*toggleToolbarAction
 	annotationControls                *fyne.Container
 	annotationPropertyScroll          *container.Scroll
-	toolPanel                         *fyne.Container
-	toolPanelLayout                   *responsiveToolLayout
+	toolPropertyPanel                 *fyne.Container
+	currentToolIndicator              *toolIndicator
+	toolIndicatorHeader               *fyne.Container
 	annotationJobs                    chan func() func()
 	annotationWork                    []func() func()
 	annotationRunning                 bool
@@ -288,10 +289,7 @@ func newGui(application fyne.App) *Gui {
 	g.sidebarSplit = newFixedSidebarSplit(g.sidebar.panel, contentArea, defaultSidebarWidth, g.updatePDFThumbnailSizes)
 	g.mainSplit = g.sidebarSplit
 
-	properties := container.NewHScroll(g.annotationControls)
-	properties.SetMinSize(fyne.NewSize(0, 85))
-	g.annotationPropertyScroll = properties
-	properties.Hide()
+	g.newToolPropertyPanel()
 	g.tipText = canvas.NewText("", theme.Color(theme.ColorNameForeground))
 	g.tipText.TextSize = 12
 	g.tipText.Alignment = fyne.TextAlignLeading
@@ -306,17 +304,10 @@ func newGui(application fyne.App) *Gui {
 	infoViewport := container.NewScroll(container.New(tipTextLayout{}, g.fileInfo))
 	infoViewport.Direction = container.ScrollNone
 	g.tipBar = container.NewStack(tipBackground, container.New(statusBarLayout{}, tipViewport, infoViewport))
-	propertySeparator := widget.NewToolbarSeparator().ToolbarObject()
-	g.toolPanelLayout = newResponsiveToolLayout(toolbar, properties, g.annotationControls, propertySeparator)
-	g.toolPanelLayout.onModeChanged = func() {
-		if g.window != nil && g.window.Content() != nil {
-			g.window.Content().Refresh()
-		}
-	}
-	g.toolPanel = container.New(g.toolPanelLayout, toolbar, propertySeparator, properties)
+
 	documentArea := container.NewBorder(g.newSearchBar(), nil, nil, nil, g.mainSplit)
 	g.search.host = documentArea
-	layout := container.NewBorder(g.toolPanel, g.tipBar, nil, nil, documentArea)
+	layout := container.NewBorder(toolbar, g.tipBar, nil, g.toolPropertyPanel, documentArea)
 
 	g.window = g.app.NewWindow("Proview")
 	g.window.SetContent(newTooltipSurface(layout))
@@ -402,6 +393,7 @@ func (g *Gui) setCropToolActive(active bool) {
 	if g.cropAction != nil {
 		g.cropAction.SetActive(active)
 	}
+	g.refreshToolIndicator()
 }
 
 // Custom profiles must not replace the installed application's file associations.

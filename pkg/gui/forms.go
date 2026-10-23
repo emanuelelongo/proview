@@ -272,6 +272,7 @@ func (g *Gui) toggleForms() {
 func (g *Gui) setFormsActive(active bool) {
 	changed := g.formsActive != active
 	g.formsActive = active
+	g.refreshToolIndicator()
 	if active {
 		g.stopFormPulse()
 	}

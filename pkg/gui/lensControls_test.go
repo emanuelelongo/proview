@@ -24,8 +24,14 @@ func TestNewLensMagnificationChangesWithoutMoving(t *testing.T) {
 	if !g.hasSelectedSignature || g.selectedSignature != original.ID || g.annotationTool != toolShapes {
 		t.Fatal("new lens is not connected to its controls")
 	}
-	var slider *widget.Slider
 	for _, object := range fyneTest.LaidOutObjects(g.annotationControls) {
+		if button, ok := object.(*iconButton); ok && button.tooltip == "Magnification" {
+			fyneTest.Tap(button)
+			break
+		}
+	}
+	var slider *widget.Slider
+	for _, object := range fyneTest.LaidOutObjects(g.window.Canvas().Overlays().Top()) {
 		if s, ok := object.(*widget.Slider); ok {
 			slider = s
 			break

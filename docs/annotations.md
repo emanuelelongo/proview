@@ -3,7 +3,9 @@
 ## Text placement
 
 Select Text, click the insertion point on a page, then type into the focused
-inline editor. The property bar contains font, size, styles and color; it has no
+inline editor. The included fonts are shown as **Sans Serif** (Go Sans),
+**Monospace** (Go Mono) and **Serif** (Latin Modern Roman). The font selector uses
+Tabler's Typography icon. The property panel contains font, size, styles and color; it has no
 text-entry field for new annotations. Property changes update the draft without
 committing it when the entry loses focus. The editor scales with zoom while
 retaining physical page coordinates. The editor has a transparent background,
@@ -28,7 +30,7 @@ correction and stops deferred Save/Close actions.
 
 Existing text annotations use the same page editor. A single click selects an
 object for movement and properties; double-click its text, or use **Edit text on
-page** in the property bar, to edit its contents inline. The bar has no text-entry
+page** in the property panel, to edit its contents inline. The panel has no text-entry
 field, including after reopening a PDF. Font/style/color changes stay in the
 inline draft until confirmation. Enter or a page/tool change replaces the same
 object in one Undo step; Escape restores the original, and confirming an empty

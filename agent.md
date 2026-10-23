@@ -28,7 +28,7 @@ single stroked path in a standard Stamp can reopen as Drawing; matching closed p
 curved fills, images/text and unsupported/complex stamps remain static. Import ClosedArrow
 endings without changing the default open arrow. Existing text edits use the
 inline page editor via double-click or the edit button; never restore a text
-entry to the property bar. Preserve the original object ID and visible text anchor, one Undo step,
+entry to the property panel. Preserve the original object ID and visible text anchor, one Undo step,
 Escape cancellation and the save barrier. FreeText Rect is a layout box, never
 an instruction to stretch glyphs: regenerate text at its font size with natural
 physical width/height. The same rule applies to inline and property edits.
@@ -184,6 +184,14 @@ PDF page combination/reordering/deletion and blank pages.
 - Use compact icon buttons with readable tooltips instead of wide text buttons.
   Property controls should align in height; colors use swatches and dimensions
   use compact preset selectors. Keep forms spacious enough to use comfortably.
+- Tool and selected-object parameters belong in the vertical, scrollable right
+  panel, one 36-pixel icon column wide. Use compact icon dropdowns with an
+  integrated arrow; keep option text and the magnifier slider in overflow popups.
+  Always reserve the panel width, including tools without properties. A passive
+  circular badge at the top identifies the current tool, including Crop, Fill PDF
+  form, Edit PDF Text and temporary Select. Basic Select has no heading without a
+  selection; selected objects show their type icon above their properties. Keep
+  the main toolbar independent of property visibility and window width.
 - Toolbar order is Open file, New page, Select, Crop, Draw, Highlight, Shapes, Text,
   Signature, Fill PDF form, Edit PDF Text, Redact PDF, rotation/flip controls,
   Zoom out, Zoom in. With no document, only Open file, New page and signature
@@ -331,7 +339,9 @@ invalidation, viewport residency and repeatable performance checks.
   SVG import intentionally rejects unsupported features rather than silently changing
   appearance: text, embedded images, gradients, filters, masks, external references,
   and group-level opacity. Path fill/stroke opacity is supported.
-- Included fonts are Go Sans, Go Mono and Latin Modern Roman. Keep their licenses
+- Included fonts are Go Sans, Go Mono and Latin Modern Roman, displayed in the
+  font selector as Sans Serif, Monospace and Serif. Preserve their internal IDs for
+  saved annotations; use `typography` for the font selector icon. Keep their licenses
   bundled and available from **Help → Third-Party Licenses**.
 
 ## Fyne/macOS regressions to avoid
@@ -488,7 +498,7 @@ invalidation, viewport residency and repeatable performance checks.
   Undo step even when Shift is released before the mouse. Poll native modifier
   state while these tools are active because focused Fyne controls receive key
   events instead of canvas handlers. Stop polling on tool changes/window close.
-- Magnifier zoom uses only a slider, aligned with the 36-pixel property row.
+- Magnifier zoom uses a slider in a popup opened from its compact property icon.
   Select a newly placed lens immediately and bind its controls while Shapes stays
   active. Zoom property edits preserve its frame; a new gesture clears selection.
 - Area selection is transient UI state and does not mark documents dirty. Background

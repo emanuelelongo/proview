@@ -13,7 +13,6 @@ import (
 	"emanuelelongo/proview/pkg/annotations"
 	"fyne.io/fyne/v2"
 	fyneTest "fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 )
 
 func TestHighlightFollowsTextAcrossLinesAsOneUndo(t *testing.T) {
@@ -80,7 +79,7 @@ func TestHighlightCancellationAndPropertyControls(t *testing.T) {
 		t.Fatal("Escape did not cancel highlight")
 	}
 	for _, object := range fyneTest.LaidOutObjects(g.annotationControls) {
-		if _, ok := object.(*widget.Select); ok {
+		if _, ok := object.(*compactSelect); ok {
 			t.Fatal("Highlight still has thickness/opacity selectors")
 		}
 	}
@@ -93,7 +92,7 @@ func TestHighlightCancellationAndPropertyControls(t *testing.T) {
 	}
 	selects := 0
 	for _, object := range fyneTest.LaidOutObjects(g.annotationControls) {
-		if _, ok := object.(*widget.Select); ok {
+		if _, ok := object.(*compactSelect); ok {
 			selects++
 		}
 	}

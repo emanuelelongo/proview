@@ -196,6 +196,7 @@ func (g *Gui) refreshAnnotationControls() {
 	if g.annotationControls == nil {
 		return
 	}
+	g.refreshToolIndicator()
 	if g.temporarySelection {
 		g.setAnnotationControlsEnabled(false)
 		return
@@ -205,7 +206,7 @@ func (g *Gui) refreshAnnotationControls() {
 	if tool == toolRedact || tool == toolSelect && g.selectedRedaction != 0 {
 		g.annotationControls.Objects = nil
 		if g.selectedRedaction != 0 {
-			g.annotationControls.Objects = []fyne.CanvasObject{container.NewHBox(widget.NewLabel("Redaction"), newIconButton(tablerIcon("trash"), "Delete redaction", g.deleteSelectedRedaction))}
+			g.annotationControls.Objects = []fyne.CanvasObject{container.NewGridWrap(fyne.NewSize(36, 36), newIconButton(tablerIcon("trash"), "Delete redaction", g.deleteSelectedRedaction))}
 			g.annotationControls.Show()
 			if g.annotationPropertyScroll != nil {
 				g.annotationPropertyScroll.Show()
@@ -280,16 +281,16 @@ func (g *Gui) refreshAnnotationControls() {
 		}
 		g.updateAnnotationProperties(selected, data.Clone(), commit)
 	}
-	row := container.NewHBox()
-	wrap := func(width float32, object fyne.CanvasObject) {
-		row.Add(container.NewGridWrap(fyne.NewSize(width, 36), object))
+	row := container.NewVBox()
+	wrap := func(object fyne.CanvasObject) {
+		row.Add(container.NewGridWrap(fyne.NewSize(36, 36), object))
 	}
 	if data.Kind == annotations.Text {
 		g.textEntry = nil
 		if g.textPlacement != nil {
 			g.textEntry = g.textPlacement.entry
 		} else if editing {
-			wrap(36, newIconButton(tablerIcon("pencil"), "Edit text on page", func() {
+			wrap(newIconButton(tablerIcon("pencil"), "Edit text on page", func() {
 				layer := g.signatureLayers[selected.Page]
 				if layer == nil {
 					layer = g.imageSignatureLayer
@@ -297,11 +298,24 @@ func (g *Gui) refreshAnnotationControls() {
 				g.beginExistingText(layer, selected.ID)
 			}))
 		}
-		font := widget.NewSelect(annotations.Fonts, nil)
+		font := newCompactSelect(annotations.Fonts, "typography", "Font", nil)
+		// Display descriptive names while retaining the font IDs used by saved annotations.
+		font.optionLabel = func(name string) string {
+			switch name {
+			case "Go Sans":
+				return "Sans Serif"
+			case "Go Mono":
+				return "Monospace"
+			case "Latin Modern Roman":
+				return "Serif"
+			default:
+				return name
+			}
+		}
 		font.SetSelected(data.Font)
 		font.OnChanged = func(name string) { data.Font = name; publish(true) }
-		wrap(180, font)
-		wrap(85, numberSelect([]float64{6, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72, 96, 120, 144}, data.Size, "", func(v float64) { data.Size = v; publish(true) }))
+		wrap(font)
+		wrap(numberSelect("text-size", "Font size", []float64{6, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72, 96, 120, 144}, data.Size, "", func(v float64) { data.Size = v; publish(true) }))
 		for _, style := range []struct {
 			icon  string
 			value *bool
@@ -311,7 +325,7 @@ func (g *Gui) refreshAnnotationControls() {
 			action = newToggleToolbarAction(tablerIcon(style.icon), func() { *value = !*value; action.SetActive(*value); publish(true) })
 			action.button.tooltip = style.icon
 			action.SetActive(*value)
-			wrap(36, action.button)
+			wrap(action.button)
 		}
 	} else {
 		if data.Kind == annotations.Shape {
@@ -342,7 +356,7 @@ func (g *Gui) refreshAnnotationControls() {
 					g.refreshAnnotationControls()
 				}
 			})
-			wrap(44, selector)
+			wrap(selector)
 			if data.Shape == annotations.Magnifier {
 				row.Add(g.annotationSlider(1, 8, .1, data.Magnification, func(v float64) { data.Magnification = v }, publish))
 			} else if data.Shape != annotations.Line && data.Shape != annotations.Arrow {
@@ -358,17 +372,16 @@ func (g *Gui) refreshAnnotationControls() {
 				}
 				fill = newIconButton(nil, "", func() { data.Filled = !data.Filled; refreshFill(); publish(true) })
 				refreshFill()
-				wrap(36, fill)
+				wrap(fill)
 			}
 		}
 		widths := []float64{.5, 1, 1.5, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40}
 		if data.Kind != annotations.Highlight && (data.Kind != annotations.Shape || data.Shape != annotations.Magnifier) {
-			wrap(36, strokeStyleButton(&data, publish))
-			wrap(85, numberSelect(widths, data.Width, "", func(v float64) { data.Width = v; publish(true) }))
+			wrap(strokeStyleButton(&data, publish))
+			wrap(numberSelect("stroke-straight", "Stroke width", widths, data.Width, "", func(v float64) { data.Width = v; publish(true) }))
 		}
 		if data.Kind == annotations.Drawing {
-			wrap(36, widget.NewIcon(tablerIcon("brightness-up")))
-			wrap(90, numberSelect([]float64{5, 10, 15, 20, 25, 30, 35, 50, 65, 75, 90, 100}, data.Opacity*100, "%", func(v float64) { data.Opacity = v / 100; publish(true) }))
+			wrap(numberSelect("brightness-up", "Opacity", []float64{5, 10, 15, 20, 25, 30, 35, 50, 65, 75, 90, 100}, data.Opacity*100, "%", func(v float64) { data.Opacity = v / 100; publish(true) }))
 		}
 	}
 	var swatch *colorSwatch
@@ -385,15 +398,12 @@ func (g *Gui) refreshAnnotationControls() {
 		picker.SetColor(data.Color)
 	})
 	if data.Kind != annotations.Shape || data.Shape != annotations.Magnifier {
-		wrap(36, swatch)
+		wrap(swatch)
 	}
 	if editing {
-		wrap(36, newIconButton(tablerIcon("trash"), "Delete object", g.deleteSelectedSignature))
+		wrap(newIconButton(tablerIcon("trash"), "Delete object", g.deleteSelectedSignature))
 	}
 	g.annotationControls.Add(row)
-	if g.annotationPropertyScroll != nil {
-		g.annotationPropertyScroll.SetMinSize(fyne.NewSize(0, g.annotationControls.MinSize().Height+14))
-	}
 	g.annotationControls.Refresh()
 	g.refreshAnnotationLayout()
 }
@@ -422,9 +432,7 @@ func (g *Gui) refreshAnnotationLayout() {
 	if g.annotationPropertyScroll != nil {
 		g.annotationPropertyScroll.Refresh()
 	}
-	if g.toolPanelLayout != nil && g.toolPanel != nil {
-		g.toolPanelLayout.updateMode(g.toolPanel.Size().Width)
-	}
+	g.refreshToolIndicator()
 	if g.window != nil && g.window.Content() != nil {
 		g.window.Content().Refresh()
 	}
@@ -435,7 +443,15 @@ func (g *Gui) annotationSlider(low, high, step, value float64, set func(float64)
 	slider.SetValue(value)
 	slider.OnChanged = func(v float64) { set(v); publish(false) }
 	slider.OnChangeEnded = func(float64) { publish(true) }
-	return container.NewGridWrap(fyne.NewSize(190, 36), slider)
+	button := newIconButton(tablerIcon("device-tablet-search"), "Magnification", nil)
+	selector := compactDropdownContent(button)
+	button.OnTapped = func() {
+		popup := widget.NewPopUp(container.NewGridWrap(fyne.NewSize(190, 36), slider), g.window.Canvas())
+		p := fyne.CurrentApp().Driver().AbsolutePositionForObject(selector)
+		p.Y += selector.Size().Height
+		popup.ShowAtPosition(p)
+	}
+	return container.NewGridWrap(fyne.NewSize(36, 36), selector)
 }
 
 type annotationEntry struct {

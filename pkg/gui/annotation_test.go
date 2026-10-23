@@ -15,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	fyneTest "fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 )
 
 // Run expensive jobs explicitly in tests, keeping all UI/model access on this
@@ -162,19 +163,58 @@ func TestDrawingClipsExitBeforeAnotherPageAndKeepsZoomIndependentWidth(t *testin
 
 func TestAnnotationPropertyControlsFitDefaultWindow(t *testing.T) {
 	g, layer := annotationTestGui(t)
-	g.annotationPropertyScroll = container.NewHScroll(g.annotationControls)
-	g.window.SetContent(container.NewBorder(g.annotationPropertyScroll, nil, nil, nil, container.NewStack(canvas.NewRectangle(color.White), layer)))
+	g.newToolPropertyPanel()
+	toolbar := widget.NewLabel("Toolbar")
+	viewport := container.NewStack(canvas.NewRectangle(color.White), layer)
+	g.window.SetContent(container.NewBorder(toolbar, nil, nil, g.toolPropertyPanel, viewport))
 	g.window.Resize(fyne.NewSize(1000, 700))
+	if !g.toolPropertyPanel.Visible() {
+		t.Fatal("property rail must always reserve its space")
+	}
 	g.setAnnotationTool(toolText)
-	if g.annotationControls.MinSize().Width > 1000 {
-		t.Fatalf("text controls require %g pixels in a 1000-pixel window", g.annotationControls.MinSize().Width)
+	panelWidth := g.toolPropertyPanel.MinSize().Width
+	if panelWidth > 52 {
+		t.Fatalf("property rail is wider than a padded icon column: %v", panelWidth)
 	}
-	if g.annotationPropertyScroll.MinSize().Height < g.annotationControls.MinSize().Height {
-		t.Fatal("text style controls are clipped vertically")
+	for _, size := range []fyne.Size{fyne.NewSize(1000, 700), fyne.NewSize(800, 300)} {
+		g.window.Resize(size)
+		if !g.toolPropertyPanel.Visible() || g.toolPropertyPanel.Position().X < viewport.Position().X+viewport.Size().Width {
+			t.Fatal("properties are not on the right of the document")
+		}
+		if g.toolPropertyPanel.Size().Width != panelWidth || g.toolPropertyPanel.Position().Y != viewport.Position().Y {
+			t.Fatal("property panel moved or changed width after resizing")
+		}
+		if g.annotationControls.MinSize().Width > g.annotationPropertyScroll.Size().Width {
+			t.Fatal("text controls exceed the panel width")
+		}
+		column := g.annotationControls.Objects[0].(*fyne.Container)
+		for i := 1; i < len(column.Objects); i++ {
+			previous, current := column.Objects[i-1], column.Objects[i]
+			if current.Position().Y < previous.Position().Y+previous.Size().Height {
+				t.Fatal("property controls are not stacked vertically")
+			}
+		}
 	}
-	if g.annotationPropertyScroll.Size().Height < g.annotationControls.MinSize().Height {
-		t.Fatal("property bar did not relayout after adding text controls")
+	if g.annotationPropertyScroll.Direction != container.ScrollVerticalOnly || g.annotationPropertyScroll.MinSize().Height >= g.annotationControls.MinSize().Height {
+		t.Fatal("tall property lists should scroll without increasing the window minimum height")
 	}
+	beforePosition, beforeSize := viewport.Position(), viewport.Size()
+	for _, tool := range []annotationTool{toolSelect, toolDraw, toolHighlight, toolShapes, toolText} {
+		g.setAnnotationTool(tool)
+		if !g.toolPropertyPanel.Visible() || viewport.Position() != beforePosition || viewport.Size() != beforeSize {
+			t.Fatal("switching tools moved or resized the document viewport")
+		}
+		icon := map[annotationTool]string{toolSelect: "pointer", toolDraw: "sketching", toolHighlight: "highlight", toolShapes: "circle-square", toolText: "text-outline"}[tool]
+		if tool == toolSelect {
+			if g.toolIndicatorHeader.Visible() {
+				t.Fatal("basic Select should have no tool heading")
+			}
+		} else if !g.toolIndicatorHeader.Visible() || g.currentToolIndicator.icon.Resource.Name() != tablerIcon(icon).Name() {
+			t.Fatal("property header does not identify the current tool")
+		}
+	}
+	g.setAnnotationTool(toolText)
+	g.window.Resize(fyne.NewSize(1000, 700))
 	if path := os.Getenv("PROVIEW_ANNOTATION_PREVIEW"); path != "" {
 		g.window.Show()
 		origin, _ := layer.displayRect()

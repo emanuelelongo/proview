@@ -4,12 +4,30 @@ import (
 	"emanuelelongo/proview/pkg/document"
 	"emanuelelongo/proview/pkg/signatures"
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"image"
 	"image/color"
 )
+
+// Keep the panel width stable across tools, without making tall property lists
+// increase the minimum window height.
+func (g *Gui) newToolPropertyPanel() {
+	properties := container.NewVScroll(container.NewPadded(g.annotationControls))
+	properties.SetMinSize(fyne.NewSize(44, 0))
+	properties.Hide()
+	g.annotationPropertyScroll = properties
+	g.currentToolIndicator = newToolIndicator()
+	g.toolIndicatorHeader = container.NewPadded(container.NewVBox(g.currentToolIndicator, widget.NewSeparator()))
+	// Reserve the column even when the property scroll has no visible controls.
+	space := canvas.NewRectangle(color.Transparent)
+	space.SetMinSize(fyne.NewSize(44, 0))
+	rail := container.NewBorder(g.toolIndicatorHeader, nil, nil, nil, container.NewStack(space, properties))
+	g.toolPropertyPanel = container.NewBorder(nil, nil, widget.NewSeparator(), nil, rail)
+	g.refreshToolIndicator()
+}
 
 func (g *Gui) commitTextObject() {
 	if g.textPlacement != nil {
@@ -39,14 +57,13 @@ func (g *Gui) showProperties() {
 	g.annotationControls.Show()
 	if g.annotationPropertyScroll != nil {
 		g.annotationPropertyScroll.Show()
-		g.annotationPropertyScroll.SetMinSize(fyne.NewSize(0, g.annotationControls.MinSize().Height+14))
 	}
 	g.annotationControls.Refresh()
 	g.refreshAnnotationLayout()
 }
 func (g *Gui) showSignatureProperties(o document.Overlay) {
-	row := container.NewHBox()
-	wrap := func(w float32, obj fyne.CanvasObject) { row.Add(container.NewGridWrap(fyne.NewSize(w, 36), obj)) }
+	row := container.NewVBox()
+	wrap := func(obj fyne.CanvasObject) { row.Add(container.NewGridWrap(fyne.NewSize(36, 36), obj)) }
 	if o.ObjectKind != "image" {
 		if o.IsVector() {
 			a := o.Asset()
@@ -61,10 +78,9 @@ func (g *Gui) showSignatureProperties(o document.Overlay) {
 				picker.Show()
 				picker.SetColor(c)
 			})
-			wrap(36, swatch)
+			wrap(swatch)
 			if a.Drawing != nil {
-				wrap(36, widget.NewIcon(tablerIcon("stroke-straight")))
-				wrap(85, numberSelect([]float64{1, 2, 3, 4, 6, 8, 10, 12, 16, 20}, a.Drawing.Width, "", func(v float64) {
+				wrap(numberSelect("stroke-straight", "Thickness", []float64{1, 2, 3, 4, 6, 8, 10, 12, 16, 20}, a.Drawing.Width, "", func(v float64) {
 					g.replaceSignatureStyle(o, func(a signatures.Asset) (signatures.Asset, error) {
 						d := a.Drawing.Clone()
 						d.Width = v
@@ -72,14 +88,12 @@ func (g *Gui) showSignatureProperties(o document.Overlay) {
 					})
 				}))
 			} else {
-				wrap(36, widget.NewIcon(tablerIcon("stroke-straight")))
-				wrap(85, numberSelect([]float64{0, 1, 2, 3, 4, 6, 8, 10}, a.Thickness, "", func(v float64) {
+				wrap(numberSelect("stroke-straight", "Thickness", []float64{0, 1, 2, 3, 4, 6, 8, 10}, a.Thickness, "", func(v float64) {
 					g.replaceSignatureStyle(o, func(a signatures.Asset) (signatures.Asset, error) { return a.WithThickness(v) })
 				}))
 			}
 		} else {
-			wrap(36, widget.NewIcon(tablerIcon("stroke-straight")))
-			wrap(85, numberSelect([]float64{0, 1, 2, 3, 4, 6, 8, 10}, float64(o.StrokeWidth), "", func(v float64) {
+			wrap(numberSelect("stroke-straight", "Thickness", []float64{0, 1, 2, 3, 4, 6, 8, 10}, float64(o.StrokeWidth), "", func(v float64) {
 				if err := g.document.SetSignatureStroke(o.ID, int(v)); err != nil {
 					g.showOperationError("object_edit", err)
 					return
@@ -88,7 +102,7 @@ func (g *Gui) showSignatureProperties(o document.Overlay) {
 			}))
 		}
 	}
-	wrap(36, newIconButton(tablerIcon("trash"), "Delete object", g.deleteSelectedSignature))
+	wrap(newIconButton(tablerIcon("trash"), "Delete object", g.deleteSelectedSignature))
 	g.annotationControls.Objects = []fyne.CanvasObject{row}
 	g.showProperties()
 }

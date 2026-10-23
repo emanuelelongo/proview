@@ -259,7 +259,7 @@ func TestImportedSignatureThicknessControlAndUndo(t *testing.T) {
 	l.reload()
 	g.selectSignature(l, o.ID)
 	row := g.annotationControls.Objects[0].(*fyne.Container)
-	if len(row.Objects) != 4 {
+	if len(row.Objects) != 3 {
 		t.Fatal("imported signature has no thickness control next to color")
 	}
 	g.replaceSignatureStyle(o, func(a signatures.Asset) (signatures.Asset, error) { return a.WithThickness(4) })

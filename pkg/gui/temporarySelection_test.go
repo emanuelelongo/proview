@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
@@ -145,7 +144,7 @@ func TestTemporarySelectionPreservesTypingAndDrawingGesture(t *testing.T) {
 
 func TestTemporarySelectionKeepsPropertyRowDisabled(t *testing.T) {
 	g, _ := annotationTestGui(t)
-	g.annotationPropertyScroll = container.NewHScroll(g.annotationControls)
+	g.newToolPropertyPanel()
 	g.setAnnotationTool(toolDraw)
 	if !g.annotationControls.Visible() || g.annotationPropertyScroll == nil || !g.annotationPropertyScroll.Visible() {
 		t.Fatal("drawing property row is not visible")
@@ -153,6 +152,9 @@ func TestTemporarySelectionKeepsPropertyRowDisabled(t *testing.T) {
 	row := g.annotationControls.Objects[0]
 	height := g.annotationPropertyScroll.MinSize().Height
 	g.handleSelectionShift(desktop.KeyShiftLeft, true)
+	if g.currentToolIndicator.icon.Resource.Name() != tablerIcon("pointer").Name() {
+		t.Fatal("temporary Select is missing from the tool indicator")
+	}
 	if !g.annotationControls.Visible() || !g.annotationPropertyScroll.Visible() || g.annotationControls.Objects[0] != row || g.annotationPropertyScroll.MinSize().Height != height {
 		t.Fatal("temporary selection removed or resized the property row")
 	}
@@ -176,6 +178,9 @@ func TestTemporarySelectionKeepsPropertyRowDisabled(t *testing.T) {
 		t.Fatal("property row has no disabled controls")
 	}
 	g.handleSelectionShift(desktop.KeyShiftLeft, false)
+	if g.currentToolIndicator.icon.Resource.Name() != tablerIcon("sketching").Name() {
+		t.Fatal("tool indicator did not restore Draw after releasing Shift")
+	}
 	if !g.annotationControls.Visible() || !g.annotationPropertyScroll.Visible() {
 		t.Fatal("property row did not remain visible after releasing Shift")
 	}

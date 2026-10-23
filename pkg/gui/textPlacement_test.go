@@ -14,7 +14,6 @@ import (
 	"emanuelelongo/proview/pkg/annotations"
 	"fyne.io/fyne/v2"
 	fyneTest "fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 )
 
 func TestInlineTextStyleChangesStayInDraftAndFollowZoom(t *testing.T) {
@@ -23,12 +22,12 @@ func TestInlineTextStyleChangesStayInDraftAndFollowZoom(t *testing.T) {
 	layer.input.Tapped(&fyne.PointEvent{Position: fyne.NewPos(100, 250)})
 	p := g.textPlacement
 	p.entry.SetText("Styled text")
-	var fonts, sizes *widget.Select
+	var fonts, sizes *compactSelect
 	for _, object := range fyneTest.LaidOutObjects(g.annotationControls) {
 		if _, ok := object.(*annotationEntry); ok {
 			t.Fatal("new text entry is still in the property bar")
 		}
-		if selectBox, ok := object.(*widget.Select); ok {
+		if selectBox, ok := object.(*compactSelect); ok {
 			if selectBox.Options[0] == annotations.Fonts[0] {
 				fonts = selectBox
 			} else if selectBox.Options[0] == "6" {
@@ -42,6 +41,9 @@ func TestInlineTextStyleChangesStayInDraftAndFollowZoom(t *testing.T) {
 	// Moving focus to properties must preserve the draft until confirmation.
 	g.window.Canvas().Focus(nil)
 	fonts.SetSelected("Go Mono")
+	if fonts.button.tooltip != "Font: Monospace" || fonts.button.Icon.Name() != tablerIcon("typography").Name() {
+		t.Fatal("font selector is missing its descriptive name or typography icon")
+	}
 	sizes.SetSelected("24")
 	if p.data.Font != "Go Mono" || p.data.Size != 24 || p.data.Text != "Styled text" || g.document.Dirty() {
 		t.Fatal("style changes committed text or lost the draft")
@@ -287,9 +289,9 @@ func TestExistingTextEditsOnPageWithSingleUndo(t *testing.T) {
 		t.Fatal("original text remains underneath inline editor")
 	}
 	p.entry.SetText("Revised text")
-	var sizes *widget.Select
+	var sizes *compactSelect
 	for _, object := range fyneTest.LaidOutObjects(g.annotationControls) {
-		if selectBox, ok := object.(*widget.Select); ok && selectBox.Options[0] == "6" {
+		if selectBox, ok := object.(*compactSelect); ok && selectBox.Options[0] == "6" {
 			sizes = selectBox
 		}
 	}
