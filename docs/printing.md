@@ -13,6 +13,35 @@ orientation, duplex and other available driver options. Page numbers in that
 dialog refer to the prepared selection. Single-page PDFs and images go directly
 to preparation and the system dialog.
 
+When several PDF thumbnails are selected, **Selected pages** is the initial
+choice in the page dialog. The PDF thumbnail context menu can print exactly the
+selection directly. Multiple workspace documents are printed in sidebar order
+as one job: one page per image, and the complete paginated layout for each
+Markdown document. Command/Control-click toggles items and Shift-click selects
+a range. Models cannot be included until cropped into an image.
+
+**Create PDF from Selection**, in File and the thumbnail context menus, prepares
+the selected content after a page-layout choice and opens a new unsaved
+`Selection.pdf` window:
+
+- **Same page size:** choose A4, US Letter, or Custom. A4 and Letter offer
+  Portrait/Landscape; Custom uses explicit width and height in millimeters
+  (10–2000 mm, accepting decimal points or commas). Every output page has those
+  exact dimensions and orientation, including selected native PDF pages and
+  generated Markdown pages. Fit content without clipping, distortion or extra
+  rotation; center the unused area on the sheet. Image pixels and PDF vector
+  artwork are retained rather than resampled or rasterized.
+- **Individual page sizes:** each image fills its own page without an enclosing
+  standard sheet or added margins. Native PDF pages retain their dimensions
+  and rotation; Markdown keeps its generated pagination. The resulting PDF can
+  contain pages of different sizes and proportions.
+
+Canceling the layout choice creates no document. The command never overwrites
+source files or changes their saved state. Selected PDF pages
+retain native text/vector content. Combined preparation validates merged output
+and fails without an original-source fallback. Combined document batches are
+bounded to 256 MiB of prepared PDF data.
+
 ## Markdown layout
 
 Print the complete document, independently of scroll position, window size,
@@ -105,6 +134,10 @@ Manual checks before release:
 - Review Markdown pagination, repeated table headers, long code lines, Unicode,
   local images and light Mermaid output. The Markdown extension has been
   compile-checked; its print/layout tests and desktop review are pending.
+- Review document multi-selection, selected PDF pages, output ordering, unsaved
+  edits in inactive images, and the independent PDF created from the selection.
+  Check uniform A4/US Letter/custom layouts, decimal-comma input, both standard
+  orientations, individual image bounds, preserved PDF geometry and cancellation.
 
 References: [Apple PDFKit](https://developer.apple.com/documentation/pdfkit/write-operations),
 [XDG Print portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Print.html),

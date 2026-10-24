@@ -316,6 +316,9 @@ func (g *Gui) cancelCurrentOperation() bool {
 		g.markdownView.cancelCrop()
 		return true
 	}
+	if g.showingMarkdown() && g.markdownView.clearSelection() {
+		return true
+	}
 	if g.modelCrop != nil && g.modelCrop.active {
 		g.modelCrop.Deactivate()
 		return true

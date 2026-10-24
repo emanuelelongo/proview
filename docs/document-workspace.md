@@ -44,6 +44,31 @@ removed locally and remotely before this work.
   PDF/non-PDF separation. Other generated images are independent, unsaved entries
   in the requesting workspace. Closing one never edits or closes its source.
 
+## Selecting documents for output
+
+Command-click on macOS / Control-click elsewhere toggles individual document
+thumbnails. Shift-click selects a range from the anchor; combining the shortcut
+modifier with Shift adds that range. A plain click returns to one selected file.
+Selection follows retained document identities and uses sidebar order for output.
+The last clicked document is displayed, independently of the other selections.
+
+Right-click within the selection and choose **Print selected items…** or
+**Create PDF from selected items**. Right-clicking an unselected thumbnail first
+selects only that item. **File → Print…** also prints the selected documents, and
+**File → Create PDF from Selection** creates a separate, unsaved PDF window.
+Use Save/Save As in that window to choose its destination. Existing source files,
+unsaved changes and histories remain intact.
+
+Each selected image contributes one page at its full edited resolution. Creating
+a PDF first offers **Same page size** (A4, US Letter or custom millimeters) or
+**Individual page sizes**. Uniform output fits every page to the chosen size
+and orientation without cropping; individual output gives each image a page
+matching its bounds and retains native PDF page geometry. Markdown
+documents contribute their complete paginated print layout. Models are excluded;
+crop a model view into an image to include it. Output never uses sidebar preview
+pixels. The same actions are available for selected PDF pages, preserving native
+PDF text/vector content and including unsaved edits. See [Printing](printing.md).
+
 ## PDF page thumbnails
 
 PDF thumbnails show only a page number in an accent-colored circle at the
@@ -141,6 +166,13 @@ acceptance on the destination platforms; headless GUI tests and cross compilatio
 do not establish that acceptance.
 
 ## Zoom anchoring
+
+Use Command on macOS or Control elsewhere with `+` / `=` to zoom in,
+`-` to zoom out and `0` to fit the window. Shift variants, keypad plus/minus
+and Italian keyboard positions are accepted. The platform modifier with the
+mouse wheel also zooms. Fit is the initial size, rather than the minimum:
+images/PDFs can shrink to approximately 7% of fit, and Markdown to 25% text size.
+Images stay centered with their editing layers at the requested size.
 
 Modifier + mouse wheel keeps the document point under the pointer. Toolbar and
 keyboard zoom keep the viewport center. In a multipage PDF, the anchor belongs

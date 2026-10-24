@@ -23,42 +23,50 @@ import (
 type printBackend func(context.Context, printing.Job) error
 
 type printState struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	snapshot *document.Document
-	markdown *markdown.Document
-	progress *dialog.CustomDialog
-	started  time.Time
+	ctx          context.Context
+	cancel       context.CancelFunc
+	snapshot     *document.Document
+	sources      []selectedPageSource
+	pdfSelection []int
+	progress     *dialog.CustomDialog
+	started      time.Time
 }
 
 // Serialize native print panels across editor windows. Accessed on the UI thread.
 var printOwner *Gui
 
-func (g *Gui) requestPrint() {
+func (g *Gui) requestPrint()          { g.requestPrintWithSelection(false) }
+func (g *Gui) requestPrintSelection() { g.requestPrintWithSelection(true) }
+
+func (g *Gui) requestPrintWithSelection(selectionOnly bool) {
 	g.activateEditor()
 	if printOwner != nil {
 		printOwner.window.RequestFocus()
 		return
 	}
-	if g.waitAnnotationChanges(g.requestPrint) {
+	if g.waitAnnotationChanges(func() { g.requestPrintWithSelection(selectionOnly) }) {
 		return
 	}
-	if g.closed || g.working || g.document == nil && !g.showingMarkdown() {
+	if g.closed || g.working || !g.selectionCanOutput() {
 		return
 	}
 	g.window.Canvas().Focus(nil)
+	sources, err := g.selectedPageSources()
+	if err != nil {
+		g.showOperationError("print", err)
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	state := &printState{ctx: ctx, cancel: cancel, started: time.Now()}
-	if g.showingMarkdown() {
-		state.markdown = g.markdownView.doc
-	} else {
-		state.snapshot = g.document.RenderingSnapshot()
-	}
+	state.sources = sources
 	g.printJob, printOwner, g.working = state, g, true
-	if state.markdown != nil || state.snapshot.Format() != document.FormatPDF || state.snapshot.PageCount() == 1 {
+	if selectionOnly || len(sources) != 1 || sources[0].snapshot == nil || sources[0].snapshot.Format() != document.FormatPDF || sources[0].snapshot.PageCount() == 1 {
 		g.preparePrint(state, nil)
 		return
 	}
+	state.snapshot = sources[0].snapshot
+	state.pdfSelection = sources[0].pages
+	state.sources = nil
 	g.choosePrintPages(state)
 }
 
@@ -66,7 +74,11 @@ func (g *Gui) choosePrintPages(state *printState) {
 	ranges := widget.NewEntry()
 	ranges.SetPlaceHolder("For example: 1-3, 5")
 	ranges.Hide()
-	choice := widget.NewSelect([]string{"All pages", "Current page", "Page range"}, func(value string) {
+	options := []string{"All pages", "Current page", "Page range"}
+	if len(state.pdfSelection) > 1 {
+		options = append(options, "Selected pages")
+	}
+	choice := widget.NewSelect(options, func(value string) {
 		if value == "Page range" {
 			ranges.Show()
 		} else {
@@ -74,6 +86,9 @@ func (g *Gui) choosePrintPages(state *printState) {
 		}
 	})
 	choice.SetSelected("All pages")
+	if len(state.pdfSelection) > 1 {
+		choice.SetSelected("Selected pages")
+	}
 	current := min(max(g.activePDFPage, 0), state.snapshot.PageCount()-1)
 	content := container.NewVBox(widget.NewLabel(fmt.Sprintf("%d pages · Current page: %d", state.snapshot.PageCount(), current+1)), choice, ranges)
 	prompt := dialog.NewCustomWithoutButtons("Print pages", content, g.window)
@@ -86,6 +101,8 @@ func (g *Gui) choosePrintPages(state *printState) {
 	continueButton := widget.NewButton("Continue", func() {
 		var pages []int
 		switch choice.Selected {
+		case "Selected pages":
+			pages = append([]int(nil), state.pdfSelection...)
 		case "Current page":
 			pages = []int{current}
 		case "Page range":
@@ -146,12 +163,12 @@ func (g *Gui) preparePrint(state *printState, pages []int) {
 	state.progress = dialog.NewCustomWithoutButtons("Preparing print", widget.NewProgressBarInfinite(), g.window)
 	state.progress.SetButtons([]fyne.CanvasObject{widget.NewButton("Cancel", func() { g.finishPrint(state, printing.ErrCanceled) })})
 	state.progress.Show()
-	g.logEvent("print_started", "selected_pages=%d", len(pages))
+	g.logEvent("print_started", "selected_pages=%d selected_items=%d", len(pages), len(state.sources))
 	go func() {
 		var job printing.Job
 		var err error
-		if state.markdown != nil {
-			job, err = prepareMarkdownPrintJob(state.ctx, state.markdown)
+		if len(state.sources) > 0 {
+			job, err = prepareSelectedOutput(state.ctx, state.sources, nil)
 		} else {
 			job, err = preparePrintJob(state.ctx, state.snapshot, pages)
 		}

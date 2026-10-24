@@ -97,7 +97,10 @@ func TestMarkdownRendersNativeBlocksAndResponsiveThemes(t *testing.T) {
 	}
 	texts := ""
 	for _, o := range test.LaidOutObjects(g.markdownPanel) {
-		if rich, ok := o.(*widget.RichText); ok {
+		switch rich := o.(type) {
+		case *widget.RichText:
+			texts += rich.String() + "\n"
+		case *markdownSelectableText:
 			texts += rich.String() + "\n"
 		}
 	}

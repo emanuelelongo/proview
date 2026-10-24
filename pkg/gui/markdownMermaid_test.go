@@ -99,7 +99,10 @@ func TestMermaidFailurePreservesVisibleSourceAndFollowingContent(t *testing.T) {
 		if _, ok := object.(*widget.Accordion); ok {
 			sourceAccordion = true
 		}
-		if rich, ok := object.(*widget.RichText); ok {
+		switch rich := object.(type) {
+		case *widget.RichText:
+			text += rich.String() + "\n"
+		case *markdownSelectableText:
 			text += rich.String() + "\n"
 		}
 	}

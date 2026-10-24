@@ -28,6 +28,8 @@ type Gui struct {
 	externalOpenPauses                int
 	documents                         []*editorDocument
 	activeDocument                    *editorDocument
+	documentSelection                 map[*editorDocument]bool
+	documentAnchor                    *editorDocument
 	documentList                      *fyne.Container
 	pendingFiles                      []string
 	openingFiles                      bool
@@ -230,7 +232,7 @@ func newGui(application fyne.App) *Gui {
 	g.imageSignatureLayer = newSignatureLayer(nil, 0, image.Point{}, g.selectSignature, g.activatePDFPage, g.documentChanged)
 	g.imagePanOverlay = newPanOverlay(nil)
 	g.panOverlays = []*panOverlay{g.imagePanOverlay}
-	g.imageContent = container.NewStack(g.image, g.imageSignatureLayer, g.cropOverlay, g.imagePanOverlay)
+	g.imageContent = container.New(&imageViewportLayout{image: g.image, pan: g.imagePanOverlay}, g.image, g.imageSignatureLayer, g.cropOverlay, g.imagePanOverlay)
 	g.imageScroll = container.NewScroll(g.imageContent)
 	g.imagePanOverlay.SetScroll(g.imageScroll)
 

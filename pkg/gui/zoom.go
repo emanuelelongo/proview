@@ -10,6 +10,7 @@ import (
 )
 
 const (
+	minZoomLevel = -12
 	maxZoomLevel = 10
 	zoomStep     = float32(1.25)
 )
@@ -29,11 +30,15 @@ func (g *Gui) zoomBy(delta int, point *fyne.Position) {
 		g.modelViewport.zoom(factor)
 		return
 	}
-	if g.document == nil || delta > 0 && g.zoomLevel >= maxZoomLevel || delta < 0 && g.zoomLevel == 0 {
+	if g.document == nil {
+		return
+	}
+	level := max(minZoomLevel, min(maxZoomLevel, g.zoomLevel+delta))
+	if level == g.zoomLevel {
 		return
 	}
 	g.cropOverlay.Deactivate()
-	g.zoomLevel += delta
+	g.zoomLevel = level
 	g.updateZoomAt(point)
 	g.setPanActive(g.panModifierDown)
 }
@@ -120,7 +125,8 @@ func (g *Gui) zoomPageRect(scroll *container.Scroll, page int, pdf bool) (fyne.P
 		return fyne.NewPos((width-size.Width)/2, g.pdfPageTop(page)), size
 	}
 	if g.imageSignatureLayer != nil {
-		return g.imageSignatureLayer.displayRect()
+		origin, size := g.imageSignatureLayer.displayRect()
+		return origin.Add(g.imageSignatureLayer.Position()), size
 	}
 	return fyne.Position{}, scroll.Content.MinSize()
 }
@@ -155,6 +161,8 @@ func (g *Gui) applyZoom() {
 	g.layoutZoom()
 	if g.document != nil && g.document.Format() == document.FormatPDF {
 		g.loadVisiblePDFPages()
+	} else if g.imageScroll != nil {
+		g.imageScroll.Refresh()
 	}
 }
 

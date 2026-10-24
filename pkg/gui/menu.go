@@ -42,13 +42,14 @@ func BuildMenu(g *Gui) {
 	saveAsItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: shortcutModifier | fyne.KeyModifierShift}
 	printItem := fyne.NewMenuItem("Print…", g.requestPrint)
 	printItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyP, Modifier: shortcutModifier}
+	createPDFItem := fyne.NewMenuItem("Create PDF from Selection", g.requestCreatePDF)
 	closeItem := fyne.NewMenuItem("Close", g.requestCloseDocument)
 	closeItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyW, Modifier: shortcutModifier}
 	exitItem := fyne.NewMenuItem("Exit", g.requestClose)
 	exitItem.IsQuit = true
 	fileMenu := fyne.NewMenu("File",
 		openItem, blankItem, clipboardItem, openTogetherItem, appendItem, duplicatePageItem, deletePageItem,
-		saveItem, saveAsItem, printItem, closeItem, fyne.NewMenuItemSeparator(),
+		saveItem, saveAsItem, createPDFItem, printItem, closeItem, fyne.NewMenuItemSeparator(),
 		exitItem,
 	)
 
@@ -70,7 +71,7 @@ func BuildMenu(g *Gui) {
 	editMenu.Items = append(editMenu.Items, fyne.NewMenuItemSeparator(), findItem, nextMatchItem, previousMatchItem)
 
 	zoomInItem := fyne.NewMenuItem("Zoom In", g.zoomIn)
-	zoomInItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyPlus, Modifier: shortcutModifier}
+	zoomInItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyEqual, Modifier: shortcutModifier}
 	zoomOutItem := fyne.NewMenuItem("Zoom Out", g.zoomOut)
 	zoomOutItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyMinus, Modifier: shortcutModifier}
 	resetZoomItem := fyne.NewMenuItem("Fit to Window", g.resetZoom)
@@ -131,7 +132,7 @@ func BuildMenu(g *Gui) {
 	g.redoItem = redoItem
 	g.menuDocumentItems = []*fyne.MenuItem{
 		findItem, nextMatchItem, previousMatchItem,
-		openTogetherItem, appendItem, duplicatePageItem, deletePageItem, saveItem, saveAsItem, printItem, closeItem,
+		openTogetherItem, appendItem, duplicatePageItem, deletePageItem, saveItem, saveAsItem, createPDFItem, printItem, closeItem,
 		zoomInItem, zoomOutItem, resetZoomItem,
 		copyItem, pasteItem, selectItem, cropItem, drawItem, highlightItem, shapesItem, textItem, redactItem,
 	}
@@ -172,7 +173,9 @@ func BuildMenu(g *Gui) {
 	for _, shortcut := range zoomInShortcuts() {
 		g.window.Canvas().AddShortcut(shortcut, func(fyne.Shortcut) { g.zoomIn() })
 	}
-	g.window.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyMinus, Modifier: shortcutModifier}, func(fyne.Shortcut) { g.zoomOut() })
+	for _, shortcut := range zoomOutShortcuts() {
+		g.window.Canvas().AddShortcut(shortcut, func(fyne.Shortcut) { g.zoomOut() })
+	}
 	g.window.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key0, Modifier: shortcutModifier}, func(fyne.Shortcut) { g.resetZoom() })
 	g.updateHistoryActions()
 }
@@ -186,6 +189,18 @@ func zoomInShortcuts() []*desktop.CustomShortcut {
 		{KeyName: fyne.KeyPlus, Modifier: modifier | fyne.KeyModifierShift},
 		{KeyName: fyne.KeyRightBracket, Modifier: modifier},
 		{KeyName: fyne.KeyRightBracket, Modifier: modifier | fyne.KeyModifierShift},
+		// Italian layouts place '=' on Shift+0; GLFW keeps number key names.
+		{KeyName: fyne.Key0, Modifier: modifier | fyne.KeyModifierShift},
+	}
+}
+
+func zoomOutShortcuts() []*desktop.CustomShortcut {
+	modifier := fyne.KeyModifierShortcutDefault
+	return []*desktop.CustomShortcut{
+		{KeyName: fyne.KeyMinus, Modifier: modifier},
+		{KeyName: fyne.KeyMinus, Modifier: modifier | fyne.KeyModifierShift},
+		// The physical US slash key carries '-' on Italian keyboards.
+		{KeyName: fyne.KeySlash, Modifier: modifier},
 	}
 }
 

@@ -109,6 +109,8 @@ func operationErrorMessage(operation string, err error) string {
 		return "Couldn't open this link. Copy it and open it in your browser."
 	case op == "print":
 		return "Couldn't print this document. Check your printer and the system printing service, then try again."
+	case op == "create_pdf":
+		return "Couldn't create the PDF. Please try again."
 	case strings.Contains(op, "save"), strings.Contains(op, "export"):
 		return "Couldn't save the document. Check the destination and available disk space, then try again."
 	case strings.Contains(op, "open"), strings.Contains(op, "load"):

@@ -252,11 +252,14 @@ invalidation, viewport residency and repeatable performance checks.
   on exit/tool/zoom changes; never change mark data, history, thumbnails or exports.
   Exported/redacted source content cannot be reconstructed after reopening.
 - Zoom uses the platform shortcut modifier (Command on macOS, Control elsewhere):
-  plus/equal (including Shift and keypad variants), minus, zero for Fit to Window,
+  plus/equal (including Shift, Italian layout and keypad variants), minus, zero for Fit to Window,
   and modifier + mouse wheel. The passive `zoomScrollSurface` intercepts only
   scrolling in the document viewport, querying `desktop.Driver.CurrentKeyModifiers`
   instead of tracking key state. Zoom keeps the page point under the pointer;
-  toolbar/keyboard zoom keeps the viewport center. Anchor within the individual
+  toolbar/keyboard zoom keeps the viewport center. Fit is level zero, with bounded
+  negative levels down to -12. Keep images and editing layers centered at the
+  requested pixel size even when smaller than the viewport; only the pan overlay
+  fills its margins. Anchor within the individual
   PDF page, with fixed inter-page gaps, and restore offsets before loading visible
   pages so zoom cannot switch pages and commit an inline draft halfway through.
   Forward unmodified scroll events unchanged; do
@@ -698,6 +701,17 @@ offline Mermaid images. Keep the complete document independent of viewport,
 zoom and theme. Repeat table headers and wrap long code lines without clipping.
 Do not route Markdown through document.Document or capture the screen for print.
 STL printing remains unavailable.
+Document thumbnail selection uses retained entry identities, Command/Control
+toggles and Shift ranges. Print/Create PDF output follows sidebar order, with
+one page per image and full pagination for Markdown. PDF thumbnail output uses
+selected page identities and preserves native content. New selection PDFs open
+as independent unsaved PDF windows; do not alter source save targets/history or
+substitute thumbnail pixels. Revalidate context-menu targets before acting.
+Create PDF asks for uniform A4/US Letter/custom dimensions or individual page
+sizes. Uniform layout applies to all output pages with fixed orientation and
+vector transforms, without cropping or resampling images. Individual image
+pages have no added sheet/margins; existing PDF geometry stays intact. Capture
+the selection before the modal chooser and release queued openings on Cancel.
 
 ## Native Markdown viewer
 
@@ -717,8 +731,12 @@ adds an independent PNG to the same workspace. Keep diagram layout updates
 suspended until capture finishes; invalidate queued captures on cancellation,
 resize, switching or closing. Copy selected pixels in a worker using public image
 APIs; do not inspect Fyne's private capture fields through reflection.
-Formulas and HTML remain literal source. Rich text drag selection is deferred;
-block/code copying and full source copying are available.
+Formulas and HTML remain literal source. Rendered text selection wraps the public
+RichText renderer, preserving style and byte offsets through reflow. Selection
+crosses text blocks in reading order; copy it before falling back to full source.
+Keep links clickable and code scrolling independent. Clear selection before Crop
+so its shading never enters captured pixels. No private Fyne caches or OCR are
+needed for Markdown selection.
 
 ## STL viewer prototype
 

@@ -311,7 +311,7 @@ func (g *Gui) revealThumbnail(page int) {
 }
 
 func (g *Gui) thumbnailContextMenu(page int, event *fyne.PointEvent) {
-	if g.working {
+	if g.closed || g.working || g.document == nil || g.document.Format() != document.FormatPDF || page < 0 || page >= g.document.PageCount() {
 		return
 	}
 	if !slices.Contains(g.selectedPDFPages(), page) {
@@ -329,7 +329,27 @@ func (g *Gui) thumbnailContextMenu(page int, event *fyne.PointEvent) {
 	item.Disabled = g.document == nil || len(pages) >= g.document.PageCount()
 	duplicate := fyne.NewMenuItem(duplicateLabel, func() { g.duplicatePDFPages(pages) })
 	duplicate.Icon = tablerIcon("duplicate")
-	widget.NewPopUpMenu(fyne.NewMenu("Pages", duplicate, item), g.window.Canvas()).ShowAtPosition(event.AbsolutePosition)
+	doc := g.document
+	pageIDs := doc.PageIDs()
+	selectedIDs := make([]uint64, len(pages))
+	for i, page := range pages {
+		selectedIDs[i] = pageIDs[page]
+	}
+	run := func(action func()) {
+		if g.document != doc || !slices.Equal(g.selectedPDFPages(), pages) {
+			return
+		}
+		currentIDs := doc.PageIDs()
+		for i, page := range pages {
+			if page >= len(currentIDs) || currentIDs[page] != selectedIDs[i] {
+				return
+			}
+		}
+		action()
+	}
+	printPages := fyne.NewMenuItem("Print selected pages…", func() { run(g.requestPrintSelection) })
+	createPDF := fyne.NewMenuItem("Create PDF from selected pages", func() { run(g.requestCreatePDF) })
+	widget.NewPopUpMenu(fyne.NewMenu("Pages", printPages, createPDF, fyne.NewMenuItemSeparator(), duplicate, item), g.window.Canvas()).ShowAtPosition(event.AbsolutePosition)
 }
 
 // Insertion is a gap in the original list. Selected pages retain document order.

@@ -47,6 +47,8 @@ type markdownView struct {
 	pendingDiagramUpdates  []func()
 	crop                   *cropOverlay
 	cropCapturing          bool
+	textBlocks             []*markdownSelectableText
+	selection              *markdownTextSelection
 }
 
 func (g *Gui) showingMarkdown() bool { return g.markdownView != nil }
@@ -76,6 +78,7 @@ func (g *Gui) addMarkdown(d *markdown.Document, target fyne.URI) {
 	entry := &editorDocument{markdown: d, target: target}
 	g.documents = append(g.documents, entry)
 	g.activeDocument = entry
+	g.singleDocumentSelection(entry)
 	g.document = nil
 	g.showMarkdown(d)
 	g.captureDocument()
@@ -101,6 +104,8 @@ func (g *Gui) showMarkdown(d *markdown.Document) {
 	g.updateHistoryActions()
 }
 func (v *markdownView) rebuild() {
+	v.selection = nil
+	v.textBlocks = nil
 	v.cancelCrop()
 	if v.cancelDiagrams != nil {
 		v.cancelDiagrams()
@@ -134,7 +139,11 @@ func (v *markdownView) rebuild() {
 	v.restoreReadingOffset(offset)
 }
 func (v *markdownView) zoom(delta int) {
-	v.scale = float32(math.Max(.75, math.Min(2, float64(v.scale)+float64(delta)*.125)))
+	scale := float32(math.Max(.25, math.Min(2, float64(v.scale)+float64(delta)*.125)))
+	if scale == v.scale {
+		return
+	}
+	v.scale = scale
 	v.rebuild()
 }
 
@@ -483,7 +492,7 @@ func (v *markdownView) inlineText(n ast.Node) string {
 	})
 	return b.String()
 }
-func (v *markdownView) styleText(text *widget.RichText) fyne.CanvasObject {
+func (v *markdownView) styleText(text *widget.RichText, target ...fyne.CanvasObject) fyne.CanvasObject {
 	// Fyne initialises segment parents during Refresh, after measuring them.
 	// Prime those parents with empty text before applying the page theme scope.
 	type primedSegment struct {
@@ -499,18 +508,27 @@ func (v *markdownView) styleText(text *widget.RichText) fyne.CanvasObject {
 			s.Style.SizeName = theme.SizeNameText
 		}
 	}
+	var object fyne.CanvasObject = text
+	if len(target) != 0 {
+		object = target[0]
+		// Segments use the embedded RichText as their theme identity. Theme it
+		// once while empty; the page scope themes the selectable widget itself.
+		if selectable, ok := object.(*markdownSelectableText); ok {
+			selectable.segmentTheme = container.NewThemeOverride(text, &markdownTheme{scale: v.scale})
+		}
+	}
 	text.Refresh()
 	text.Resize(fyne.NewSize(v.columnWidth(0), 0))
 	for s, item := range saved {
 		s.Text = item.text
 		s.Style = item.style
 	}
-	return newMarkdownText(v, text)
+	return newMarkdownText(v, text, object)
 }
 func (v *markdownView) prose(n ast.Node, style widget.RichTextStyle) fyne.CanvasObject {
-	text := widget.NewRichText(v.inline(n, style)...)
+	text := v.selectable(v.inline(n, style)...)
 	text.Wrapping = fyne.TextWrapWord
-	return v.copyable(v.styleText(text), v.inlineText(n))
+	return v.styleText(&text.RichText, text)
 }
 func (v *markdownView) blocks(parent ast.Node) []fyne.CanvasObject {
 	var blocks []fyne.CanvasObject
@@ -623,13 +641,14 @@ func (v *markdownView) code(n ast.Node, language string) fyne.CanvasObject {
 		lastColors = colors
 		lastHasColor = !pureSpace
 	}
-	text := widget.NewRichText(segments...)
+	text := v.selectable(segments...)
 	text.Wrapping = fyne.TextWrapOff
-	return v.codePanel(v.styleText(text), source, language)
+	return v.codePanel(v.styleText(&text.RichText, text), source, language)
 }
 func (v *markdownView) plainCode(source, language string) fyne.CanvasObject {
-	text := widget.NewRichText(&widget.TextSegment{Text: source, Style: widget.RichTextStyleCodeInline})
-	return v.codePanel(v.styleText(text), source, language)
+	text := v.selectable(&widget.TextSegment{Text: source, Style: widget.RichTextStyleCodeInline})
+	text.Wrapping = fyne.TextWrapOff
+	return v.codePanel(v.styleText(&text.RichText, text), source, language)
 }
 func (v *markdownView) codePanel(text fyne.CanvasObject, source, language string) fyne.CanvasObject {
 	copy := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() { v.editor.app.Clipboard().SetContent(source) })
@@ -663,26 +682,6 @@ func (v *markdownView) table(n *east.Table) fyne.CanvasObject {
 	return container.NewVBox(rows...)
 }
 
-// Secondary click copies a whole block without exposing editable content.
-type markdownCopyBlock struct {
-	widget.BaseWidget
-	object fyne.CanvasObject
-	text   string
-	view   *markdownView
-}
-
-func (v *markdownView) copyable(o fyne.CanvasObject, text string) fyne.CanvasObject {
-	b := &markdownCopyBlock{object: o, text: text, view: v}
-	b.ExtendBaseWidget(b)
-	return b
-}
-func (b *markdownCopyBlock) CreateRenderer() fyne.WidgetRenderer {
-	return widget.NewSimpleRenderer(b.object)
-}
-func (b *markdownCopyBlock) TappedSecondary(e *fyne.PointEvent) {
-	menu := fyne.NewMenu("", fyne.NewMenuItem("Copy text", func() { b.view.editor.app.Clipboard().SetContent(b.text) }))
-	widget.ShowPopUpMenuAtPosition(menu, b.view.editor.window.Canvas(), e.AbsolutePosition)
-}
 func (v *markdownView) openLink(destination string) {
 	u, err := url.Parse(destination)
 	if err != nil {
@@ -778,6 +777,7 @@ type markdownText struct {
 	widget.BaseWidget
 	view           *markdownView
 	text           *widget.RichText
+	object         fyne.CanvasObject
 	cachedMin      fyne.Size
 	minWidth       float32
 	hasMin         bool
@@ -786,8 +786,8 @@ type markdownText struct {
 	refreshed      bool
 }
 
-func newMarkdownText(view *markdownView, text *widget.RichText) *markdownText {
-	t := &markdownText{view: view, text: text}
+func newMarkdownText(view *markdownView, text *widget.RichText, object fyne.CanvasObject) *markdownText {
+	t := &markdownText{view: view, text: text, object: object}
 	t.ExtendBaseWidget(t)
 	return t
 }
@@ -855,20 +855,16 @@ func (r *markdownTextRenderer) Layout(size fyne.Size) {
 		return
 	}
 	r.text.ensureRefreshed()
-	if r.text.text.Wrapping == fyne.TextWrapOff {
-		if r.text.text.Size().IsZero() {
-			r.text.text.Resize(size)
+	if r.text.object.Size() != size {
+		if r.text.text.Wrapping != fyne.TextWrapOff && r.text.text.Size().Width != size.Width {
+			r.text.hasMin = false
 		}
-		return
-	}
-	if r.text.text.Size().Width != size.Width {
-		r.text.hasMin = false
-		r.text.text.Resize(size)
+		r.text.object.Resize(size)
 	}
 }
 func (r *markdownTextRenderer) MinSize() fyne.Size { return r.text.text.MinSize() }
 func (r *markdownTextRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.text.text}
+	return []fyne.CanvasObject{r.text.object}
 }
 func (*markdownTextRenderer) Refresh() {}
 

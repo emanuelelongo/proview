@@ -21,7 +21,7 @@ func TestZoomStartsAtFitAndDoesNotAccumulateBelowMinimum(t *testing.T) {
 	page := canvas.NewImageFromImage(preview)
 	layer := newSignatureLayer(doc, 0, preview.Bounds().Size(), nil, nil, nil)
 	crop := newCropOverlay()
-	content := container.NewStack(page, layer, crop)
+	content := container.New(&imageViewportLayout{image: page}, page, layer, crop)
 	scroll := container.NewScroll(content)
 	scroll.Resize(fyne.NewSize(200, 100))
 	g := &Gui{
@@ -40,12 +40,17 @@ func TestZoomStartsAtFitAndDoesNotAccumulateBelowMinimum(t *testing.T) {
 	if g.zoomLevel != 0 || fit <= 0 || fit >= 2 {
 		t.Fatalf("initial zoom = %f at level %d, want fit below 2 at level 0", fit, g.zoomLevel)
 	}
-	for range 5 {
+	for range 100 {
 		g.zoomOut()
 	}
-	if g.zoom != fit || g.zoomLevel != 0 {
-		t.Fatalf("zoom out below fit changed state to %f at level %d", g.zoom, g.zoomLevel)
+	minimum := fit * float32(math.Pow(float64(zoomStep), minZoomLevel))
+	if math.Abs(float64(g.zoom-minimum)) > 1e-6 || g.zoomLevel != minZoomLevel {
+		t.Fatalf("minimum zoom = %f at level %d", g.zoom, g.zoomLevel)
 	}
+	if page.Size() != page.MinSize() || page.Position().X <= 0 || page.Position().Y <= 0 {
+		t.Fatalf("image not centered at actual zoom: size %v min %v position %v", page.Size(), page.MinSize(), page.Position())
+	}
+	g.resetZoom()
 	g.zoomIn()
 	if g.zoomLevel != 1 || math.Abs(float64(g.zoom-fit*zoomStep)) > 1e-6 {
 		t.Fatalf("first zoom in = %f at level %d, want %f at level 1", g.zoom, g.zoomLevel, fit*zoomStep)
@@ -64,7 +69,7 @@ func TestStartingCropPreservesZoomAndOverlayHasNoMinimumSize(t *testing.T) {
 	page.SetMinSize(fyne.NewSize(150, 75))
 	layer := newSignatureLayer(doc, 0, preview.Bounds().Size(), nil, nil, nil)
 	crop := newCropOverlay()
-	content := container.NewStack(page, layer, crop)
+	content := container.New(&imageViewportLayout{image: page}, page, layer, crop)
 	g := &Gui{
 		document:            doc,
 		image:               page,

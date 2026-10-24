@@ -72,7 +72,11 @@ func (g *Gui) textClipboardShortcut(copy bool) bool {
 func (g *Gui) copyArea() {
 	if g.showingMarkdown() {
 		if !g.textClipboardShortcut(true) {
-			g.app.Clipboard().SetContent(string(g.markdownView.doc.Source))
+			text := g.markdownView.selectedText()
+			if text == "" {
+				text = string(g.markdownView.doc.Source)
+			}
+			g.app.Clipboard().SetContent(text)
 		}
 		return
 	}

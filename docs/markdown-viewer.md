@@ -16,7 +16,7 @@ position. Closing Markdown restores the previous retained document.
 
 Markdown is read-only. Annotation, transformation, signature and save
 commands are disabled. Source files are never rewritten. Zoom In/Out adjusts
-text size from 75% to 200%; Fit to Window restores the default reading size.
+text size from 25% to 200%; Fit to Window restores the default reading size.
 The text column reflows up to a 900-point maximum width. A theme-aware page
 border, inner padding and contrasting workspace margins distinguish its bounds.
 Arrow keys, Page Up,
@@ -42,11 +42,15 @@ is displayed automatically. Following Markdown remains visible. Formulas display
 source text. HTML tags and blocks display literally; no scripts, styles or HTML
 are executed.
 
-Right-click a prose block and choose **Copy text** to copy the block's plain text.
-Code blocks have a copy button that preserves the original code, including
-whitespace. Edit → Copy / Command/Ctrl+C copies the full Markdown source when
-no text field has focus. Drag selection across rendered rich text is not yet
-implemented; Fyne's RichText widget does not provide it.
+Drag to select rendered text across paragraphs, headings, table cells and code
+blocks. Formatting and syntax colors remain visible. Edit → Copy /
+Command/Ctrl+C copies the selection, preserving code whitespace; without a
+selection or focused text field it copies the full Markdown source. Right-click
+text and choose **Copy text** to copy the selection, or the whole block when
+nothing is selected. Code blocks retain their complete-source copy button.
+Escape, zoom and document switching clear the text selection. Starting Crop
+also clears it so the captured image does not contain selection shading.
+Links remain clickable and diagrams keep their image context menu.
 
 Right-click a rendered diagram and choose **Copy image** to copy its PNG at the
 rendered resolution. **Crop** selects a rectangle over the visible Markdown
@@ -143,6 +147,8 @@ full equivalence to official Mermaid.
   image creation in the same workspace without source changes, selection before
   canvas capture, worker-side pixel copying, obsolete confirmation rejection and
   diagram layout deferral through capture.
+- Text-selection tests cover styled/wrapped paragraphs, cross-block and reverse
+  drags, UTF-8 hit testing, exact code whitespace, copy precedence and clearing.
 - Fyne software-rendered frames were visually inspected for prose, tables,
   strikethrough, code highlighting and flowchart/sequence previews in both themes. These do not establish native desktop
   input, accessibility or Linux/Wayland runtime verification.
@@ -155,8 +161,7 @@ still pending.
 
 ## Deferred work
 
-Rendered text drag selection, in-document search, remote-image opt-in and live
-reload are not implemented. Mathematical rendering and HTML layout remain
+In-document search, remote-image opt-in and live reload are not implemented. Mathematical rendering and HTML layout remain
 future decisions. This replaces the discarded webview probe.
 
 The [native Mermaid renderer review](mermaid-renderers-review.md) records the

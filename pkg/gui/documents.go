@@ -104,6 +104,7 @@ func (g *Gui) addDocument(doc *document.Document, mesh *model3d.Mesh, target fyn
 	entry := &editorDocument{doc: doc, mesh: mesh, target: target}
 	g.documents = append(g.documents, entry)
 	g.activeDocument = entry
+	g.singleDocumentSelection(entry)
 	// Ownership stays in documents while the old view is detached.
 	g.document = nil
 	if mesh != nil {
@@ -117,16 +118,7 @@ func (g *Gui) addDocument(doc *document.Document, mesh *model3d.Mesh, target fyn
 }
 
 func (g *Gui) selectDocument(entry *editorDocument) {
-	g.activateEditor()
-	if entry == g.activeDocument || g.closed {
-		return
-	}
-	if g.waitAnnotationChanges(func() { g.selectDocument(entry) }) || g.working || g.pdfOpenDialog != nil {
-		return
-	}
-	g.logEvent("document_switch", "next_document=%p model=%t", entry.doc, entry.mesh != nil)
-	g.prepareDocumentSwitch()
-	g.activateDocument(entry)
+	g.selectDocumentThumbnail(entry, 0)
 }
 
 func (g *Gui) activateDocument(entry *editorDocument) {
@@ -167,6 +159,7 @@ func (g *Gui) refreshDocumentSidebar() {
 	if g.documentList == nil {
 		return
 	}
+	g.normalizeDocumentSelection()
 	if g.activeDocument != nil && g.document != nil && g.document.Format() != document.FormatPDF {
 		g.activeDocument.thumbnail = g.image.Image
 	}
@@ -194,10 +187,11 @@ func (g *Gui) refreshDocumentSidebar() {
 				border := canvas.NewRectangle(color.Transparent)
 				border.StrokeColor = theme.PrimaryColor()
 				border.StrokeWidth = 3
-				if entry != g.activeDocument {
+				if !g.documentSelection[entry] {
 					border.Hide()
 				}
-				tap := newThumbnailTap(func() { g.selectDocument(entry) })
+				tap := newThumbnailTap(nil)
+				tap.onSelect = func(modifiers fyne.KeyModifier) { g.selectDocumentThumbnail(entry, modifiers) }
 				tap.onSecondary = func(event *fyne.PointEvent) { g.documentContextMenu(entry, event) }
 				card := container.NewStack(preview, border, tap)
 				g.documentList.Add(card)
@@ -217,12 +211,15 @@ func (g *Gui) refreshDocumentSidebar() {
 					name = "Preview unavailable"
 				}
 			}
-			button := widget.NewButton(name, func() { g.selectDocument(entry) })
+			button := widget.NewButton(name, func() { g.selectDocumentThumbnail(entry, g.modifiers()) })
 			button.Alignment = widget.ButtonAlignLeading
-			if entry == g.activeDocument {
+			if g.documentSelection[entry] {
 				button.Importance = widget.HighImportance
 			}
-			g.documentList.Add(button)
+			tap := newThumbnailTap(nil)
+			tap.onSelect = func(modifiers fyne.KeyModifier) { g.selectDocumentThumbnail(entry, modifiers) }
+			tap.onSecondary = func(event *fyne.PointEvent) { g.documentContextMenu(entry, event) }
+			g.documentList.Add(container.NewStack(button, tap))
 		}
 	}
 	if g.document != nil && g.document.Format() == document.FormatPDF {
@@ -256,15 +253,36 @@ func (g *Gui) refreshDocumentSidebar() {
 	if g.sidebarSplit != nil {
 		g.sidebarSplit.Refresh()
 	}
+	g.updateSelectionActions()
 }
 
 func (g *Gui) documentContextMenu(entry *editorDocument, event *fyne.PointEvent) {
 	if g.closed || g.working || !slices.Contains(g.documents, entry) {
 		return
 	}
+	if !g.documentSelection[entry] {
+		g.singleDocumentSelection(entry)
+		g.refreshDocumentSidebar()
+	}
+	entries := g.selectedDocuments()
+	run := func(action func()) {
+		if slices.Equal(g.selectedDocuments(), entries) {
+			action()
+		}
+	}
+	printLabel := "Print…"
+	createLabel := "Create PDF"
+	if len(entries) > 1 {
+		printLabel = "Print selected items…"
+		createLabel = "Create PDF from selected items"
+	}
+	printItems := fyne.NewMenuItem(printLabel, func() { run(g.requestPrintSelection) })
+	printItems.Disabled = !g.selectionCanOutput()
+	createPDF := fyne.NewMenuItem(createLabel, func() { run(g.requestCreatePDF) })
+	createPDF.Disabled = !g.selectionCanOutput()
 	closeFile := fyne.NewMenuItem("Close file", func() { g.closeDocumentEntry(entry) })
 	closeFile.Icon = tablerIcon("x")
-	menu := widget.NewPopUpMenu(fyne.NewMenu("", closeFile), g.window.Canvas())
+	menu := widget.NewPopUpMenu(fyne.NewMenu("", printItems, createPDF, fyne.NewMenuItemSeparator(), closeFile), g.window.Canvas())
 	menu.ShowAtPosition(event.AbsolutePosition)
 }
 
@@ -342,6 +360,7 @@ func (g *Gui) processPendingFiles() {
 }
 
 func (g *Gui) removeActiveDocument() {
+	delete(g.documentSelection, g.activeDocument)
 	for i, entry := range g.documents {
 		if entry == g.activeDocument {
 			if entry.thumbnailCancel != nil {
@@ -371,6 +390,7 @@ func (g *Gui) closeRetainedDocuments() {
 	}
 	g.documents = nil
 	g.activeDocument = nil
+	g.singleDocumentSelection(nil)
 }
 func (g *Gui) confirmWindowDocuments(done func()) {
 	g.captureDocument()

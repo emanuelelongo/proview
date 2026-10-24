@@ -73,6 +73,7 @@ func (g *Gui) startMarkdownCrop() {
 		v.cancelCrop()
 		return
 	}
+	v.clearSelection()
 	g.window.Canvas().Focus(nil)
 	if surface, ok := g.window.Content().(*tooltipSurface); ok && surface.owner != nil {
 		surface.hide(surface.owner)

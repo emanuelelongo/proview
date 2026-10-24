@@ -125,4 +125,5 @@ func (g *Gui) refreshThumbnailSelection() {
 			g.pdfThumbBorders[page].Hide()
 		}
 	}
+	g.updateSelectionActions()
 }
