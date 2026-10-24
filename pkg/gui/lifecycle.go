@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 	"image"
+	"slices"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
@@ -40,6 +41,22 @@ func (g *Gui) requestCloseDocument() {
 		return
 	}
 	g.confirmUnsavedChanges("Save changes before closing?", g.closeDocument)
+}
+
+func (g *Gui) closeDocumentEntry(entry *editorDocument) {
+	if g.waitAnnotationChanges(func() { g.closeDocumentEntry(entry) }) {
+		return
+	}
+	if g.closed || g.working || g.pdfOpenDialog != nil || !slices.Contains(g.documents, entry) {
+		return
+	}
+	if entry != g.activeDocument {
+		g.selectDocument(entry)
+		if g.activeDocument != entry {
+			return
+		}
+	}
+	g.requestCloseDocument()
 }
 
 func (g *Gui) closeDocument() {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"slices"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -175,7 +176,12 @@ func (g *Gui) refreshDocumentSidebar() {
 	// Reuse immutable image/model previews; switching never renders on the UI thread.
 	g.documentList.RemoveAll()
 	if len(g.documents) > 1 {
-		for _, entry := range g.documents {
+		for index, entry := range g.documents {
+			if index > 0 {
+				divider := canvas.NewRectangle(theme.Color(theme.ColorNameSeparator))
+				divider.SetMinSize(fyne.NewSize(0, 2))
+				g.documentList.Add(divider)
+			}
 			if entry.thumbnail != nil && (entry.markdown != nil || entry.mesh != nil || entry.doc != nil && entry.doc.Format() != document.FormatPDF) {
 				preview := canvas.NewImageFromImage(entry.thumbnail)
 				preview.FillMode = canvas.ImageFillContain
@@ -191,7 +197,9 @@ func (g *Gui) refreshDocumentSidebar() {
 				if entry != g.activeDocument {
 					border.Hide()
 				}
-				card := container.NewStack(preview, border, newThumbnailTap(func() { g.selectDocument(entry) }))
+				tap := newThumbnailTap(func() { g.selectDocument(entry) })
+				tap.onSecondary = func(event *fyne.PointEvent) { g.documentContextMenu(entry, event) }
+				card := container.NewStack(preview, border, tap)
 				g.documentList.Add(card)
 				continue
 			}
@@ -248,6 +256,16 @@ func (g *Gui) refreshDocumentSidebar() {
 	if g.sidebarSplit != nil {
 		g.sidebarSplit.Refresh()
 	}
+}
+
+func (g *Gui) documentContextMenu(entry *editorDocument, event *fyne.PointEvent) {
+	if g.closed || g.working || !slices.Contains(g.documents, entry) {
+		return
+	}
+	closeFile := fyne.NewMenuItem("Close file", func() { g.closeDocumentEntry(entry) })
+	closeFile.Icon = tablerIcon("x")
+	menu := widget.NewPopUpMenu(fyne.NewMenu("", closeFile), g.window.Canvas())
+	menu.ShowAtPosition(event.AbsolutePosition)
 }
 
 func (g *Gui) receiveDocument(doc *document.Document, mesh *model3d.Mesh, target fyne.URI, done func()) {

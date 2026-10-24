@@ -61,6 +61,9 @@ Escape, zoom, resize or document switching cancels selection; resize, switching,
 closing or starting a new selection also invalidates a queued capture. Crop
 captures visible content only.
 
+The reading page uses a slightly lighter shade than the application background;
+the surrounding workspace keeps the application background color.
+
 ## Loading and resource bounds
 
 `internal/markdown` parses UTF-8 in a background opening worker, accepting a BOM

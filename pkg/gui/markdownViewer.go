@@ -293,11 +293,21 @@ func (r *markdownPageRenderer) Layout(size fyne.Size) {
 	r.paper.Resize(fyne.NewSize(width, max(0, size.Height-2*markdownPageMargin)))
 }
 func (r *markdownPageRenderer) Refresh() {
-	r.workspace.FillColor = theme.ColorForWidget(theme.ColorNameInputBackground, r.surface)
-	r.paper.FillColor = theme.ColorForWidget(theme.ColorNameBackground, r.surface)
+	windowBackground := theme.ColorForWidget(theme.ColorNameBackground, r.surface)
+	r.workspace.FillColor = windowBackground
+	r.paper.FillColor = lightenMarkdownPage(windowBackground)
 	r.paper.StrokeColor = theme.ColorForWidget(theme.ColorNameInputBorder, r.surface)
 	r.workspace.Refresh()
 	r.paper.Refresh()
+}
+
+func lightenMarkdownPage(base color.Color) color.Color {
+	c := color.NRGBAModel.Convert(base).(color.NRGBA)
+	const amount = uint16(6)
+	lighten := func(channel uint8) uint8 {
+		return uint8(uint16(channel) + (255-uint16(channel))*amount/100)
+	}
+	return color.NRGBA{R: lighten(c.R), G: lighten(c.G), B: lighten(c.B), A: c.A}
 }
 
 var (

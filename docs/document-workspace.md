@@ -30,6 +30,9 @@ removed locally and remotely before this work.
   Image thumbnails reuse displayed previews and resize with the sidebar. STL
   documents use a static 320 × 240 thumbnail of the initial isometric view,
   generated once in a worker and retained across camera changes and switches.
+  Separators distinguish document thumbnails. Right-click a non-PDF thumbnail
+  and choose **Close file** to activate and close that document, with the usual
+  save prompt for unsaved changes.
   The selected PDF's page thumbnails remain below the document selector.
 - Documents retain independent history, save destination, zoom, selected PDF
   page, scroll position and redaction destination warnings. STL documents retain
