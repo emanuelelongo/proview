@@ -186,7 +186,7 @@ func (v *modelViewport) startRender() {
 	}()
 }
 func (g *Gui) hasOpenContent() bool {
-	return g.document != nil || (g.modelViewport != nil && g.modelViewport.mesh != nil)
+	return g.showingMarkdown() || g.document != nil || (g.modelViewport != nil && g.modelViewport.mesh != nil)
 }
 func (g *Gui) showingModel() bool { return g.modelViewport != nil && g.modelViewport.mesh != nil }
 func (g *Gui) clearModel() {
@@ -201,6 +201,7 @@ func (g *Gui) clearModel() {
 	}
 }
 func (g *Gui) showModel(mesh *model3d.Mesh) {
+	g.clearMarkdown()
 	if g.document != nil {
 		g.closeDocument()
 	} else {
@@ -235,7 +236,9 @@ func loadModelReader(uri fyne.URIReadCloser) (*model3d.Mesh, error) {
 	err = errors.Join(err, uri.Close())
 	return mesh, err
 }
-func openFileExtensions() []string { return append(document.OpenExtensions(), ".stl") }
+func openFileExtensions() []string {
+	return append(document.OpenExtensions(), ".stl", ".md", ".markdown")
+}
 func isModelFile(name string) bool { return strings.HasSuffix(strings.ToLower(name), ".stl") }
 func (g *Gui) modelInfo() string {
 	m := g.modelViewport.mesh
@@ -295,7 +298,7 @@ func (g *Gui) startModelCrop() {
 				doc.Close()
 				return
 			}
-			g.openImageWindow(doc)
+			g.openNewImage(doc)
 		})
 	})
 }

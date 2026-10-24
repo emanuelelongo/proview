@@ -171,6 +171,9 @@ func (g *Gui) updateFileInfo() {
 	if g.showingModel() {
 		text = g.modelInfo()
 	}
+	if g.showingMarkdown() {
+		text = g.markdownView.doc.Info()
+	}
 	if text != g.fileInfo.Text {
 		g.fileInfo.Text = text
 		g.fileInfo.Refresh()

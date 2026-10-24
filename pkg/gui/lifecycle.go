@@ -47,6 +47,14 @@ func (g *Gui) closeDocument() {
 	g.removeActiveDocument()
 	g.closeSearch()
 	g.stopFormPulse()
+	if g.showingMarkdown() {
+		g.window.Canvas().Focus(nil)
+		g.clearMarkdown()
+		g.imageScroll.Show()
+		g.updateHistoryActions()
+		g.restoreRemainingDocument()
+		return
+	}
 	if g.showingModel() {
 		g.clearModel()
 		g.panModifierDown = false
@@ -121,6 +129,7 @@ func (g *Gui) closeWindow() {
 	g.unregisterEditor()
 	g.hideObjectOrderMenu()
 	g.clearModel()
+	g.clearMarkdown()
 	g.stopOCR()
 	if g.signatureDialog != nil {
 		g.signatureDialog.Hide()
@@ -191,6 +200,9 @@ func (g *Gui) updateTitle() {
 	}
 	if g.showingModel() {
 		title = fmt.Sprintf("%s — Proview", g.modelViewport.mesh.Name)
+	}
+	if g.showingMarkdown() {
+		title = fmt.Sprintf("%s — Proview", g.markdownView.doc.Name)
 	}
 	if g.window != nil {
 		g.window.SetTitle(title)
@@ -273,6 +285,10 @@ func (g *Gui) cancelCurrentOperation() bool {
 	}
 	if g.objectOrderMenu != nil && g.objectOrderMenu.Visible() {
 		g.hideObjectOrderMenu()
+		return true
+	}
+	if g.showingMarkdown() && g.markdownView.crop != nil && g.markdownView.crop.active {
+		g.markdownView.cancelCrop()
 		return true
 	}
 	if g.modelCrop != nil && g.modelCrop.active {

@@ -155,7 +155,7 @@ func TestFinderOpeningUsesSharedDocumentWorkspace(t *testing.T) {
 	}
 	g.openFilesFromFinder([]string{path})
 	driver.runNext(t)
-	for len(g.editors.windows) < 2 || g.openingFiles {
+	for len(g.editors.windows) < 2 || g.editors.windows[1].openingFiles {
 		driver.runNext(t)
 	}
 	if len(g.documents) != 1 || g.document != existing || len(g.editors.windows) != 2 {
@@ -196,7 +196,7 @@ func TestModelDocumentSwitchRestoresCameraAndImageEdits(t *testing.T) {
 	g.closeDocument()
 }
 
-func TestDesktopRequestsReuseSurvivingEditorAfterFirstWindowCloses(t *testing.T) {
+func TestDesktopRequestsOpenNewWindowAfterFirstWindowCloses(t *testing.T) {
 	first, driver := newDropTestGui(t)
 	second := first.newEditor()
 	second.addDocument(testDocument(t, 20, 20), nil, nil)
@@ -216,12 +216,17 @@ func TestDesktopRequestsReuseSurvivingEditorAfterFirstWindowCloses(t *testing.T)
 		t.Fatal(err)
 	}
 	first.openFilesFromFinder([]string{path})
-	for len(second.documents) != 2 || second.openingFiles {
+	for first.desktopEditor() == second {
 		driver.runNext(t)
 	}
-	if second.document.Format() != document.FormatPNG || len(driver.AllWindows()) != baseline {
-		t.Fatal("desktop request opened an unrelated window")
+	opened := first.desktopEditor()
+	for opened.openingFiles || len(opened.pendingFiles) > 0 {
+		driver.runNext(t)
 	}
+	if opened.document == nil || opened.document.Format() != document.FormatPNG || len(driver.AllWindows()) != baseline+1 || len(second.documents) != 1 {
+		t.Fatal("desktop request did not preserve the surviving workspace")
+	}
+	opened.closeWindow()
 	second.closeWindow()
 }
 
@@ -321,4 +326,47 @@ func TestPDFAndOtherFileTypesOpenInSeparateWindows(t *testing.T) {
 			g.closeWindow()
 		})
 	}
+}
+
+func TestGeneratedImageUsesRequestingWindowAndPreservesSaveTarget(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	source := testDocument(t, 40, 30)
+	source.MarkUnsaved()
+	target := storage.NewFileURI(filepath.Join(t.TempDir(), "original.png"))
+	g.addDocument(source, nil, target)
+	other := g.newEditor()
+	otherDoc := testDocument(t, 20, 10)
+	other.addDocument(otherDoc, nil, nil)
+	before := len(driver.AllWindows())
+	created := testDocument(t, 10, 10)
+	created.MarkUnsaved()
+	// Another window is active when work started in g finishes.
+	g.openNewImage(created)
+	if len(driver.AllWindows()) != before || g.document != created || g.saveTarget != nil || len(g.documents) != 2 || other.document != otherDoc || len(other.documents) != 1 {
+		t.Fatal("generated image did not stay in its requesting workspace")
+	}
+	if !g.sidebar.documents.Visible() || !created.Dirty() {
+		t.Fatal("generated image is not an unsaved sidebar entry")
+	}
+	g.selectDocument(g.documents[0])
+	if g.document != source || g.saveTarget != target || !source.Dirty() {
+		t.Fatal("generated image lost the source state")
+	}
+	g.closeWindow()
+	other.closeWindow()
+}
+
+func TestGeneratedImageFromPDFRetainsWindowSeparation(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	pdf := workspacePDF(t, 1)
+	g.addDocument(pdf, nil, nil)
+	created := testDocument(t, 10, 10)
+	before := len(driver.AllWindows())
+	g.openNewImage(created)
+	editor := g.desktopEditor()
+	if editor == g || len(driver.AllWindows()) != before+1 || g.document != pdf || len(g.documents) != 1 || editor.document != created || editor.saveTarget != nil {
+		t.Fatal("generated image was mixed into a PDF workspace")
+	}
+	editor.closeWindow()
+	g.closeWindow()
 }

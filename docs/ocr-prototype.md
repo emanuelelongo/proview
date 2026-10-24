@@ -48,6 +48,25 @@ gesture until release. There is no cross-page text selection or edge autoscroll.
   TSV output through `-c tessedit_create_tsv=1`. This does not require the optional
   installed `tsv` configuration file. PNG input and TSV output use pipes; document
   pixels and recognized text are never written to temporary files by Proview.
+- A conservative Otsu retry (`thresholding_method=0`) runs only when at least
+  80% of sampled pixels are dark (grayscale below 96) and the primary result is
+  not already strong (mean confidence at least 90 and at least 90% of words with
+  confidence 80 or above). Light scans and strong primary results keep one pass.
+  The retry uses the same encoded pixels, language models, segmentation and
+  deskew geometry, with a three-second subprocess deadline. It is skipped when
+  fewer than four seconds remain in the parent job. Retry errors/timeouts keep
+  the primary result; document cancellation still discards the entire job.
+- Supplemental words require confidence at least 85, a letter or digit and no
+  bounding-box overlap with any primary or previously accepted supplemental word.
+  Existing words retain text, geometry, confidence, line/block IDs and relative
+  reading order. Nearby supplements join original lines; new lines get fresh IDs.
+  Pages exceeding 4096 words in either pass retain the primary result to bound
+  pairwise geometry work. This is deliberately conservative: incorrect primary
+  words are not corrected, and some missing words can remain unavailable.
+  Confidence is heuristic; supplemental words can still be wrong.
+- Both passes finish in the existing background job before publishing one layout.
+  Selection can become available slightly later; its word indexes never change
+  underneath an active gesture. Zoom/scroll reuse the combined cached result.
 - PDF source text (including an existing OCR layer) takes precedence. A page with
   any selectable native words skips OCR. Consequently mixed pages currently expose
   only native text; recognition and merging of their raster regions is deferred.
@@ -95,7 +114,9 @@ Tesseract. The probe requires it and performs real recognition. A malformed TSV,
 a missing language, timeout, canceled/replaced document, image transformations,
 clipboard precedence, cache reuse/eviction, sanitized native text, shared-image
 redaction propagation and failure without an unsafe fallback are covered
-by focused tests.
+by focused tests. Retry tests cover the light/strong-result bypass, immutable
+primary words, uncovered-region insertion and ordering, duplicate/noise rejection,
+empty-primary recovery, coordinate mismatch, errors, deadlines and cancellation.
 
 Manual desktop acceptance checklist (repeat on each target platform):
 
@@ -139,3 +160,19 @@ viewer, source bytes, edits and exports are unchanged. No perspective or page
 curvature correction is performed. Ordinary tests cover both rotation directions,
 aligned/blank input, cancellation, corner preservation and inverse selection
 geometry without requiring an installed OCR engine.
+
+
+## Dark screenshot retry verification
+
+On 2026-10-24, two user-provided desktop PNGs were evaluated locally with the
+bundled macOS ARM64 runtime and the same document recognition path. The mixed
+code/diagram screenshot increased from 25 recognized words to 36, retaining all
+primary words; the already strong log screenshot stayed at 204 words with mean
+confidence 92.2. Counts and confidence are not measured transcription accuracy.
+The private files were not added to the repository.
+
+The generated eight-case OCR corpus was also rerun: clean screenshot, A4 scan,
+two-column image and scanned PDF retained 100% word accuracy, and blank input
+remained empty. Mixed native/raster PDF behavior retains the documented native
+text-only limitation. Native desktop selection gestures and other platforms
+still require the acceptance checks above.

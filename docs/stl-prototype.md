@@ -32,15 +32,15 @@ uses the ordinary unbundled developer build; STL itself requires no OCR assets.
 - Selecting a standard view resets zoom and pan while preserving wireframe.
 - Fit to Window (`Command/Ctrl+0`) resets zoom and pan without changing orientation.
 - Crop selects a rectangular screenshot of the current shaded/wireframe view.
-  Confirm Crop to open an independent, editable PNG window; the STL camera and
+  Confirm Crop to select an independent, editable PNG in the same sidebar; the STL camera and
   mesh stay intact. Escape cancels; changing the camera cancels the selection.
 - File → Close (`Command/Ctrl+W`) clears the model and keeps the window open.
 
 The status bar shows triangle count and bounding-box dimensions in model units.
 STL does not provide a unit setting here; dimensions are not labeled as millimeters.
 Save, signatures, drawing tools, image transforms, clipboard document editing
-and PDF page operations are unavailable in model mode. Creating a new image opens
-another window instead of replacing the model. Opening an image/PDF restores
+and PDF page operations are unavailable in model mode. Creating a new image adds a sidebar
+entry in the same window and retains the model. PDFs open separately. Selecting an image/PDF restores
 its usual editing tools.
 
 ## Scope and limits

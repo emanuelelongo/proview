@@ -145,6 +145,9 @@ func (c *cropOverlay) Deactivate() {
 	}
 }
 
+// A crop owns a fixed source frame; wheel events must not move the view beneath it.
+func (c *cropOverlay) Scrolled(*fyne.ScrollEvent) {}
+
 func (c *cropOverlay) Cursor() desktop.Cursor {
 	return desktop.CrosshairCursor
 }

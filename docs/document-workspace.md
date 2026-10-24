@@ -6,9 +6,15 @@ removed locally and remotely before this work.
 
 ## Opening behavior
 
-- Open file, file drops, startup paths and desktop Open With requests share the
-  same loading and routing behavior. Files in a batch are processed in order;
-  requests received during file/annotation work wait until it finishes.
+- Open file and file drops target the window where the interaction started.
+  New blank images, images from the clipboard and Markdown/STL crops also join
+  that window's sidebar and select the new document. Existing documents retain
+  their edits, save destinations and view state.
+- Startup paths and desktop Open With requests use the same ordered loader.
+  A desktop request starts a new window when the active editor contains a
+  document or has opening/work requests pending; an empty idle window is reused.
+  Files in one batch share the receiving workspace, subject to the PDF rules.
+  Requests within a window wait for its file/annotation work to finish.
 - An empty window opens the first file normally.
 - When the selected document and incoming file are both PDFs, an Open PDF dialog
   offers New window, Append pages and Cancel. The incoming file is validated
@@ -31,7 +37,9 @@ removed locally and remotely before this work.
 - File > Close applies to the selected document, asks about unsaved changes and
   selects a remaining document. Closing the window checks all dirty documents;
   canceling preserves every document, including previously declined saves.
-- Crops and generated images retain their existing independent-window behavior.
+- PDF crops remain independent PNG documents in another window, preserving the
+  PDF/non-PDF separation. Other generated images are independent, unsaved entries
+  in the requesting workspace. Closing one never edits or closes its source.
 
 ## PDF page thumbnails
 
@@ -118,7 +126,7 @@ for framework preferences and cache locations.
 
 - `pkg/gui/documents_test.go`: document state/history isolation, PDF choices,
   append Undo/Redo/source ownership, window close cancellation, Finder routing
-  and STL camera restoration.
+  STL camera restoration and desktop-request window isolation.
 - `pkg/gui/droppedFiles_test.go`: empty/dirty/busy windows, multiple drops,
   Unicode paths, missing files and closed-window delivery.
 - `internal/openfiles/openfiles_test.go`: second-launch forwarding, absolute
@@ -151,3 +159,11 @@ position, annotation coordinates, source data or history. Highlight fragments
 use the enhanced density too, so highlighted text does not retain a blurry patch.
 Stale results after document changes, form edits, native text edits or Undo/Redo
 are discarded. Failures retain the ordinary/last valid preview and are logged.
+
+## Markdown documents
+
+Markdown files share the sidebar with images and STL models. Their thumbnail
+is a bounded snapshot of the rendered reading viewport, captured once after
+diagrams settle and retained across scrolling, zoom and document switching. Reading size and scroll position survive document switching. They stay
+read-only and never use PDF/image history or saving. The existing PDF/non-PDF
+separate-window rule also applies to Markdown. See [Markdown viewer](markdown-viewer.md).

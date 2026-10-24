@@ -43,10 +43,12 @@ Tip: Each completed PDF text move has its own Undo step; press Esc to leave Move
 Tip: PDF text edits keep surrounding content fixed; edits, moves and copies cannot overlap other source text.
 Tip: Use Redact PDF to securely remove sensitive information from PDFs when you export.
 Tip: Click a QR code to reveal its contents in the status bar; click a link there to open it.
-Tip: Crop a PDF page or STL view to open the selected area as an image in a new window.
+Tip: Crop a Markdown or STL view to add the selected area as an image in the same sidebar.
+Tip: Crop a PDF page to open the selected area as an image in a separate window.
 Tip: File > Close closes the current document and keeps the editor window open.
 Tip: For STL models, keys 1-7 select standard views and 0 toggles wireframe.
 Tip: GIF and multipage TIFF files currently show only their first frame or page.
 Tip: Sync your signature library with Google Drive or S3 to use it on another computer.
 Tip: Use Help > Open logs folder to find diagnostic logs when reporting a problem.
 Tip: Use Help > Show Tips to hide or show these suggestions.
+Tip: Use the copy button above a Mermaid diagram to copy its code, or right-click it to Copy image.

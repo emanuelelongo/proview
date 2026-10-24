@@ -17,6 +17,10 @@ const (
 func (g *Gui) zoomIn()  { g.zoomBy(1, nil) }
 func (g *Gui) zoomOut() { g.zoomBy(-1, nil) }
 func (g *Gui) zoomBy(delta int, point *fyne.Position) {
+	if g.showingMarkdown() {
+		g.markdownView.zoom(delta)
+		return
+	}
 	if g.showingModel() {
 		factor := 1.25
 		if delta < 0 {
@@ -35,6 +39,11 @@ func (g *Gui) zoomBy(delta int, point *fyne.Position) {
 }
 
 func (g *Gui) resetZoom() {
+	if g.showingMarkdown() {
+		g.markdownView.scale = 1
+		g.markdownView.rebuild()
+		return
+	}
 	if g.showingModel() {
 		g.modelCrop.Deactivate()
 		g.modelViewport.camera.PanX = 0

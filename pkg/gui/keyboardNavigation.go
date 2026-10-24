@@ -8,6 +8,9 @@ import (
 // These are viewer keys, not global shortcuts: focused widgets, modifiers,
 // dialogs and unfinished editing gestures retain ownership of their input.
 func (g *Gui) handleDocumentNavigationKey(key fyne.KeyName) bool {
+	if g.showingMarkdown() {
+		return g.handleMarkdownKey(key)
+	}
 	switch key {
 	case fyne.KeyLeft, fyne.KeyRight, fyne.KeyUp, fyne.KeyDown, fyne.KeyPageUp, fyne.KeyPageDown:
 	default:

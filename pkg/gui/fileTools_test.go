@@ -128,7 +128,12 @@ func TestNewImageReusesEmptyWindowAndPreservesOpenDocument(t *testing.T) {
 	}
 	second := testDocument(t, 40, 30)
 	g.openNewImage(second)
-	if g.document != first || len(app.Driver().AllWindows()) != windows+1 {
-		t.Fatal("new image replaced the open document instead of opening another window")
+	if g.document != second || len(app.Driver().AllWindows()) != windows || len(g.documents) != 2 {
+		t.Fatal("new image did not join the existing workspace")
 	}
+	g.selectDocument(g.documents[0])
+	if g.document != first {
+		t.Fatal("new image lost the previous document")
+	}
+	g.closeWindow()
 }

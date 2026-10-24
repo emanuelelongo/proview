@@ -70,6 +70,12 @@ func (g *Gui) textClipboardShortcut(copy bool) bool {
 	return false
 }
 func (g *Gui) copyArea() {
+	if g.showingMarkdown() {
+		if !g.textClipboardShortcut(true) {
+			g.app.Clipboard().SetContent(string(g.markdownView.doc.Source))
+		}
+		return
+	}
 	if g.textClipboardShortcut(true) {
 		return
 	}

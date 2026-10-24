@@ -105,10 +105,10 @@ func (g *Gui) updateHistoryActions() {
 		setToolbarActionEnabled(g.zoomInAction, g.hasOpenContent())
 	}
 	if g.signatureAction != nil {
-		setToolbarActionEnabled(g.signatureAction, !g.showingModel())
+		setToolbarActionEnabled(g.signatureAction, !g.showingModel() && !g.showingMarkdown())
 	}
 	if g.signatureItem != nil {
-		g.signatureItem.Disabled = g.showingModel()
+		g.signatureItem.Disabled = g.showingModel() || g.showingMarkdown()
 	}
 	g.updateTransformActions()
 	if g.cropAction != nil {

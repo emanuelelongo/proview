@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"emanuelelongo/proview/internal/markdown"
 	"emanuelelongo/proview/internal/pdfengine"
 	"emanuelelongo/proview/internal/qrscan"
 	"emanuelelongo/proview/pkg/annotations"
@@ -16,6 +17,8 @@ func thirdPartyLicensesText() string {
 	return fmt.Sprintf(`THIRD-PARTY COMPONENTS
 
 Fyne — BSD 3-Clause — fyne.io/fyne/v2
+Goldmark / Chroma / regexp2 — MIT — Native Markdown and syntax highlighting
+Sketch / Pele — MIT; bundled fonts — OFL / BSD — Native Mermaid rendering
 Go clipboard — MIT — golang.design/x/clipboard
 Zenity — MIT — github.com/ncruces/zenity
 go-fitz / MuPDF — GNU AGPL v3 — github.com/gen2brain/go-fitz
@@ -48,5 +51,9 @@ CLOUD SYNC DEPENDENCIES
 
 GOZXING
 
-%s`, annotations.FontLicenses(), string(tabler), pdfengine.LicenseText(), cloud.LicenseText(), qrscan.LicenseText())
+%s
+
+MARKDOWN
+
+%s`, annotations.FontLicenses(), string(tabler), pdfengine.LicenseText(), cloud.LicenseText(), qrscan.LicenseText(), markdown.Licenses())
 }

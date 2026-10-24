@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"emanuelelongo/proview/internal/markdown"
 	"emanuelelongo/proview/internal/model3d"
 	"emanuelelongo/proview/pkg/document"
 	"fmt"
@@ -22,6 +23,8 @@ type editorDocument struct {
 	thumbnail       image.Image
 	thumbnailCancel context.CancelFunc
 	thumbnailFailed bool
+	markdown        *markdown.Document
+	markdownScale   float32
 	doc             *document.Document
 	mesh            *model3d.Mesh
 	camera          model3d.Camera
@@ -54,12 +57,25 @@ func (g *Gui) captureDocument() {
 	if g.document != nil && g.document.Format() != document.FormatPDF {
 		entry.thumbnail = g.image.Image
 	}
-	entry.doc, entry.target = g.document, g.saveTarget
+	entry.doc = g.document
+	if !g.showingMarkdown() {
+		entry.target = g.saveTarget
+	}
 	entry.redactedTargets = g.redactedTargets
 	entry.zoom, entry.zoomLevel, entry.page = g.zoom, g.zoomLevel, g.activePDFPage
 	entry.offset = g.imageScroll.Offset
 	if g.document != nil && g.document.Format() == document.FormatPDF {
 		entry.offset = g.pdfScroll.Offset
+	}
+	entry.markdown = nil
+	if g.showingMarkdown() {
+		entry.markdown = g.markdownView.doc
+		g.markdownView.captureThumbnail()
+		entry.markdownScale = g.markdownView.scale
+		entry.offset = g.markdownView.scroll.Offset
+		if g.markdownView.pendingReadingOffset != nil {
+			entry.offset = *g.markdownView.pendingReadingOffset
+		}
 	}
 	entry.mesh = nil
 	if g.showingModel() {
@@ -115,7 +131,14 @@ func (g *Gui) selectDocument(entry *editorDocument) {
 func (g *Gui) activateDocument(entry *editorDocument) {
 	g.activeDocument = entry
 	g.document = nil
-	if entry.mesh != nil {
+	if entry.markdown != nil {
+		g.showMarkdown(entry.markdown)
+		if entry.markdownScale > 0 {
+			g.markdownView.scale = entry.markdownScale
+			g.markdownView.rebuild()
+		}
+		g.markdownView.restoreReadingOffset(entry.offset)
+	} else if entry.mesh != nil {
 		g.showModel(entry.mesh)
 		g.modelViewport.camera = entry.camera
 		g.modelViewport.requestRender()
@@ -153,7 +176,7 @@ func (g *Gui) refreshDocumentSidebar() {
 	g.documentList.RemoveAll()
 	if len(g.documents) > 1 {
 		for _, entry := range g.documents {
-			if entry.thumbnail != nil && (entry.mesh != nil || entry.doc != nil && entry.doc.Format() != document.FormatPDF) {
+			if entry.thumbnail != nil && (entry.markdown != nil || entry.mesh != nil || entry.doc != nil && entry.doc.Format() != document.FormatPDF) {
 				preview := canvas.NewImageFromImage(entry.thumbnail)
 				preview.FillMode = canvas.ImageFillContain
 				preview.ScaleMode = canvas.ImageScaleFastest
@@ -178,6 +201,8 @@ func (g *Gui) refreshDocumentSidebar() {
 				if entry.doc.Dirty() {
 					name = "• " + name
 				}
+			} else if entry.markdown != nil {
+				name = entry.markdown.Name
 			} else if entry.mesh != nil {
 				name = "Loading…"
 				if entry.thumbnailFailed {

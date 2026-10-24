@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	fyne.io/fyne/v2 v2.7.4
+	github.com/alecthomas/chroma/v2 v2.20.0
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.0
@@ -14,15 +15,18 @@ require (
 	github.com/ncruces/zenity v0.10.15
 	github.com/pdfcpu/pdfcpu v0.16.0
 	github.com/tdewolff/canvas v0.0.0-20250728095813-50d4cb1eee71
+	github.com/yuin/goldmark v1.7.11
 	github.com/zalando/go-keyring v0.2.6
 	golang.design/x/clipboard v0.9.0
 	golang.org/x/image v0.46.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
+	tuios.dev/sketch v0.3.2-0.20261024080457-fed94a1a2d22
 )
 
 require (
+	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 )
@@ -87,7 +91,6 @@ require (
 	github.com/tdewolff/font v0.0.0-20250430140153-b654fd8acba3 // indirect
 	github.com/tdewolff/minify/v2 v2.23.4 // indirect
 	github.com/tdewolff/parse/v2 v2.8.0 // indirect
-	github.com/yuin/goldmark v1.7.11 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.design/x/x11 v0.2.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect

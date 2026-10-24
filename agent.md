@@ -124,7 +124,9 @@ PDF page combination/reordering/deletion and blank pages.
   Dispatch to `fyne.Do` and ignore closed windows. Open file, startup, drops and
   desktop requests share ordered opening: PDF onto PDF offers New window /
   Append pages / Cancel. PDF/non-PDF combinations always open a new window;
-  images and STL files can share a window.
+  images, Markdown and STL files can share a window. Generated images and
+  non-PDF crops join the requesting workspace. OS file requests use a new window
+  when the active editor is occupied; empty idle editors can be reused.
   The sidebar switches documents and keeps the selected PDF's page thumbnails.
   Busy requests wait; switching preserves edits, source ownership and save targets.
 - Desktop launches with paths use `internal/openfiles` to forward to an existing
@@ -614,6 +616,11 @@ invalidation, viewport residency and repeatable performance checks.
   using native PDF text first and a bundled Tesseract 5 subprocess otherwise.
   Direct unbundled builds still use `PROVIEW_OCR=1` for development. Setup/evaluation instructions
   are in `docs/ocr-prototype.md`; packaging details are in `docs/ocr-packaging.md`.
+- Preserve Sauvola as the primary OCR pass. Only weak dark inputs get a bounded
+  Otsu retry; supplement high-confidence uncovered words without replacing primary
+  text/geometry/order. Publish one final layout, retain primary output on retry
+  failure and discard canceled work. See `internal/ocr/retry.go` and the OCR topic
+  document for thresholds, bounds and local verification.
 - Keep OCR independent of the annotation queue and its busy flag. Publish results
   only for the current document/content key, cancel obsolete work and bound the
   in-memory cache. No OCR data belongs in editor history or exported content.
@@ -670,6 +677,26 @@ invalidation, viewport residency and repeatable performance checks.
   image visible and update the preview without a crop confirmation. Ordinary
   document cropping still requires confirmation. Do not commit personal signature images.
 
+## Native Markdown viewer
+
+Read [docs/markdown-viewer.md](docs/markdown-viewer.md) for scope and verification.
+Markdown uses Goldmark, Chroma and native Fyne widgets; do not restore the
+abandoned webview/WPE probe. Keep it read-only and outside document.Document's
+PDF/image editing/export paths. Images and highlighting load in the opening
+worker. Mermaid uses the pinned sketch core/raster packages through internal/mermaid,
+with document-local bounded image caches and coalesced background view jobs.
+Theme, viewport, zoom and display scale form the render key. Cancel waiting jobs
+on teardown and reject stale results; active sketch calls finish within limits. Never fetch remote images automatically; resolve relative resources
+within the canonical document directory. editorDocument owns reading state.
+Preserve the PDF/non-PDF window policy and shared opening queue. Keep a code-copy button visible above Mermaid previews and display source only
+on failure. Diagram context menus copy rendered PNGs. Markdown Crop activates
+before worker-side capture conversion, freezes the visible viewport with GPU
+scaling and adds an independent PNG to the same workspace. Defer diagram layout
+updates while cropping and reject stale snapshot publication after cancellation,
+resize, switching or closing; early confirmation must wait only in the worker.
+Formulas and HTML remain literal source. Rich text drag selection is deferred;
+block/code copying and full source copying are available.
+
 ## STL viewer prototype
 
 - STL workspace entries use a static isometric thumbnail, rendered once in a
@@ -677,7 +704,7 @@ invalidation, viewport residency and repeatable performance checks.
 - STL uses `internal/model3d` and the separate `modelViewport` in each GUI window.
   Do not treat meshes as raster `document.Document` objects. Model mode is read-only;
   editing, signatures, save and OCR remain unavailable, while Open/Close/zoom work.
-  Crop captures the displayed frame into an independent, unsaved PNG window.
+  Crop captures the displayed frame into an independent, unsaved PNG in the same workspace.
   Selection freezes frame publication; Escape/camera changes/Close cancel it.
 - STL has no additional on-canvas controls/help. View contains STL-only commands:
   1–7 select Isometric, Top, Bottom, Front, Rear, Left, Right; 0 toggles wireframe.

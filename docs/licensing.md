@@ -175,3 +175,19 @@ reviewed source in the Go module cache and upstream repositories.
 | `modernc.org/knuth` | `v0.5.5` | BSD (see exact upstream text) |
 | `modernc.org/token` | `v1.1.0` | BSD (see exact upstream text) |
 | `star-tex.org/x/tex` | `v0.7.1` | BSD (see exact upstream text) |
+
+## Native Markdown dependencies
+
+The native Markdown viewer adds Chroma v2.20.0 and its regexp2 v1.11.5 dependency,
+and directly uses Goldmark v1.7.11, already present through Fyne. All three use
+MIT licenses. Their pinned license texts are retained under
+`internal/markdown/licenses` and included in Help → Third-Party Licenses.
+This addition does not close the distribution work listed above.
+
+The Mermaid adapter imports sketch core and raster from
+`v0.3.2-0.20261024080457-fed94a1a2d22`. The MIT notice identifies Pele and the
+Go port. Its rasterizer bundles subsets of Arimo under OFL-1.1 and Go Mono under
+BSD terms. The unmodified source license and complete font notice are copied to
+`internal/markdown/licenses/Sketch-Pele-MIT.txt` and `Sketch-Fonts.txt`, embedded
+in the existing Third-Party Licenses screen. Tuios CLI/terminal packages and
+its plot library are not imported by the rendering adapter.

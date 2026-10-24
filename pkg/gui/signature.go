@@ -15,7 +15,7 @@ import (
 )
 
 func (g *Gui) promptSignature() {
-	if g.working || g.showingModel() {
+	if g.working || g.showingModel() || g.showingMarkdown() {
 		return
 	}
 	g.showSignatureDropdown()

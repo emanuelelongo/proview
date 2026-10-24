@@ -173,3 +173,40 @@ func TestWorkDirOnlyLaunchUsesCurrentEditorAndOrdinaryFilesKeepRouting(t *testin
 		window.closeWindow()
 	}
 }
+
+func TestDesktopFileRequestsReuseEmptyWindowThenOpenSeparateWorkspace(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	path := filepath.Join(t.TempDir(), "incoming.png")
+	doc := testDocument(t, 12, 8)
+	data, err := doc.Export(document.ExportOptions{Format: document.FormatPNG})
+	doc.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := len(driver.AllWindows())
+	g.OpenFiles([]string{path})
+	driver.runNext(t)
+	for g.openingFiles {
+		driver.runNext(t)
+	}
+	if g.document == nil || len(driver.AllWindows()) != before {
+		t.Fatal("desktop request did not reuse the empty editor")
+	}
+	existing := g.document
+	g.OpenFiles([]string{path, path})
+	for g.desktopEditor() == g {
+		driver.runNext(t)
+	}
+	opened := g.desktopEditor()
+	for opened.openingFiles || len(opened.pendingFiles) > 0 {
+		driver.runNext(t)
+	}
+	if g.document != existing || len(g.documents) != 1 || len(opened.documents) != 2 || len(driver.AllWindows()) != before+1 {
+		t.Fatal("desktop batch did not use its own workspace")
+	}
+	opened.closeWindow()
+	g.closeWindow()
+}

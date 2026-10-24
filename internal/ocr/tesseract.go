@@ -114,18 +114,20 @@ func (t *Tesseract) Recognize(ctx context.Context, img image.Image) (textselect.
 	if err := ctx.Err(); err != nil {
 		return textselect.Layout{}, err
 	}
-	cmd := t.command(ctx, "stdin", "stdout", "-l", "ita+eng", "--oem", "1", "--psm", "3", "-c", "tessedit_create_tsv=1", "-c", "thresholding_method=2")
-	cmd.Stdin = &input
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	data, err := cmd.Output()
-	if ctx.Err() != nil {
-		return textselect.Layout{}, ctx.Err()
-	}
-	if err != nil {
-		return textselect.Layout{}, fmt.Errorf("Tesseract failed: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	layout, err := ParseTSV(bytes.NewReader(data), img.Bounds().Dx(), img.Bounds().Dy())
+	layout, err := recognizeWithRetry(ctx, img, func(passCtx context.Context, method int) (textselect.Layout, error) {
+		cmd := t.command(passCtx, "stdin", "stdout", "-l", "ita+eng", "--oem", "1", "--psm", "3", "-c", "tessedit_create_tsv=1", "-c", fmt.Sprintf("thresholding_method=%d", method))
+		cmd.Stdin = bytes.NewReader(input.Bytes())
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		data, err := cmd.Output()
+		if passCtx.Err() != nil {
+			return textselect.Layout{}, passCtx.Err()
+		}
+		if err != nil {
+			return textselect.Layout{}, fmt.Errorf("Tesseract failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		return ParseTSV(bytes.NewReader(data), img.Bounds().Dx(), img.Bounds().Dy())
+	})
 	if err == nil && angle != 0 {
 		layout = correction.restore(layout)
 	}

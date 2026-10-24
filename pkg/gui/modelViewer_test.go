@@ -94,8 +94,12 @@ func TestModelNavigationAndNewImagePreserveMesh(t *testing.T) {
 		t.Fatal("Fit did not reset scale and pan")
 	}
 	g.openNewImage(testDocument(t, 20, 10))
-	if !g.showingModel() {
-		t.Fatal("New image replaced the model")
+	if g.showingModel() || g.document == nil || len(g.documents) != 2 {
+		t.Fatal("New image did not join the model workspace")
+	}
+	g.selectDocument(g.documents[0])
+	if !g.showingModel() || g.modelViewport.camera.Yaw != yaw {
+		t.Fatal("New image lost the model or its camera")
 	}
 	g.closeWindow()
 }
@@ -195,9 +199,8 @@ func TestModelViewKeysAndConditionalMenu(t *testing.T) {
 }
 
 func TestModelCropCreatesIndependentEditableImage(t *testing.T) {
-	app := fyneTest.NewApp()
-	defer app.Quit()
-	g := newGui(app)
+	g, driver := newDropTestGui(t)
+	app := g.app
 	g.window.Show()
 	g.modelViewport.running = true
 	mesh := testSTLMesh(t)
@@ -242,15 +245,23 @@ func TestModelCropCreatesIndependentEditableImage(t *testing.T) {
 		t.Fatal("snapshot shares mutable pixels with viewport")
 	}
 	windows := len(app.Driver().AllWindows())
-	g.openImageWindow(doc)
-	if len(app.Driver().AllWindows()) != windows+1 || g.modelViewport.mesh != mesh || g.modelViewport.camera != originalCamera || g.document != nil {
-		t.Fatal("snapshot did not preserve STL window")
+	g.openNewImage(doc)
+	if len(app.Driver().AllWindows()) != windows || g.document != doc || len(g.documents) != 2 || g.saveTarget != nil {
+		t.Fatal("snapshot did not join the STL workspace")
+	}
+	for g.documents[0].thumbnail == nil {
+		driver.runNext(t)
+	}
+	g.selectDocument(g.documents[0])
+	if g.modelViewport.mesh != mesh || g.modelViewport.camera != originalCamera {
+		t.Fatal("snapshot lost the original STL camera")
 	}
 	g.startCrop()
 	g.requestCloseDocument()
 	if g.modelCrop.active {
 		t.Fatal("Close retained model Crop")
 	}
+	g.closeWindow()
 }
 
 func TestSTLDocumentThumbnailIsStaticAcrossNavigationAndSwitches(t *testing.T) {

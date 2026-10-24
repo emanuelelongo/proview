@@ -36,6 +36,7 @@ Feature documentation on a prototype branch does not imply a published release.
 | [QR recognition](qr-recognition.md) | Recognition, selection and caching behavior |
 | [Signature acquisition](signature-vectorization.md) | Artwork import/vectorization and evaluation |
 | [Signature cloud sync](signature-cloud-sync.md) | Provider setup, synchronization and acceptance checks |
+| [Markdown viewer](markdown-viewer.md) | Native read-only Markdown, Mermaid, syntax highlighting and workspace behavior |
 | [STL viewer](stl-prototype.md) | Current viewer, controls, renderer and limitations |
 | [Native PDF redaction](../internal/pdfengine/README.md) | Engine scope, security checks and ABI provenance |
 
@@ -45,6 +46,8 @@ These records retain the assumptions and measurements of their original runs;
 use the feature guides above for current implementation status.
 
 - [OCR evaluation results](ocr-prototype-results.md): dated runs and follow-ups.
+- [Native Mermaid renderer review](mermaid-renderers-review.md): source snapshots,
+  independent rendering comparisons and adoption/fork recommendation.
 - [STL feasibility study](stl-viewer-feasibility.md): initial design and benchmarks,
   superseded for implementation status by the STL viewer guide.
 - [Application icon](../assets/README.md): design and generation provenance.

@@ -2,6 +2,7 @@ package gui
 
 import (
 	"bytes"
+	"emanuelelongo/proview/internal/markdown"
 	"emanuelelongo/proview/internal/model3d"
 	"emanuelelongo/proview/pkg/document"
 	"errors"
@@ -227,8 +228,11 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 	go func() {
 		var doc *document.Document
 		var mesh *model3d.Mesh
+		var md *markdown.Document
 		var err error
-		if isModelFile(target.Name()) {
+		if markdown.IsFile(target.Name()) {
+			md, err = loadMarkdownReader(uri)
+		} else if isModelFile(target.Name()) {
 			mesh, err = loadModelReader(uri)
 		} else {
 			doc, err = loadDocumentReader(uri)
@@ -249,6 +253,11 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 				return
 			}
 			g.logEvent("open_loaded", "extension=%q elapsed=%s", filepath.Ext(target.Name()), time.Since(started).Round(time.Millisecond))
+			if md != nil {
+				g.addMarkdown(md, target)
+				finish()
+				return
+			}
 			g.receiveDocument(doc, mesh, target, finish)
 		})
 	}()
@@ -280,6 +289,7 @@ func loadDocumentReader(uri fyne.URIReadCloser) (*document.Document, error) {
 }
 
 func (g *Gui) showDocument(loadedDocument *document.Document) {
+	g.clearMarkdown()
 	g.clearModel()
 	g.clearAreaSelection()
 	g.cancelThumbnailDrag()

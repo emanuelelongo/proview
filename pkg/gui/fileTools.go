@@ -21,21 +21,14 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (g *Gui) openImageWindow(doc *document.Document) {
-	editor := g.newEditor()
-	editor.showDocument(doc)
-	editor.saveTarget = nil
-	editor.window.Show()
-}
-
-// Generated images reuse an empty window and preserve any open document.
+// Generated images join the requesting workspace, preserving the source and
+// its save destination. PDF workspaces retain their separate-window policy.
 func (g *Gui) openNewImage(doc *document.Document) {
-	if !g.hasOpenContent() {
-		g.showDocument(doc)
-		g.saveTarget = nil
+	if g.closed {
+		doc.Close()
 		return
 	}
-	g.openImageWindow(doc)
+	g.receiveDocument(doc, nil, nil, func() {})
 }
 
 func (g *Gui) newPage() {
@@ -142,7 +135,7 @@ func (g *Gui) startPDFCrop() {
 	crop.Activate(image.Rectangle{Max: size}, func(rect image.Rectangle) {
 		snapshot := g.document.RenderingSnapshot()
 		name := strings.TrimSuffix(g.document.Name(), filepath.Ext(g.document.Name())) + fmt.Sprintf("-page-%d-crop.png", page+1)
-		g.runFileWork("Cropping page", func() (*document.Document, error) { return snapshot.CropPage(page, rect, name) }, g.openImageWindow)
+		g.runFileWork("Cropping page", func() (*document.Document, error) { return snapshot.CropPage(page, rect, name) }, g.openNewImage)
 	})
 }
 

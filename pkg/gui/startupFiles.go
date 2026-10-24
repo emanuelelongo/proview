@@ -39,9 +39,11 @@ func (g *Gui) OpenFilesWithOptions(paths []string, options OpenOptions) {
 
 func (g *Gui) openLaunchRequest(paths []string, options OpenOptions) {
 	editor := g.desktopEditor()
-	if options.NewWindow || editor.closed {
+	if options.NewWindow || editor.closed || (len(paths) > 0 && (editor.hasOpenContent() || editor.working || editor.openingFiles || len(editor.pendingFiles) > 0)) {
 		editor = editor.newEditor()
-		// Explicit launches get their own settings, not the active window's.
+		// Desktop file requests get a fresh workspace when the active editor
+		// is occupied. In-window pickers and drops bypass this entry point.
+		// Launches get their own settings, not the active window's.
 		editor.workDir = options.WorkDir
 		editor.window.Show()
 	} else if options.WorkDir != "" {

@@ -41,6 +41,8 @@ type Gui struct {
 	correctionLayers                  map[int]*textCorrectionLayer
 	correctionDialog                  *dialog.CustomDialog
 	textMove                          *textMoveState
+	markdownView                      *markdownView
+	markdownPanel                     *fyne.Container
 	modelViewport                     *modelViewport
 	modelPanel                        fyne.CanvasObject
 	modelCrop                         *cropOverlay
@@ -281,10 +283,12 @@ func newGui(application fyne.App) *Gui {
 		g.zoomInAction,
 	)
 
+	g.markdownPanel = container.NewStack()
+	g.markdownPanel.Hide()
 	g.modelPanel = newModelPanel(g)
 	g.modelPanel.Hide()
 	contentArea := container.NewStack(g.imageScroll, g.pdfScroll,
-		newZoomScrollSurface(g, g.imageScroll), newZoomScrollSurface(g, g.pdfScroll), g.modelPanel)
+		newZoomScrollSurface(g, g.imageScroll), newZoomScrollSurface(g, g.pdfScroll), g.modelPanel, g.markdownPanel)
 
 	g.sidebarSplit = newFixedSidebarSplit(g.sidebar.panel, contentArea, defaultSidebarWidth, g.updatePDFThumbnailSizes)
 	g.mainSplit = g.sidebarSplit
@@ -343,6 +347,10 @@ func (g *Gui) RunWithOptions(paths []string, options OpenOptions) {
 
 func (g *Gui) startCrop() {
 	if g.working {
+		return
+	}
+	if g.showingMarkdown() {
+		g.startMarkdownCrop()
 		return
 	}
 	if g.showingModel() {
