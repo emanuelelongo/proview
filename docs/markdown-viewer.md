@@ -64,6 +64,11 @@ captures visible content only.
 The reading page uses a slightly lighter shade than the application background;
 the surrounding workspace keeps the application background color.
 
+**File → Print…** prints the whole Markdown document using a separate light A4
+layout, including syntax-colored code, local images and Mermaid. The output does
+not depend on the reading zoom or visible viewport. See [Printing](printing.md)
+for pagination rules and verification status.
+
 ## Loading and resource bounds
 
 `internal/markdown` parses UTF-8 in a background opening worker, accepting a BOM

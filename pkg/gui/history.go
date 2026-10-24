@@ -139,6 +139,9 @@ func (g *Gui) updateHistoryActions() {
 	}
 	for _, item := range g.menuDocumentItems {
 		item.Disabled = !hasDocument
+		if item.Label == "Print…" {
+			item.Disabled = !hasDocument && !g.showingMarkdown()
+		}
 		if item.Label == "Crop" || item.Label == "Close" || item.Label == "Zoom In" || item.Label == "Zoom Out" || item.Label == "Fit to Window" {
 			item.Disabled = !g.hasOpenContent()
 		}

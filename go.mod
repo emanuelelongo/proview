@@ -11,6 +11,7 @@ require (
 	github.com/aws/smithy-go v1.28.1
 	github.com/gen2brain/go-fitz v1.24.15
 	github.com/go-fonts/latin-modern v0.3.3
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/ncruces/zenity v0.10.15
 	github.com/pdfcpu/pdfcpu v0.16.0
@@ -68,7 +69,6 @@ require (
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20250301202403-da16c1255728 // indirect
 	github.com/go-text/render v0.2.1 // indirect
 	github.com/go-text/typesetting v0.3.4 // indirect
-	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.1 // indirect

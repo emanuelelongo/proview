@@ -22,6 +22,8 @@ import (
 )
 
 type Gui struct {
+	printJob                          *printState
+	printBackend                      printBackend
 	editors                           *editorGroup
 	externalOpenPauses                int
 	documents                         []*editorDocument

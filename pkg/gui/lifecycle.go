@@ -131,6 +131,14 @@ func (g *Gui) closeDocument() {
 }
 
 func (g *Gui) closeWindow() {
+	if g.printJob != nil {
+		state := g.printJob
+		state.cancel()
+		g.printJob = nil
+		if printOwner == g {
+			printOwner = nil
+		}
+	}
 	g.cancelTextPlacement()
 	g.logEvent("window_closed", "documents=%d", len(g.documents))
 	g.setTextEditing(false)

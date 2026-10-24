@@ -683,6 +683,22 @@ invalidation, viewport residency and repeatable performance checks.
   image visible and update the preview without a crop confirmation. Ordinary
   document cropping still requires confirmation. Do not commit personal signature images.
 
+## Printing
+
+Read [docs/printing.md](docs/printing.md). Print the active PDF/image from a
+rendering snapshot after committing pending edits, including unsaved generated
+images. Reuse sanitized export and preserve native PDF text/vector content;
+never fall back to the original PDF on preparation failure. Printing must not
+change save state or history. Retain private temporary files until native
+spooling finishes, and clean them on cancellation/errors. macOS uses PDFKit,
+Linux the desktop Print portal, and Windows a printer DC with bounded page
+rendering using MuPDF Print usage. Markdown printing uses a separate light A4
+layout of the immutable Goldmark tree, embedded Go fonts, syntax coloring and
+offline Mermaid images. Keep the complete document independent of viewport,
+zoom and theme. Repeat table headers and wrap long code lines without clipping.
+Do not route Markdown through document.Document or capture the screen for print.
+STL printing remains unavailable.
+
 ## Native Markdown viewer
 
 Read [docs/markdown-viewer.md](docs/markdown-viewer.md) for scope and verification.

@@ -25,6 +25,7 @@ Feature documentation on a prototype branch does not imply a published release.
 | Document | Purpose |
 | --- | --- |
 | [Document workspace](document-workspace.md) | Multiple documents per window, PDF append choices and desktop request forwarding |
+| [Printing](printing.md) | Native PDF/image/Markdown printing, pagination, unsaved edits and platform verification |
 | [Drawing, highlighting and shapes](annotations.md) | Text-following highlights, freehand nibs, opacity, shape resizing and vector export |
 | [Editable PDF annotations](pdf-annotations.md) | Standard save/reopen editing, appearance preservation and interoperability limits |
 | [PDF forms](pdf-forms.md) | Implemented behavior, accepted decisions, limits and verification |

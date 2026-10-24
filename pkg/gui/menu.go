@@ -40,13 +40,15 @@ func BuildMenu(g *Gui) {
 	saveItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: shortcutModifier}
 	saveAsItem := fyne.NewMenuItem("Save As", g.saveAs)
 	saveAsItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: shortcutModifier | fyne.KeyModifierShift}
+	printItem := fyne.NewMenuItem("Print…", g.requestPrint)
+	printItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyP, Modifier: shortcutModifier}
 	closeItem := fyne.NewMenuItem("Close", g.requestCloseDocument)
 	closeItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyW, Modifier: shortcutModifier}
 	exitItem := fyne.NewMenuItem("Exit", g.requestClose)
 	exitItem.IsQuit = true
 	fileMenu := fyne.NewMenu("File",
 		openItem, blankItem, clipboardItem, openTogetherItem, appendItem, duplicatePageItem, deletePageItem,
-		saveItem, saveAsItem, closeItem, fyne.NewMenuItemSeparator(),
+		saveItem, saveAsItem, printItem, closeItem, fyne.NewMenuItemSeparator(),
 		exitItem,
 	)
 
@@ -129,13 +131,14 @@ func BuildMenu(g *Gui) {
 	g.redoItem = redoItem
 	g.menuDocumentItems = []*fyne.MenuItem{
 		findItem, nextMatchItem, previousMatchItem,
-		openTogetherItem, appendItem, duplicatePageItem, deletePageItem, saveItem, saveAsItem, closeItem,
+		openTogetherItem, appendItem, duplicatePageItem, deletePageItem, saveItem, saveAsItem, printItem, closeItem,
 		zoomInItem, zoomOutItem, resetZoomItem,
 		copyItem, pasteItem, selectItem, cropItem, drawItem, highlightItem, shapesItem, textItem, redactItem,
 	}
 	g.stateMenus = []*fyne.Menu{fileMenu, editMenu, viewMenu, toolsMenu}
 
 	shortcuts := map[*desktop.CustomShortcut]func(fyne.Shortcut){
+		{KeyName: fyne.KeyP, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.requestPrint() },
 		{KeyName: fyne.KeyE, Modifier: toolModifier}:           func(fyne.Shortcut) { g.toggleTextEditing() },
 		{KeyName: fyne.KeyF, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.openSearch() },
 		{KeyName: fyne.KeyG, Modifier: shortcutModifier}:       func(fyne.Shortcut) { g.nextSearch(false) },
