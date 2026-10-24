@@ -36,14 +36,14 @@ func (v *markdownView) mermaidBlock(source string) fyne.CanvasObject {
 	preview.image.Hide()
 	preview.status.Wrapping = fyne.TextWrapWord
 	preview.ExtendBaseWidget(preview)
+	preview.box = container.NewVBox(preview, original)
 	v.diagrams = append(v.diagrams, preview)
-	return container.NewBorder(header, nil, nil, nil, container.NewVBox(preview, original))
+	return container.NewBorder(header, nil, nil, nil, preview.box)
 }
 func (v *markdownView) mermaidSourceFallback(source string) fyne.CanvasObject {
 	text := v.styleText(widget.NewRichText(&widget.TextSegment{Text: source, Style: widget.RichTextStyleCodeInline}))
 	scroll := container.NewHScroll(container.NewPadded(text))
-	scroll.SetMinSize(fyne.NewSize(100, text.MinSize().Height+16))
-	return container.NewStack(scroll, newMarkdownCodeScrollSurface(v, scroll))
+	return container.NewStack(scroll, newMarkdownCodeScrollSurface(v, scroll, text))
 }
 
 // Each widget coalesces size/theme changes into one active job and one latest
@@ -52,6 +52,7 @@ type markdownDiagram struct {
 	widget.BaseWidget
 	view                *markdownView
 	source              string
+	box                 *fyne.Container
 	image               *canvas.Image
 	status              *widget.Label
 	fallback            fyne.CanvasObject
@@ -183,7 +184,7 @@ func (v *markdownView) updateDiagramLayout(update func()) {
 	}
 	v.restoringReadingOffset = true
 	update()
-	v.content.Refresh()
+	v.relayout()
 	v.scroll.Refresh()
 	if v.pendingReadingOffset != nil {
 		v.scroll.ScrollToOffset(*v.pendingReadingOffset)

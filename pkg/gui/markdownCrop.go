@@ -6,6 +6,7 @@ import (
 	"image/draw"
 	"math"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -103,7 +104,7 @@ func (g *Gui) startMarkdownCrop() {
 	driver := g.app.Driver()
 	go func() {
 		snapshot = image.NewRGBA(image.Rect(0, 0, region.Dx(), region.Dy()))
-		draw.Draw(snapshot, snapshot.Bounds(), frame, region.Min, draw.Src)
+		copyMarkdownCaptureRegion(snapshot, frame, region)
 		close(ready)
 		driver.DoFromGoroutine(func() {
 			if g.closed || g.markdownView != v || !v.crop.active || v.cropGeneration != generation {
@@ -124,8 +125,49 @@ func markdownViewportSnapshot(frame image.Image, canvasSize fyne.Size, position 
 		return nil, err
 	}
 	snapshot := image.NewRGBA(image.Rect(0, 0, region.Dx(), region.Dy()))
-	draw.Draw(snapshot, snapshot.Bounds(), frame, region.Min, draw.Src)
+	copyMarkdownCaptureRegion(snapshot, frame, region)
 	return snapshot, nil
+}
+
+func copyMarkdownCaptureRegion(dst *image.RGBA, frame image.Image, region image.Rectangle) {
+	if copyGLCaptureRegion(dst, frame, region) {
+		return
+	}
+	draw.Draw(dst, dst.Bounds(), frame, region.Min, draw.Src)
+}
+
+func copyGLCaptureRegion(dst *image.RGBA, frame image.Image, region image.Rectangle) bool {
+	v := reflect.ValueOf(frame)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return false
+	}
+	elem := v.Elem()
+	if elem.Kind() != reflect.Struct || elem.Type().Name() != "captureImage" {
+		return false
+	}
+	pixField := elem.FieldByName("pix")
+	widthField := elem.FieldByName("width")
+	heightField := elem.FieldByName("height")
+	if !pixField.IsValid() || !widthField.IsValid() || !heightField.IsValid() ||
+		pixField.Kind() != reflect.Slice || pixField.Type().Elem().Kind() != reflect.Uint8 ||
+		widthField.Kind() != reflect.Int || heightField.Kind() != reflect.Int {
+		return false
+	}
+	pix := pixField.Bytes()
+	width, height := int(widthField.Int()), int(heightField.Int())
+	if width <= 0 || height <= 0 || len(pix) < width*height*4 {
+		return false
+	}
+	rowBytes := region.Dx() * 4
+	for y := region.Min.Y; y < region.Max.Y; y++ {
+		srcOffset := ((height-y-1)*width + region.Min.X) * 4
+		dstOffset := (y - region.Min.Y) * dst.Stride
+		if srcOffset < 0 || srcOffset+rowBytes > len(pix) || dstOffset < 0 || dstOffset+rowBytes > len(dst.Pix) {
+			return false
+		}
+		copy(dst.Pix[dstOffset:dstOffset+rowBytes], pix[srcOffset:srcOffset+rowBytes])
+	}
+	return true
 }
 
 func markdownViewportRegion(frame image.Image, canvasSize fyne.Size, position fyne.Position, size fyne.Size) (image.Rectangle, error) {

@@ -133,7 +133,7 @@ func (g *Gui) activateDocument(entry *editorDocument) {
 	g.document = nil
 	if entry.markdown != nil {
 		g.showMarkdown(entry.markdown)
-		if entry.markdownScale > 0 {
+		if entry.markdownScale > 0 && entry.markdownScale != g.markdownView.scale {
 			g.markdownView.scale = entry.markdownScale
 			g.markdownView.rebuild()
 		}

@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"math"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -28,8 +29,11 @@ import (
 type markdownView struct {
 	thumbnailCapturing     bool
 	thumbnailPending       bool
+	themeReady             bool
 	doc                    *markdown.Document
 	scroll                 *container.Scroll
+	page                   *markdownPage
+	body                   *fyne.Container
 	content                *fyne.Container
 	anchors                map[string]fyne.CanvasObject
 	scale                  float32
@@ -85,7 +89,11 @@ func (g *Gui) showMarkdown(d *markdown.Document) {
 	g.pdfScroll.Hide()
 	g.annotationControls.Hide()
 	g.annotationPropertyScroll.Hide()
-	v := &markdownView{doc: d, scale: 1, editor: g}
+	scale := float32(1)
+	if g.activeDocument != nil && g.activeDocument.markdown == d && g.activeDocument.markdownScale > 0 {
+		scale = g.activeDocument.markdownScale
+	}
+	v := &markdownView{doc: d, scale: scale, editor: g}
 	g.markdownView = v
 	v.rebuild()
 	g.markdownPanel.Add(newMarkdownViewport(v))
@@ -104,19 +112,23 @@ func (v *markdownView) rebuild() {
 		offset = v.scroll.Offset
 	}
 	v.anchors = map[string]fyne.CanvasObject{}
+	v.themeReady = false
 	v.content = container.NewVBox(v.blocks(v.doc.Root)...)
 	// Keep a readable line length while allowing narrow windows to reflow.
-	body := container.New(&markdownPageLayout{}, newMarkdownPageSurface(), v.content)
-	themed := container.NewThemeOverride(body, &markdownTheme{scale: v.scale})
+	v.body = container.New(&markdownPageLayout{view: v}, newMarkdownPageSurface(), v.content)
+	themed := container.NewThemeOverride(v.body, &markdownTheme{scale: v.scale})
+	v.themeReady = true
+	v.body.Refresh()
+	v.page = newMarkdownPage(v, themed)
 	if v.scroll == nil {
-		v.scroll = container.NewVScroll(themed)
+		v.scroll = container.NewVScroll(v.page)
 		v.scroll.OnScrolled = func(fyne.Position) {
 			if !v.restoringReadingOffset {
 				v.pendingReadingOffset = nil
 			}
 		}
 	} else {
-		v.scroll.Content = themed
+		v.scroll.Content = v.page
 		v.scroll.Refresh()
 	}
 	v.restoreReadingOffset(offset)
@@ -132,27 +144,122 @@ const (
 	markdownTextWidth   float32 = 900
 )
 
-type markdownPageLayout struct{}
+type markdownPageLayout struct{ view *markdownView }
 
-func (*markdownPageLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+func (v *markdownView) viewportSize() fyne.Size {
+	if v != nil {
+		if v.scroll != nil && v.scroll.Size().Width > 0 {
+			return v.scroll.Size()
+		}
+		if v.editor != nil {
+			if v.editor.markdownPanel != nil && v.editor.markdownPanel.Size().Width > 0 {
+				return v.editor.markdownPanel.Size()
+			}
+			if v.editor.window != nil && v.editor.window.Canvas().Size().Width > 0 {
+				return v.editor.window.Canvas().Size()
+			}
+		}
+	}
+	return fyne.NewSize(markdownTextWidth+2*(markdownPageMargin+markdownPagePadding), 0)
+}
+func (v *markdownView) columnWidth(totalWidth float32) float32 {
+	if totalWidth <= 0 {
+		totalWidth = v.viewportSize().Width
+	}
+	return max(1, min(markdownTextWidth, totalWidth-2*(markdownPageMargin+markdownPagePadding)))
+}
+func (v *markdownView) themeState() (color.Color, color.Color, float32) {
+	var target fyne.Widget
+	if v != nil && v.body != nil && len(v.body.Objects) > 0 {
+		target, _ = v.body.Objects[0].(fyne.Widget)
+	}
+	return theme.ColorForWidget(theme.ColorNameForeground, target),
+		theme.ColorForWidget(theme.ColorNameBackground, target),
+		theme.SizeForWidget(theme.SizeNameText, target)
+}
+func (v *markdownView) relayout() {
+	if v.body != nil && v.body.Layout != nil {
+		v.body.Layout.Layout(v.body.Objects, v.body.Size())
+	}
+	if v.content != nil && v.content.Layout != nil {
+		v.content.Layout.Layout(v.content.Objects, v.content.Size())
+	}
+	for _, diagram := range v.diagrams {
+		if diagram.box != nil && diagram.box.Layout != nil {
+			diagram.box.Layout.Layout(diagram.box.Objects, diagram.box.Size())
+		}
+		diagram.request()
+	}
+}
+
+func (l *markdownPageLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	h := 2 * (markdownPageMargin + markdownPagePadding)
 	if len(objects) > 1 {
+		if l.view != nil {
+			width := l.view.columnWidth(0)
+			if objects[1].Size().Width != width {
+				objects[1].Resize(fyne.NewSize(width, objects[1].Size().Height))
+			}
+		}
 		h += objects[1].MinSize().Height
 	}
 	return fyne.NewSize(180, h)
 }
-func (*markdownPageLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+func (l *markdownPageLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	if len(objects) != 2 {
 		return
 	}
 	objects[0].Move(fyne.Position{})
 	objects[0].Resize(size)
-	width := max(1, min(markdownTextWidth, size.Width-2*(markdownPageMargin+markdownPagePadding)))
+	width := l.view.columnWidth(size.Width)
 	content := objects[1]
 	content.Resize(fyne.NewSize(width, content.MinSize().Height))
 	content.Move(fyne.NewPos((size.Width-width)/2, markdownPageMargin+markdownPagePadding))
-	content.Resize(fyne.NewSize(width, content.MinSize().Height))
+	if h := content.MinSize().Height; content.Size().Height != h {
+		content.Resize(fyne.NewSize(width, h))
+	}
 }
+
+// markdownPage shields the ThemeOverride from resetting global Fyne font caches
+// on scroll or diagram layout refreshes when the theme itself has not changed.
+type markdownPage struct {
+	widget.BaseWidget
+	view           *markdownView
+	themed         *container.ThemeOverride
+	lastFG, lastBG color.Color
+	lastSize       float32
+	refreshed      bool
+}
+
+func newMarkdownPage(view *markdownView, themed *container.ThemeOverride) *markdownPage {
+	p := &markdownPage{view: view, themed: themed}
+	p.lastFG, p.lastBG, p.lastSize = view.themeState()
+	p.refreshed = true
+	p.ExtendBaseWidget(p)
+	return p
+}
+func (p *markdownPage) CreateRenderer() fyne.WidgetRenderer {
+	return &markdownPageHolderRenderer{page: p}
+}
+func (p *markdownPage) Refresh() {
+	fg, bg, sz := p.view.themeState()
+	if !p.refreshed || p.lastFG != fg || p.lastBG != bg || p.lastSize != sz {
+		p.refreshed = true
+		p.lastFG, p.lastBG, p.lastSize = fg, bg, sz
+	}
+	p.view.relayout()
+	p.BaseWidget.Refresh()
+}
+
+type markdownPageHolderRenderer struct{ page *markdownPage }
+
+func (*markdownPageHolderRenderer) Destroy()                    {}
+func (r *markdownPageHolderRenderer) Layout(size fyne.Size)     { r.page.themed.Resize(size) }
+func (r *markdownPageHolderRenderer) MinSize() fyne.Size        { return r.page.themed.MinSize() }
+func (r *markdownPageHolderRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.page.themed}
+}
+func (*markdownPageHolderRenderer) Refresh() {}
 
 // The page and its surrounding workspace follow theme changes independently.
 type markdownPageSurface struct{ widget.BaseWidget }
@@ -193,29 +300,36 @@ func (r *markdownPageRenderer) Refresh() {
 	r.paper.Refresh()
 }
 
+var (
+	markdownLightPalette = resolvedChromaStyle("github")
+	markdownDarkPalette  = resolvedChromaStyle("github-dark")
+)
+
+func resolvedChromaStyle(name string) *chroma.Style {
+	if s := styles.Get(name); s != nil {
+		return s
+	}
+	return styles.Fallback
+}
+
 // markdownTheme keeps code colours and text sizing in the normal Fyne theme path.
 type markdownTheme struct {
 	scale float32
 }
 
 func (t *markdownTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
-	if strings.HasPrefix(string(name), "markdown-token-") {
-		var token int
-		_, _ = fmt.Sscanf(string(name), "markdown-token-%d", &token)
-		palette := styles.Get("github")
-		r, g, b, _ := fyne.CurrentApp().Settings().Theme().Color(theme.ColorNameBackground, variant).RGBA()
-		if r+g+b < 3*32768 {
-			palette = styles.Get("github-dark")
+	if suffix, ok := strings.CutPrefix(string(name), "markdown-token-"); ok {
+		if token, err := strconv.Atoi(suffix); err == nil {
+			palette := markdownLightPalette
+			r, g, b, _ := fyne.CurrentApp().Settings().Theme().Color(theme.ColorNameBackground, variant).RGBA()
+			if r+g+b < 3*32768 {
+				palette = markdownDarkPalette
+			}
+			c := palette.Get(chroma.TokenType(token)).Colour
+			if c.IsSet() {
+				return color.NRGBA{R: c.Red(), G: c.Green(), B: c.Blue(), A: 255}
+			}
 		}
-		if palette == nil {
-			palette = styles.Fallback
-		}
-		c := palette.Get(chroma.TokenType(token)).Colour
-		if c.IsSet() {
-			return color.NRGBA{R: c.Red(), G: c.Green(), B: c.Blue(), A: 255}
-		}
-	}
-	if strings.HasPrefix(string(name), "markdown-token-") {
 		name = theme.ColorNameForeground
 	}
 	return fyne.CurrentApp().Settings().Theme().Color(name, variant)
@@ -361,21 +475,27 @@ func (v *markdownView) inlineText(n ast.Node) string {
 }
 func (v *markdownView) styleText(text *widget.RichText) fyne.CanvasObject {
 	// Fyne initialises segment parents during Refresh, after measuring them.
-	// Prime those parents with standard style names before using local theme keys.
-	saved := make(map[*widget.TextSegment]widget.RichTextStyle)
+	// Prime those parents with empty text before applying the page theme scope.
+	type primedSegment struct {
+		text  string
+		style widget.RichTextStyle
+	}
+	saved := make(map[*widget.TextSegment]primedSegment, len(text.Segments))
 	for _, segment := range text.Segments {
 		if s, ok := segment.(*widget.TextSegment); ok {
-			saved[s] = s.Style
+			saved[s] = primedSegment{text: s.Text, style: s.Style}
+			s.Text = ""
 			s.Style.ColorName = theme.ColorNameForeground
 			s.Style.SizeName = theme.SizeNameText
 		}
 	}
-	themed := container.NewThemeOverride(text, &markdownTheme{scale: v.scale})
-	for s, style := range saved {
-		s.Style = style
-	}
 	text.Refresh()
-	return themed
+	text.Resize(fyne.NewSize(v.columnWidth(0), 0))
+	for s, item := range saved {
+		s.Text = item.text
+		s.Style = item.style
+	}
+	return newMarkdownText(v, text)
 }
 func (v *markdownView) prose(n ast.Node, style widget.RichTextStyle) fyne.CanvasObject {
 	text := widget.NewRichText(v.inline(n, style)...)
@@ -450,11 +570,48 @@ func (v *markdownView) code(n ast.Node, language string) fyne.CanvasObject {
 	if len(tokens) == 0 {
 		return v.plainCode(source, language)
 	}
-	segments := []widget.RichTextSegment{}
+	var segments []widget.RichTextSegment
+	var lastSeg *widget.TextSegment
+	var lastColors [2]chroma.Colour
+	var lastHasColor bool
 	for _, token := range tokens {
+		if token.Value == "" {
+			continue
+		}
+		pureSpace := strings.Trim(token.Value, " \t") == ""
+		colors := [2]chroma.Colour{
+			markdownLightPalette.Get(token.Type).Colour,
+			markdownDarkPalette.Get(token.Type).Colour,
+		}
+		colorName := theme.ColorNameForeground
+		if colors[0].IsSet() || colors[1].IsSet() {
+			colorName = fyne.ThemeColorName("markdown-token-" + strconv.Itoa(int(token.Type)))
+		}
+		singleLine := !strings.Contains(strings.TrimSuffix(token.Value, "\n"), "\n")
+		if lastSeg != nil && !strings.Contains(lastSeg.Text, "\n") && singleLine {
+			if pureSpace {
+				lastSeg.Text += token.Value
+				continue
+			}
+			if !lastHasColor {
+				lastSeg.Text += token.Value
+				lastSeg.Style.ColorName = colorName
+				lastColors = colors
+				lastHasColor = true
+				continue
+			}
+			if colors == lastColors {
+				lastSeg.Text += token.Value
+				continue
+			}
+		}
 		st := widget.RichTextStyleCodeInline
-		st.ColorName = fyne.ThemeColorName(fmt.Sprintf("markdown-token-%d", token.Type))
-		segments = append(segments, &widget.TextSegment{Text: token.Value, Style: st})
+		st.ColorName = colorName
+		seg := &widget.TextSegment{Text: token.Value, Style: st}
+		segments = append(segments, seg)
+		lastSeg = seg
+		lastColors = colors
+		lastHasColor = !pureSpace
 	}
 	text := widget.NewRichText(segments...)
 	text.Wrapping = fyne.TextWrapOff
@@ -470,8 +627,7 @@ func (v *markdownView) codePanel(text fyne.CanvasObject, source, language string
 	header := container.NewBorder(nil, nil, widget.NewLabel(language), copy)
 	// Horizontal overflow stays within the code block, never the whole page.
 	code := container.NewHScroll(container.NewPadded(text))
-	code.SetMinSize(fyne.NewSize(100, text.MinSize().Height+16))
-	surface := newMarkdownCodeScrollSurface(v, code)
+	surface := newMarkdownCodeScrollSurface(v, code, text)
 	return widget.NewCard("", "", container.NewBorder(header, nil, nil, nil, container.NewStack(code, surface)))
 }
 func (v *markdownView) table(n *east.Table) fyne.CanvasObject {
@@ -606,21 +762,132 @@ func (g *Gui) handleMarkdownKey(key fyne.KeyName) bool {
 	return true
 }
 
+// markdownText caches RichText measurements for a given wrap width and avoids
+// redundant Harfbuzz shaping passes when layout or scrollbars refresh.
+type markdownText struct {
+	widget.BaseWidget
+	view           *markdownView
+	text           *widget.RichText
+	cachedMin      fyne.Size
+	minWidth       float32
+	hasMin         bool
+	lastFG, lastBG color.Color
+	lastSize       float32
+	refreshed      bool
+}
+
+func newMarkdownText(view *markdownView, text *widget.RichText) *markdownText {
+	t := &markdownText{view: view, text: text}
+	t.ExtendBaseWidget(t)
+	return t
+}
+func (t *markdownText) themeState() (color.Color, color.Color, float32) {
+	return theme.ColorForWidget(theme.ColorNameForeground, t.text),
+		theme.ColorForWidget(theme.ColorNameBackground, t.text),
+		theme.SizeForWidget(theme.SizeNameText, t.text)
+}
+func (t *markdownText) ensureRefreshed() {
+	if t.view != nil && !t.view.themeReady {
+		return
+	}
+	fg, bg, sz := t.themeState()
+	if t.refreshed && t.lastFG == fg && t.lastBG == bg && t.lastSize == sz {
+		return
+	}
+	t.refreshed = true
+	t.lastFG, t.lastBG, t.lastSize = fg, bg, sz
+	t.hasMin = false
+	t.text.Refresh()
+}
+func (t *markdownText) CreateRenderer() fyne.WidgetRenderer {
+	return &markdownTextRenderer{text: t}
+}
+func (t *markdownText) MinSize() fyne.Size {
+	if t.view != nil && !t.view.themeReady {
+		return fyne.Size{}
+	}
+	t.ensureRefreshed()
+	width := t.text.Size().Width
+	if t.hasMin && (t.text.Wrapping == fyne.TextWrapOff || t.minWidth == width) {
+		return t.cachedMin
+	}
+	t.cachedMin = t.text.MinSize()
+	t.minWidth = width
+	t.hasMin = true
+	return t.cachedMin
+}
+func (t *markdownText) Resize(size fyne.Size) {
+	if size == t.Size() {
+		return
+	}
+	if size.Width > 0 && t.text.Wrapping != fyne.TextWrapOff && size.Width != t.text.Size().Width {
+		t.hasMin = false
+	}
+	t.BaseWidget.Resize(size)
+}
+func (t *markdownText) Refresh() {
+	if t.view != nil && !t.view.themeReady {
+		return
+	}
+	fg, bg, sz := t.themeState()
+	if t.refreshed && t.lastFG == fg && t.lastBG == bg && t.lastSize == sz {
+		return
+	}
+	t.ensureRefreshed()
+	t.BaseWidget.Refresh()
+}
+
+type markdownTextRenderer struct{ text *markdownText }
+
+func (*markdownTextRenderer) Destroy() {}
+func (r *markdownTextRenderer) Layout(size fyne.Size) {
+	if size.Width <= 0 || (r.text.view != nil && !r.text.view.themeReady) {
+		return
+	}
+	r.text.ensureRefreshed()
+	if r.text.text.Wrapping == fyne.TextWrapOff {
+		if r.text.text.Size().IsZero() {
+			r.text.text.Resize(size)
+		}
+		return
+	}
+	if r.text.text.Size().Width != size.Width {
+		r.text.hasMin = false
+		r.text.text.Resize(size)
+	}
+}
+func (r *markdownTextRenderer) MinSize() fyne.Size { return r.text.text.MinSize() }
+func (r *markdownTextRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.text.text}
+}
+func (*markdownTextRenderer) Refresh() {}
+
 // A nested horizontal scroller consumes vertical wheel events in Fyne. Route
 // each axis explicitly while leaving clicks and scrollbar dragging untouched.
 type markdownCodeScrollSurface struct {
 	widget.BaseWidget
 	view *markdownView
 	code *container.Scroll
+	text fyne.CanvasObject
 }
 
-func newMarkdownCodeScrollSurface(view *markdownView, code *container.Scroll) *markdownCodeScrollSurface {
-	surface := &markdownCodeScrollSurface{view: view, code: code}
+func newMarkdownCodeScrollSurface(view *markdownView, code *container.Scroll, text fyne.CanvasObject) *markdownCodeScrollSurface {
+	surface := &markdownCodeScrollSurface{view: view, code: code, text: text}
 	surface.ExtendBaseWidget(surface)
 	return surface
 }
 func (s *markdownCodeScrollSurface) CreateRenderer() fyne.WidgetRenderer {
 	return &panOverlayRenderer{background: canvas.NewRectangle(color.Transparent)}
+}
+func (s *markdownCodeScrollSurface) MinSize() fyne.Size {
+	h := float32(16)
+	if s.text != nil {
+		h += s.text.MinSize().Height
+	}
+	if s.code != nil {
+		s.code.SetMinSize(fyne.NewSize(100, h))
+	}
+	return fyne.NewSize(100, h)
 }
 func (s *markdownCodeScrollSurface) Scrolled(event *fyne.ScrollEvent) {
 	if event.Scrolled.DX != 0 {

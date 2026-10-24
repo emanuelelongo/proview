@@ -155,12 +155,23 @@ source examination and comparisons that led to this integration.
 
 ## Crop responsiveness check
 
-On 2026-10-24, a native macOS investigation identified the multi-second Crop delay
-when opening Markdown documents with code and Mermaid diagrams: diagrams were
-previously serialized behind a single global rendering slot (`renderSlot = make(chan struct{}, 1)`),
-causing sequential diagram queues, chained layout reflows and thumbnail capture delays.
-Parallelizing diagram rendering to four concurrent bounded slots with in-flight call
-coalescing eliminates the multi-second bottleneck. Moving pixel conversion to
-a worker and enabling GPU scaling for the frozen snapshot further reduces Crop
-activation to 9–10 ms. Image/PDF/STL Crop reuses existing preview pixels instead
-of capturing a Markdown viewport.
+On 2026-10-24, a native macOS investigation and CPU profile identified the causes
+of the Crop delay when opening Markdown documents with syntax-highlighted code
+and Mermaid diagrams:
+
+- Diagrams were serialized behind a single global rendering slot (`renderSlot`),
+  causing sequential diagram queues and chained layout reflows; parallelizing
+  diagram rendering to four concurrent bounded slots with single-flight request
+  coalescing removes the worker serialization.
+- Each completed diagram previously called `v.content.Refresh()` and
+  `v.scroll.Refresh()`, which re-applied `ThemeOverride` (clearing Fyne's global
+  font-measurement caches) and recursively refreshed and evicted textures across
+  every rich-text block in the document. `markdownPage` and `markdownText` now
+  keep a single page-level theme scope, cache `MinSize()` per wrap width, coalesce
+  adjacent same-color Chroma tokens on each line, and relayout diagram height
+  updates without resetting unchanged text blocks.
+- Viewport snapshot extraction now copies RGBA scanlines directly from Fyne's
+  OpenGL capture buffer instead of boxing every pixel through `image.Image.At`,
+  accelerating both asynchronous Crop snapshots and sidebar thumbnail captures.
+  Image/PDF/STL Crop reuses existing preview pixels instead of capturing a
+  Markdown viewport.
