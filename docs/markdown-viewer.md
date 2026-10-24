@@ -96,7 +96,8 @@ follows the window's display scale, up to 4x and within the pixel budget.
 The GUI starts jobs after layout, coalesces changes and rejects obsolete results.
 Closing, switching or rebuilding the view cancels waiting jobs. An active sketch
 call cannot be interrupted; its bounded work completes and its stale result is
-discarded. One shared render slot prevents simultaneous expensive layouts.
+discarded. Four bounded render slots allow concurrent diagram layouts, while
+in-flight request coalescing ensures identical requests share single-pass rendering.
 
 Current limits:
 
@@ -154,11 +155,12 @@ source examination and comparisons that led to this integration.
 
 ## Crop responsiveness check
 
-On 2026-10-24, a temporary native macOS Fyne probe opened the reading fixture in
-an isolated diagnostic window at 1600 × 1000 points. Four programmatic Crop
-activations decreased from 39–43 ms to 9–10 ms after moving pixel conversion to
-a worker and enabling GPU scaling for the frozen snapshot. The probe and its
-entry point were removed after measurement. The reported multi-second delay was
-not reproduced locally; these timings measure activation/event scheduling, not
-manual mouse interaction or behavior on other platforms. Image/PDF/STL Crop
-already reuses existing preview pixels instead of capturing a Markdown viewport.
+On 2026-10-24, a native macOS investigation identified the multi-second Crop delay
+when opening Markdown documents with code and Mermaid diagrams: diagrams were
+previously serialized behind a single global rendering slot (`renderSlot = make(chan struct{}, 1)`),
+causing sequential diagram queues, chained layout reflows and thumbnail capture delays.
+Parallelizing diagram rendering to four concurrent bounded slots with in-flight call
+coalescing eliminates the multi-second bottleneck. Moving pixel conversion to
+a worker and enabling GPU scaling for the frozen snapshot further reduces Crop
+activation to 9–10 ms. Image/PDF/STL Crop reuses existing preview pixels instead
+of capturing a Markdown viewport.

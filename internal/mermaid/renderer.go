@@ -21,13 +21,14 @@ const (
 	MaxImagePixels  = 2_000_000
 	maxCachePixels  = 8_000_000
 	maxCacheEntries = 32
+	maxRenderSlots  = 4
 )
 
 var (
 	ErrLimit = errors.New("diagram exceeds rendering limits")
-	// The upstream renderer cannot interrupt a layout. Serialize bounded work so
-	// cancelled windows cannot start unbounded concurrent layouts or allocations.
-	renderSlot = make(chan struct{}, 1)
+	// Allow bounded concurrent rendering so multiple diagrams load in parallel
+	// without serial head-of-line delays or unbounded memory usage.
+	renderSlot = make(chan struct{}, maxRenderSlots)
 )
 
 type Options struct {
@@ -52,15 +53,27 @@ type cacheEntry struct {
 	used   uint64
 }
 
-// Renderer owns a document-local cache. Published images are immutable.
-type Renderer struct {
-	mu     sync.Mutex
-	cache  map[cacheKey]cacheEntry
-	pixels int
-	clock  uint64
+type inFlightCall struct {
+	done   chan struct{}
+	result Result
+	err    error
 }
 
-func NewRenderer() *Renderer { return &Renderer{cache: make(map[cacheKey]cacheEntry)} }
+// Renderer owns a document-local cache. Published images are immutable.
+type Renderer struct {
+	mu       sync.Mutex
+	cache    map[cacheKey]cacheEntry
+	inFlight map[cacheKey]*inFlightCall
+	pixels   int
+	clock    uint64
+}
+
+func NewRenderer() *Renderer {
+	return &Renderer{
+		cache:    make(map[cacheKey]cacheEntry),
+		inFlight: make(map[cacheKey]*inFlightCall),
+	}
+}
 
 func normalise(options Options) Options {
 	options.Width = max(128, min(2048, options.Width/16*16))
@@ -78,6 +91,24 @@ func normalise(options Options) Options {
 	return options
 }
 
+func (r *Renderer) joinOrLead(key cacheKey) (*inFlightCall, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if call, ok := r.inFlight[key]; ok {
+		return call, false
+	}
+	call := &inFlightCall{done: make(chan struct{})}
+	r.inFlight[key] = call
+	return call, true
+}
+
+func (r *Renderer) finishLead(key cacheKey, call *inFlightCall) {
+	r.mu.Lock()
+	delete(r.inFlight, key)
+	r.mu.Unlock()
+	close(call.done)
+}
+
 // Render checks cancellation before and after upstream work. Cancellation while
 // waiting is immediate; an active sketch call completes under its input limits.
 func (r *Renderer) Render(ctx context.Context, source string, options Options) (Result, error) {
@@ -92,16 +123,34 @@ func (r *Renderer) Render(ctx context.Context, source string, options Options) (
 	if cached, ok := r.lookup(key); ok {
 		return cached, nil
 	}
+
+	call, leader := r.joinOrLead(key)
+	if !leader {
+		select {
+		case <-call.done:
+			if err := ctx.Err(); err != nil {
+				return Result{}, err
+			}
+			return call.result, call.err
+		case <-ctx.Done():
+			return Result{}, ctx.Err()
+		}
+	}
+	defer r.finishLead(key, call)
+
 	select {
 	case renderSlot <- struct{}{}:
 	case <-ctx.Done():
+		call.err = ctx.Err()
 		return Result{}, ctx.Err()
 	}
 	defer func() { <-renderSlot }()
 	if err := ctx.Err(); err != nil {
+		call.err = err
 		return Result{}, err
 	}
 	if cached, ok := r.lookup(key); ok {
+		call.result = cached
 		return cached, nil
 	}
 	width, fontSize := float64(options.Width), 14*options.FontScale
@@ -111,18 +160,22 @@ func (r *Renderer) Render(ctx context.Context, source string, options Options) (
 		OutputLimit: 1 << 20, Links: &disabled, Images: &disabled,
 	})
 	if err != nil {
+		call.err = err
 		return Result{}, err
 	}
 	if err := ctx.Err(); err != nil {
+		call.err = err
 		return Result{}, err
 	}
 	if !validSize(svg.Width, svg.Height) {
+		call.err = ErrLimit
 		return Result{}, ErrLimit
 	}
 	// Keep allocations bounded even for an unusually tall or wide diagram.
 	scale := math.Min(options.PixelScale, math.Min(4096/svg.Width, 4096/svg.Height))
 	scale = math.Min(scale, math.Sqrt(float64(MaxImagePixels-8192)/(svg.Width*svg.Height)))
 	if scale < .5 {
+		call.err = ErrLimit
 		return Result{}, ErrLimit
 	}
 	paletteName := "pele"
@@ -137,12 +190,15 @@ func (r *Renderer) Render(ctx context.Context, source string, options Options) (
 	// Readable contrast needs actual background pixels, not transparent black.
 	img, err := raster.Draw(svg.Data, raster.Options{Scale: scale, Theme: &paint, Background: true, Readable: true, MaxPixels: MaxImagePixels})
 	if err != nil {
+		call.err = err
 		return Result{}, err
 	}
 	if err := ctx.Err(); err != nil {
+		call.err = err
 		return Result{}, err
 	}
 	result := Result{Image: img, Width: svg.Width, Height: svg.Height}
+	call.result = result
 	r.remember(key, result)
 	return result, nil
 }

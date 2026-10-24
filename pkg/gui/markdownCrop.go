@@ -79,6 +79,9 @@ func (g *Gui) startMarkdownCrop() {
 	frame := g.window.Canvas().Capture()
 	position := g.app.Driver().AbsolutePositionForObject(v.scroll)
 	canvasSize, viewportSize := g.window.Canvas().Size(), v.scroll.Size()
+	if (viewportSize.Width <= 0 || viewportSize.Height <= 0) && g.markdownPanel != nil {
+		viewportSize = g.markdownPanel.Size()
+	}
 	region, err := markdownViewportRegion(frame, canvasSize, position, viewportSize)
 	if err != nil {
 		g.showOperationError("crop", err)

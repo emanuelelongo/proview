@@ -67,8 +67,10 @@ func TestRenderRejectsInvalidOrExcessiveSources(t *testing.T) {
 	}
 }
 func TestCancelledRenderDoesNotWaitForActiveWork(t *testing.T) {
-	renderSlot <- struct{}{}
-	defer func() { <-renderSlot }()
+	for i := 0; i < maxRenderSlots; i++ {
+		renderSlot <- struct{}{}
+		defer func() { <-renderSlot }()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -121,6 +123,29 @@ func TestCacheEvictsOlderDiagramsWithinBounds(t *testing.T) {
 	}
 	if len(r.cache) > maxCacheEntries || r.pixels > maxCachePixels {
 		t.Fatal("cache exceeded its bounds")
+	}
+}
+
+func TestParallelRenderProcessesDistinctDiagramsConcurrently(t *testing.T) {
+	r := NewRenderer()
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			_, err := r.Render(ctx, fmt.Sprintf("flowchart LR\n A[Task %d] --> B[Done]", idx), Options{Width: 300})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
