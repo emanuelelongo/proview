@@ -28,7 +28,7 @@ func (v *markdownView) captureThumbnail() bool {
 	if v.thumbnailCapturing || g.closed || g.markdownView != v || entry == nil || entry.markdown != v.doc || entry.thumbnail != nil || !g.markdownPanel.Visible() || !v.scroll.Visible() {
 		return false
 	}
-	if v.crop != nil && v.crop.active {
+	if v.cropCapturing || v.crop != nil && v.crop.active {
 		return false
 	}
 	if g.window.Canvas().Overlays().Top() != nil || v.scroll.Size().Width < 80 || v.scroll.Size().Height < 80 {

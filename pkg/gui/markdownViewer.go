@@ -46,7 +46,7 @@ type markdownView struct {
 	cropGeneration         uint64
 	pendingDiagramUpdates  []func()
 	crop                   *cropOverlay
-	cropSnapshot           *canvas.Image
+	cropCapturing          bool
 }
 
 func (g *Gui) showingMarkdown() bool { return g.markdownView != nil }
@@ -253,9 +253,9 @@ func (p *markdownPage) Refresh() {
 
 type markdownPageHolderRenderer struct{ page *markdownPage }
 
-func (*markdownPageHolderRenderer) Destroy()                    {}
-func (r *markdownPageHolderRenderer) Layout(size fyne.Size)     { r.page.themed.Resize(size) }
-func (r *markdownPageHolderRenderer) MinSize() fyne.Size        { return r.page.themed.MinSize() }
+func (*markdownPageHolderRenderer) Destroy()                {}
+func (r *markdownPageHolderRenderer) Layout(size fyne.Size) { r.page.themed.Resize(size) }
+func (r *markdownPageHolderRenderer) MinSize() fyne.Size    { return r.page.themed.MinSize() }
 func (r *markdownPageHolderRenderer) Objects() []fyne.CanvasObject {
 	return []fyne.CanvasObject{r.page.themed}
 }
@@ -733,7 +733,7 @@ func (s *markdownImageSegment) Update(o fyne.CanvasObject) {
 }
 
 func (g *Gui) handleMarkdownKey(key fyne.KeyName) bool {
-	if g.markdownView.crop != nil && g.markdownView.crop.active {
+	if g.markdownView.cropCapturing || g.markdownView.crop != nil && g.markdownView.crop.active {
 		return false
 	}
 	if g.closed || g.working || g.window == nil || g.modifiers() != 0 || g.window.Canvas().Focused() != nil || g.window.Canvas().Overlays().Top() != nil {

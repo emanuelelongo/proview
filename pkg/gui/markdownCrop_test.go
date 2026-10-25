@@ -26,17 +26,16 @@ func TestMarkdownCropCreatesIndependentImageAndPreservesSource(t *testing.T) {
 	settleMarkdownDiagrams(t, g, driver)
 	view := g.markdownView
 	original := bytes.Clone(view.doc.Source)
+	frame := g.window.Canvas().Capture()
+	position := g.app.Driver().AbsolutePositionForObject(view.scroll)
+	region, err := markdownViewportRegion(frame, g.window.Canvas().Size(), position, view.scroll.Size())
+	if err != nil {
+		t.Fatal(err)
+	}
 	g.startCrop()
-	if !view.crop.active {
-		t.Fatal("crop did not activate before snapshot preparation")
+	if !view.crop.active || !view.scroll.Visible() || g.cropAction.button.Importance != widget.HighImportance {
+		t.Fatal("Markdown Crop did not activate selection before capture")
 	}
-	for view.cropSnapshot.Image == nil {
-		driver.runNext(t)
-	}
-	if !view.crop.active || !view.cropSnapshot.Visible() || view.scroll.Visible() || g.cropAction.button.Importance != widget.HighImportance {
-		t.Fatal("Markdown Crop did not freeze its viewport")
-	}
-	frame := view.cropSnapshot.Image
 	start, end := fyne.NewPos(40, 30), fyne.NewPos(240, 180)
 	selected, ok := view.crop.selectionImageRect(start.X, start.Y, end.X, end.Y)
 	if !ok {
@@ -45,10 +44,11 @@ func TestMarkdownCropCreatesIndependentImageAndPreservesSource(t *testing.T) {
 	view.crop.beginDrag(start)
 	view.crop.finishDrag(end)
 	view.crop.applySelection()
+	driver.drain()
 	for g.working {
 		driver.runNext(t)
 	}
-	if view.crop.active || view.cropSnapshot.Visible() || !view.scroll.Visible() {
+	if view.crop.active || !view.scroll.Visible() {
 		t.Fatal("completed Crop did not restore reading")
 	}
 	if g.showingMarkdown() || !bytes.Equal(view.doc.Source, original) || len(g.editors.windows) != 1 || len(g.documents) != 2 {
@@ -65,7 +65,7 @@ func TestMarkdownCropCreatesIndependentImageAndPreservesSource(t *testing.T) {
 	if preview.Bounds().Size() != selected.Size() {
 		t.Fatalf("wrong crop dimensions: %v want %v", preview.Bounds().Size(), selected.Size())
 	}
-	want := color.NRGBAModel.Convert(frame.At(selected.Min.X, selected.Min.Y))
+	want := color.NRGBAModel.Convert(frame.At(region.Min.X+selected.Min.X, region.Min.Y+selected.Min.Y))
 	if color.NRGBAModel.Convert(preview.At(0, 0)) != want {
 		t.Fatal("crop captured the wrong viewport pixels")
 	}
@@ -90,13 +90,13 @@ func TestMarkdownCropCancelsOnEscapeZoomResizeAndSwitch(t *testing.T) {
 	}
 	g.startCrop()
 	g.zoomIn()
-	if v.crop.active || v.cropSnapshot.Visible() {
+	if v.crop.active {
 		t.Fatal("zoom retained a stale capture")
 	}
 	settleMarkdownDiagrams(t, g, driver)
 	g.startCrop()
 	g.window.Resize(fyne.NewSize(900, 700))
-	if v.crop.active || v.cropSnapshot.Visible() {
+	if v.crop.active {
 		t.Fatal("resize retained a stale capture")
 	}
 	settleMarkdownDiagrams(t, g, driver)
@@ -194,10 +194,19 @@ func TestMermaidContextMenuCopiesRenderedImage(t *testing.T) {
 
 type markdownCropCaptureCanvas struct {
 	fyne.Canvas
-	frame image.Image
+	frame     *markdownSlowCapture
+	crop      *cropOverlay
+	onCapture func()
 }
 
-func (c markdownCropCaptureCanvas) Capture() image.Image { return c.frame }
+func (c *markdownCropCaptureCanvas) Capture() image.Image {
+	c.frame.captures++
+	c.frame.capturedWhileHidden = c.crop != nil && !c.crop.active && !c.crop.Visible()
+	if c.onCapture != nil {
+		c.onCapture()
+	}
+	return c.frame
+}
 
 type markdownCropCaptureWindow struct {
 	fyne.Window
@@ -208,9 +217,11 @@ func (w markdownCropCaptureWindow) Canvas() fyne.Canvas { return w.capture }
 
 type markdownSlowCapture struct {
 	image.Image
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
+	entered             chan struct{}
+	release             chan struct{}
+	once                sync.Once
+	capturedWhileHidden bool
+	captures            int
 }
 
 func (s *markdownSlowCapture) At(x, y int) color.Color {
@@ -220,11 +231,11 @@ func (s *markdownSlowCapture) At(x, y int) color.Color {
 func slowMarkdownCropCapture(t *testing.T, g *Gui) *markdownSlowCapture {
 	t.Helper()
 	frame := &markdownSlowCapture{Image: image.NewRGBA(image.Rect(0, 0, 1000, 740)), entered: make(chan struct{}), release: make(chan struct{})}
-	g.window = markdownCropCaptureWindow{Window: g.window, capture: markdownCropCaptureCanvas{Canvas: g.window.Canvas(), frame: frame}}
+	g.window = markdownCropCaptureWindow{Window: g.window, capture: &markdownCropCaptureCanvas{Canvas: g.window.Canvas(), frame: frame, crop: g.markdownView.crop}}
 	return frame
 }
 
-func TestMarkdownCropAcceptsAndConfirmsDragDuringSnapshotPreparation(t *testing.T) {
+func TestMarkdownCropSelectsBeforeCaptureAndCopiesPixelsInWorker(t *testing.T) {
 	g, driver := newDropTestGui(t)
 	g.window.Resize(fyne.NewSize(1000, 740))
 	g.window.Show()
@@ -236,35 +247,53 @@ func TestMarkdownCropAcceptsAndConfirmsDragDuringSnapshotPreparation(t *testing.
 	var release sync.Once
 	defer release.Do(func() { close(frame.release) })
 	g.startCrop()
-	select {
-	case <-frame.entered:
-	case <-time.After(3 * time.Second):
-		t.Fatal("snapshot worker did not start")
-	}
-	if !view.crop.active || view.cropSnapshot.Visible() {
-		t.Fatal("crop waited for the slow copy")
+	if !view.crop.active || frame.captures != 0 {
+		t.Fatal("crop captured the canvas before confirmation")
 	}
 	view.crop.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(240, 180)}, Dragged: fyne.Delta{DX: 200, DY: 150}})
 	view.crop.DragEnd()
 	if !view.crop.hasSelection {
 		t.Fatal("first drag was lost while preparing the snapshot")
 	}
+	updated := false
+	view.updateDiagramLayout(func() { updated = true })
+	capture := g.window.(markdownCropCaptureWindow).capture.(*markdownCropCaptureCanvas)
+	capture.onCapture = func() {
+		if updated {
+			t.Fatal("diagram layout changed before capture")
+		}
+	}
 	view.crop.applySelection()
+	if updated {
+		t.Fatal("confirmation resumed diagram layout before capture")
+	}
+	driver.runNext(t)
+	if !updated || view.cropCapturing {
+		t.Fatal("capture did not resume diagram layout")
+	}
+	if !frame.capturedWhileHidden {
+		t.Fatal("canvas capture included the active crop overlay")
+	}
 	if !g.working {
 		t.Fatal("early confirmation was lost")
+	}
+	select {
+	case <-frame.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("crop pixel acquisition did not start after confirmation")
 	}
 	release.Do(func() { close(frame.release) })
 	for g.working {
 		driver.runNext(t)
 	}
 	driver.drain()
-	if g.document == nil || g.showingMarkdown() || len(g.documents) != 2 || view.cropSnapshot.Visible() {
+	if g.document == nil || g.showingMarkdown() || len(g.documents) != 2 {
 		t.Fatal("early confirmation did not create an independent image")
 	}
 	g.closeWindow()
 }
 
-func TestMarkdownCropIgnoresCanceledSnapshotAndDefersDiagramLayout(t *testing.T) {
+func TestMarkdownCropCancelResumesDiagramLayout(t *testing.T) {
 	g, driver := newDropTestGui(t)
 	g.window.Resize(fyne.NewSize(1000, 740))
 	g.window.Show()
@@ -272,9 +301,7 @@ func TestMarkdownCropIgnoresCanceledSnapshotAndDefersDiagramLayout(t *testing.T)
 	settleMarkdownDiagrams(t, g, driver)
 	view := g.markdownView
 	driver.drain()
-	frame := slowMarkdownCropCapture(t, g)
-	var release sync.Once
-	defer release.Do(func() { close(frame.release) })
+	_ = slowMarkdownCropCapture(t, g)
 	g.startCrop()
 	updated := false
 	view.updateDiagramLayout(func() { updated = true })
@@ -288,10 +315,54 @@ func TestMarkdownCropIgnoresCanceledSnapshotAndDefersDiagramLayout(t *testing.T)
 	if !updated {
 		t.Fatal("cancel did not resume diagram updates")
 	}
-	release.Do(func() { close(frame.release) })
-	driver.runNext(t)
-	if view.crop.active || view.cropSnapshot.Visible() || view.cropSnapshot.Image != nil || !view.scroll.Visible() {
-		t.Fatal("late copy reactivated a canceled crop")
+	if view.crop.active || !view.scroll.Visible() {
+		t.Fatal("cancel retained crop state")
 	}
 	g.closeWindow()
+}
+
+func TestMarkdownCropDiscardsCaptureAfterResizeOrSwitch(t *testing.T) {
+	for _, action := range []string{"resize", "switch", "close", "restart"} {
+		t.Run(action, func(t *testing.T) {
+			g, driver := newDropTestGui(t)
+			g.window.Resize(fyne.NewSize(1000, 740))
+			g.window.Show()
+			openTestMermaid(t, g, "flowchart LR\n A --> B")
+			settleMarkdownDiagrams(t, g, driver)
+			driver.drain()
+			view := g.markdownView
+			frame := slowMarkdownCropCapture(t, g)
+			close(frame.release)
+			g.startCrop()
+			view.crop.beginDrag(fyne.NewPos(40, 30))
+			view.crop.finishDrag(fyne.NewPos(240, 180))
+			view.crop.applySelection()
+			switch action {
+			case "resize":
+				g.window.Resize(fyne.NewSize(900, 700))
+			case "switch":
+				other, err := markdown.Load("other.md", "", strings.NewReader("# Other"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				g.addMarkdown(other, nil)
+			case "close":
+				g.closeWindow()
+			case "restart":
+				view.cancelCrop()
+				g.startCrop()
+			}
+			captures := frame.captures // Switching may capture the new document thumbnail.
+			driver.runNext(t)
+			if frame.captures != captures || g.working {
+				t.Fatal("obsolete confirmation captured the canvas")
+			}
+			if action == "restart" && !view.crop.active {
+				t.Fatal("obsolete confirmation canceled the new selection")
+			}
+			if action != "close" {
+				g.closeWindow()
+			}
+		})
+	}
 }

@@ -49,15 +49,17 @@ no text field has focus. Drag selection across rendered rich text is not yet
 implemented; Fyne's RichText widget does not provide it.
 
 Right-click a rendered diagram and choose **Copy image** to copy its PNG at the
-rendered resolution. **Crop** freezes the visible Markdown viewport, including
-text and diagrams at the current theme and zoom. Confirming a rectangular
-selection opens an independent, unsaved PNG in the same window's sidebar and
-selects it. Crop activates before the captured pixels are converted in a worker,
-so the first drag and confirmation can proceed during preparation. The snapshot
-uses GPU scaling instead of CPU resampling; late copies after cancellation or
-switching cannot replace the view. Pending Mermaid layout updates wait until
-Crop ends. Wheel events are consumed by the crop overlay to keep the view fixed. The original Markdown remains available. Escape, zoom, resize or
-document switching cancels the selection. Crop captures visible content only.
+rendered resolution. **Crop** selects a rectangle over the visible Markdown
+viewport, including text and diagrams at the current theme and zoom. Selection
+starts without capturing the canvas. Confirmation hides the selection overlay,
+then captures the viewport and copies only the selected pixels in a worker into
+an independent, unsaved PNG in the same window's sidebar. Pending Mermaid layout
+updates remain suspended through capture, so completed diagrams cannot move the
+selected content before its pixels are acquired. Wheel events are consumed by
+the crop overlay to keep the view fixed. The original Markdown remains available.
+Escape, zoom, resize or document switching cancels selection; resize, switching,
+closing or starting a new selection also invalidates a queued capture. Crop
+captures visible content only.
 
 ## Loading and resource bounds
 
@@ -130,9 +132,9 @@ full equivalence to official Mermaid.
   source fallback, preservation of following content, late-layout scroll restoration
   closing during work, exact code copying and image clipboard output.
 - Markdown crop tests cover viewport pixel mapping, cancellation and independent
-  image creation in the same workspace without source changes, immediate dragging
-  and confirmation during a blocked snapshot copy, late-copy rejection and
-  deferred diagram updates.
+  image creation in the same workspace without source changes, selection before
+  canvas capture, worker-side pixel copying, obsolete confirmation rejection and
+  diagram layout deferral through capture.
 - Fyne software-rendered frames were visually inspected for prose, tables,
   strikethrough, code highlighting and flowchart/sequence previews in both themes. These do not establish native desktop
   input, accessibility or Linux/Wayland runtime verification.
@@ -170,8 +172,9 @@ and Mermaid diagrams:
   keep a single page-level theme scope, cache `MinSize()` per wrap width, coalesce
   adjacent same-color Chroma tokens on each line, and relayout diagram height
   updates without resetting unchanged text blocks.
-- Viewport snapshot extraction now copies RGBA scanlines directly from Fyne's
-  OpenGL capture buffer instead of boxing every pixel through `image.Image.At`,
-  accelerating both asynchronous Crop snapshots and sidebar thumbnail captures.
-  Image/PDF/STL Crop reuses existing preview pixels instead of capturing a
-  Markdown viewport.
+- Crop captures the canvas only after confirmation, keeping activation independent
+  of capture cost and avoiding an intermediate frozen viewport image. Pixel
+  copying and PNG creation run in a worker through the public `image.Image` API;
+  there is no reflection into Fyne's private OpenGL capture fields. Diagram
+  updates remain deferred until capture completes. Image/PDF/STL Crop reuses
+  existing preview pixels instead of capturing a Markdown viewport.

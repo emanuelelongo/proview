@@ -6,17 +6,15 @@ import (
 	"image/draw"
 	"math"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
 
 // Capture uses the visible reading viewport, preserving its theme, zoom and
-// diagrams. The frozen pixels own the selection until confirmation/cancellation.
+// diagrams. Capture is deferred until confirmation; layout stays fixed until then.
 type markdownViewport struct {
 	widget.BaseWidget
 	view    *markdownView
@@ -24,27 +22,14 @@ type markdownViewport struct {
 }
 
 func newMarkdownViewport(view *markdownView) *markdownViewport {
-	view.cropSnapshot = canvas.NewImageFromImage(nil)
-	view.cropSnapshot.FillMode = canvas.ImageFillContain
-	view.cropSnapshot.ScaleMode = canvas.ImageScaleFastest
-	view.cropSnapshot.Hide()
 	view.crop = newCropOverlay()
 	view.crop.onActiveChanged = func(active bool) {
 		view.editor.setCropToolActive(active)
-		if !active {
-			view.cropGeneration++
-			view.cropSnapshot.Hide()
-			view.cropSnapshot.Image = nil
-			view.scroll.Show()
-			updates := view.pendingDiagramUpdates
-			view.pendingDiagramUpdates = nil
-			for _, update := range updates {
-				view.updateDiagramLayout(update)
-			}
-			view.editor.updateHistoryActions()
+		if !active && !view.cropCapturing {
+			view.resumeDiagramUpdates()
 		}
 	}
-	viewport := &markdownViewport{view: view, content: container.NewStack(view.scroll, view.cropSnapshot, view.crop)}
+	viewport := &markdownViewport{view: view, content: container.NewStack(view.scroll, view.crop)}
 	viewport.ExtendBaseWidget(viewport)
 	return viewport
 }
@@ -59,9 +44,24 @@ func (v *markdownViewport) Resize(size fyne.Size) {
 	v.BaseWidget.Resize(size)
 	v.view.scheduleThumbnail()
 }
+func (v *markdownView) resumeDiagramUpdates() {
+	updates := v.pendingDiagramUpdates
+	v.pendingDiagramUpdates = nil
+	for _, update := range updates {
+		v.updateDiagramLayout(update)
+	}
+	v.editor.updateHistoryActions()
+}
+
 func (v *markdownView) cancelCrop() {
+	v.cropGeneration++
+	pending := v.cropCapturing
+	v.cropCapturing = false
 	if v.crop != nil {
 		v.crop.Deactivate()
+	}
+	if pending {
+		v.resumeDiagramUpdates()
 	}
 }
 func (g *Gui) startMarkdownCrop() {
@@ -69,7 +69,7 @@ func (g *Gui) startMarkdownCrop() {
 	if v == nil || v.crop == nil {
 		return
 	}
-	if v.crop.active {
+	if v.crop.active || v.cropCapturing {
 		v.cancelCrop()
 		return
 	}
@@ -77,45 +77,53 @@ func (g *Gui) startMarkdownCrop() {
 	if surface, ok := g.window.Content().(*tooltipSurface); ok && surface.owner != nil {
 		surface.hide(surface.owner)
 	}
-	frame := g.window.Canvas().Capture()
-	position := g.app.Driver().AbsolutePositionForObject(v.scroll)
-	canvasSize, viewportSize := g.window.Canvas().Size(), v.scroll.Size()
+	viewportSize := v.scroll.Size()
 	if (viewportSize.Width <= 0 || viewportSize.Height <= 0) && g.markdownPanel != nil {
 		viewportSize = g.markdownPanel.Size()
 	}
-	region, err := markdownViewportRegion(frame, canvasSize, position, viewportSize)
-	if err != nil {
-		g.showOperationError("crop", err)
+	if viewportSize.Width <= 0 || viewportSize.Height <= 0 {
+		g.showOperationError("crop", document.ErrInvalidRect)
 		return
 	}
 	name := strings.TrimSuffix(v.doc.Name, filepath.Ext(v.doc.Name)) + "-crop.png"
+	// Use logical viewport coordinates while selecting. Canvas capture can be
+	// expensive when diagrams are still rendering, so defer it until confirmation.
+	area := image.Rect(0, 0, int(math.Round(float64(viewportSize.Width))), int(math.Round(float64(viewportSize.Height))))
 	v.cropGeneration++
 	generation := v.cropGeneration
-	// Capture owns immutable pixels. Copying a native GPU capture uses generic
-	// per-pixel conversion, which must not delay pointer events on the UI thread.
-	ready := make(chan struct{})
-	var snapshot *image.RGBA
-	v.crop.Activate(image.Rect(0, 0, region.Dx(), region.Dy()), func(rect image.Rectangle) {
-		g.runFileWork("Cropping Markdown", func() (*document.Document, error) {
-			<-ready
-			return modelSnapshotDocument(snapshot, rect, name)
-		}, g.openNewImage)
-	})
-	driver := g.app.Driver()
-	go func() {
-		snapshot = image.NewRGBA(image.Rect(0, 0, region.Dx(), region.Dy()))
-		copyMarkdownCaptureRegion(snapshot, frame, region)
-		close(ready)
-		driver.DoFromGoroutine(func() {
-			if g.closed || g.markdownView != v || !v.crop.active || v.cropGeneration != generation {
+	v.crop.Activate(area, func(rect image.Rectangle) {
+		v.cropCapturing = true
+		// Let the crop overlay deactivate and the canvas redraw before capturing,
+		// otherwise Canvas.Capture can return the last frame with the selection tint.
+		v.crop.Hide()
+		fyne.Do(func() {
+			if g.closed || g.markdownView != v || v.cropGeneration != generation || !v.cropCapturing {
 				return
 			}
-			v.cropSnapshot.Image = snapshot
-			v.cropSnapshot.Show()
-			v.cropSnapshot.Refresh()
-			v.scroll.Hide()
-		}, false)
-	}()
+			defer func() {
+				v.cropCapturing = false
+				v.resumeDiagramUpdates()
+			}()
+			frame := g.window.Canvas().Capture()
+			position := g.app.Driver().AbsolutePositionForObject(v.scroll)
+			canvasSize := g.window.Canvas().Size()
+			region, err := markdownViewportRegion(frame, canvasSize, position, viewportSize)
+			if err != nil {
+				g.showOperationError("crop", err)
+				return
+			}
+			sx, sy := float64(region.Dx())/float64(area.Dx()), float64(region.Dy())/float64(area.Dy())
+			pixelRect := image.Rect(
+				region.Min.X+int(math.Floor(float64(rect.Min.X)*sx)),
+				region.Min.Y+int(math.Floor(float64(rect.Min.Y)*sy)),
+				region.Min.X+int(math.Ceil(float64(rect.Max.X)*sx)),
+				region.Min.Y+int(math.Ceil(float64(rect.Max.Y)*sy)),
+			).Intersect(region)
+			g.runFileWork("Cropping Markdown", func() (*document.Document, error) {
+				return modelSnapshotDocument(frame, pixelRect, name)
+			}, g.openNewImage)
+		})
+	})
 }
 
 // Canvas captures use device pixels; viewport bounds use logical Fyne points.
@@ -125,49 +133,8 @@ func markdownViewportSnapshot(frame image.Image, canvasSize fyne.Size, position 
 		return nil, err
 	}
 	snapshot := image.NewRGBA(image.Rect(0, 0, region.Dx(), region.Dy()))
-	copyMarkdownCaptureRegion(snapshot, frame, region)
+	draw.Draw(snapshot, snapshot.Bounds(), frame, region.Min, draw.Src)
 	return snapshot, nil
-}
-
-func copyMarkdownCaptureRegion(dst *image.RGBA, frame image.Image, region image.Rectangle) {
-	if copyGLCaptureRegion(dst, frame, region) {
-		return
-	}
-	draw.Draw(dst, dst.Bounds(), frame, region.Min, draw.Src)
-}
-
-func copyGLCaptureRegion(dst *image.RGBA, frame image.Image, region image.Rectangle) bool {
-	v := reflect.ValueOf(frame)
-	if v.Kind() != reflect.Pointer || v.IsNil() {
-		return false
-	}
-	elem := v.Elem()
-	if elem.Kind() != reflect.Struct || elem.Type().Name() != "captureImage" {
-		return false
-	}
-	pixField := elem.FieldByName("pix")
-	widthField := elem.FieldByName("width")
-	heightField := elem.FieldByName("height")
-	if !pixField.IsValid() || !widthField.IsValid() || !heightField.IsValid() ||
-		pixField.Kind() != reflect.Slice || pixField.Type().Elem().Kind() != reflect.Uint8 ||
-		widthField.Kind() != reflect.Int || heightField.Kind() != reflect.Int {
-		return false
-	}
-	pix := pixField.Bytes()
-	width, height := int(widthField.Int()), int(heightField.Int())
-	if width <= 0 || height <= 0 || len(pix) < width*height*4 {
-		return false
-	}
-	rowBytes := region.Dx() * 4
-	for y := region.Min.Y; y < region.Max.Y; y++ {
-		srcOffset := ((height-y-1)*width + region.Min.X) * 4
-		dstOffset := (y - region.Min.Y) * dst.Stride
-		if srcOffset < 0 || srcOffset+rowBytes > len(pix) || dstOffset < 0 || dstOffset+rowBytes > len(dst.Pix) {
-			return false
-		}
-		copy(dst.Pix[dstOffset:dstOffset+rowBytes], pix[srcOffset:srcOffset+rowBytes])
-	}
-	return true
 }
 
 func markdownViewportRegion(frame image.Image, canvasSize fyne.Size, position fyne.Position, size fyne.Size) (image.Rectangle, error) {

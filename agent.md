@@ -689,11 +689,12 @@ Theme, viewport, zoom and display scale form the render key. Cancel waiting jobs
 on teardown and reject stale results; active sketch calls finish within limits. Never fetch remote images automatically; resolve relative resources
 within the canonical document directory. editorDocument owns reading state.
 Preserve the PDF/non-PDF window policy and shared opening queue. Keep a code-copy button visible above Mermaid previews and display source only
-on failure. Diagram context menus copy rendered PNGs. Markdown Crop activates
-before worker-side capture conversion, freezes the visible viewport with GPU
-scaling and adds an independent PNG to the same workspace. Defer diagram layout
-updates while cropping and reject stale snapshot publication after cancellation,
-resize, switching or closing; early confirmation must wait only in the worker.
+on failure. Diagram context menus copy rendered PNGs. Markdown Crop starts
+selection without capturing the canvas, captures only after confirmation and
+adds an independent PNG to the same workspace. Keep diagram layout updates
+suspended until capture finishes; invalidate queued captures on cancellation,
+resize, switching or closing. Copy selected pixels in a worker using public image
+APIs; do not inspect Fyne's private capture fields through reflection.
 Formulas and HTML remain literal source. Rich text drag selection is deferred;
 block/code copying and full source copying are available.
 

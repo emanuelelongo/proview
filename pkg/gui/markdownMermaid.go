@@ -178,7 +178,7 @@ func (v *markdownView) restoreReadingOffset(offset fyne.Position) {
 	v.restoringReadingOffset = false
 }
 func (v *markdownView) updateDiagramLayout(update func()) {
-	if v.crop != nil && v.crop.active {
+	if v.cropCapturing || v.crop != nil && v.crop.active {
 		v.pendingDiagramUpdates = append(v.pendingDiagramUpdates, update)
 		return
 	}
