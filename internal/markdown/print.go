@@ -3,6 +3,7 @@ package markdown
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"image"
@@ -47,14 +48,30 @@ type PrintedDocument struct {
 // PrintPDF uses only already-loaded local resources. It never fetches images or
 // invokes a browser. The AST, source and resource images remain immutable.
 func (d *Document) PrintPDF(ctx context.Context) (PrintedDocument, error) {
+	return d.layoutPDF(ctx, false)
+}
+
+// PreviewPDF lays out only the beginning of the document on a compact card.
+// It stops at the first page boundary instead of shrinking the whole document.
+func (d *Document) PreviewPDF(ctx context.Context) (PrintedDocument, error) {
+	return d.layoutPDF(ctx, true)
+}
+
+var errPreviewFull = errors.New("Markdown preview is full")
+
+func (d *Document) layoutPDF(ctx context.Context, preview bool) (PrintedDocument, error) {
 	if err := ctx.Err(); err != nil {
 		return PrintedDocument{}, err
 	}
-	p := &markdownPrinter{ctx: ctx, doc: d, pdf: fpdf.New("P", "pt", "A4", ""), imageNames: make(map[image.Image]string), diagramRenderer: mermaid.NewRenderer()}
+	p := &markdownPrinter{ctx: ctx, doc: d, pdf: fpdf.New("P", "pt", "A4", ""), margin: printMargin, preview: preview, imageNames: make(map[image.Image]string), diagramRenderer: mermaid.NewRenderer()}
+	if preview {
+		p.pdf = fpdf.NewCustom(&fpdf.InitType{UnitStr: "pt", Size: fpdf.SizeType{Wd: 320, Ht: 240}})
+		p.margin = 16
+	}
 	p.pageWidth, p.pageHeight = p.pdf.GetPageSize()
-	p.bottom = p.pageHeight - printMargin
-	p.pdf.SetMargins(printMargin, printMargin, printMargin)
-	p.pdf.SetAutoPageBreak(false, printMargin)
+	p.bottom = p.pageHeight - p.margin
+	p.pdf.SetMargins(p.margin, p.margin, p.margin)
+	p.pdf.SetAutoPageBreak(false, p.margin)
 	p.pdf.SetTitle(d.Name, true)
 	p.pdf.SetCreator("Proview", true)
 	for _, font := range []struct {
@@ -67,6 +84,9 @@ func (d *Document) PrintPDF(ctx context.Context) (PrintedDocument, error) {
 		p.pdf.AddUTF8FontFromBytes(font.family, font.style, font.data)
 	}
 	p.pdf.SetFooterFunc(func() {
+		if preview {
+			return
+		}
 		p.pdf.SetFont("sans", "", 8)
 		p.pdf.SetTextColor(115, 115, 115)
 		label := fmt.Sprint(p.pdf.PageNo())
@@ -75,7 +95,7 @@ func (d *Document) PrintPDF(ctx context.Context) (PrintedDocument, error) {
 	if err := p.newPage(); err != nil {
 		return PrintedDocument{}, err
 	}
-	if err := p.blocks(d.Root, printMargin, p.pageWidth-2*printMargin); err != nil {
+	if err := p.blocks(d.Root, p.margin, p.pageWidth-2*p.margin); err != nil && !(preview && errors.Is(err, errPreviewFull)) {
 		return PrintedDocument{}, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -119,6 +139,8 @@ type markdownPrinter struct {
 	doc                              *Document
 	pdf                              *fpdf.Fpdf
 	pageWidth, pageHeight, bottom, y float64
+	margin                           float64
+	preview                          bool
 	bars                             []float64
 	marker                           *printMarker
 	images, diagrams                 int
@@ -131,11 +153,14 @@ func (p *markdownPrinter) newPage() error {
 	if err := p.ctx.Err(); err != nil {
 		return err
 	}
+	if p.preview && p.pdf.PageCount() > 0 {
+		return errPreviewFull
+	}
 	if p.pdf.PageCount() >= maxPrintPages {
 		return fmt.Errorf("Markdown exceeds the %d-page print limit", maxPrintPages)
 	}
 	p.pdf.AddPage()
-	p.y = printMargin
+	p.y = p.margin
 	return p.pdf.Error()
 }
 
@@ -509,8 +534,8 @@ func (p *markdownPrinter) pictureWidth(picture image.Image, x, width, naturalWid
 	}
 	w := math.Min(width, naturalWidth)
 	h := w * float64(b.Dy()) / float64(b.Dx())
-	if h > p.bottom-printMargin-12 {
-		scale := (p.bottom - printMargin - 12) / h
+	if h > p.bottom-p.margin-12 {
+		scale := (p.bottom - p.margin - 12) / h
 		w *= scale
 		h *= scale
 	}
@@ -717,7 +742,7 @@ func (p *markdownPrinter) codeText(source string, tokens []chroma.Token, x, widt
 	}
 	const lineHeight = 12.5
 	total := float64(len(lines))*lineHeight + 16
-	if total <= p.bottom-printMargin {
+	if total <= p.bottom-p.margin {
 		if err := p.room(total); err != nil {
 			return err
 		}

@@ -1,15 +1,41 @@
 package gui
 
 import (
+	"emanuelelongo/proview/internal/markdown"
+	"image"
 	"image/color"
 	"image/png"
 	"os"
+	"strings"
 	"testing"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
 )
+
+func TestMarkdownThumbnailRendersExcerptAfterSwitchWithoutCanvasCapture(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	defer g.closeWindow()
+	g.window.Resize(fyne.NewSize(1000, 740))
+	g.window.Show()
+	doc, err := markdown.Load("long.md", "", strings.NewReader("# Recognizable heading\n\n"+strings.Repeat("Opening paragraph with readable words.\n\n", 200)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.window = markdownCropCaptureWindow{Window: g.window, capture: &markdownCropCaptureCanvas{Canvas: g.window.Canvas(), frame: &markdownSlowCapture{}, onCapture: func() { t.Fatal("thumbnail captured the live canvas") }}}
+	g.addMarkdown(doc, nil)
+	entry := g.activeDocument
+	g.markdownView.zoom(2)
+	g.window.Resize(fyne.NewSize(700, 500))
+	g.addDocument(testDocument(t, 40, 30), nil, nil)
+	for entry.thumbnailCancel != nil {
+		driver.runNext(t)
+	}
+	if entry.thumbnail == nil || entry.thumbnail.Bounds().Size() != image.Pt(320, 240) {
+		t.Fatal("background excerpt was lost after switching documents")
+	}
+}
 
 func TestMarkdownThumbnailRetainsRenderedContentAcrossSwitches(t *testing.T) {
 	g, driver := newDropTestGui(t)
@@ -68,16 +94,18 @@ func TestMarkdownThumbnailRetainsRenderedContentAcrossSwitches(t *testing.T) {
 	driver.drain()
 }
 
-func TestMarkdownThumbnailQueuedCaptureIgnoresClosedDocument(t *testing.T) {
+func TestMarkdownThumbnailWorkerIgnoresClosedDocument(t *testing.T) {
 	g, driver := newDropTestGui(t)
 	g.window.Resize(fyne.NewSize(1000, 740))
 	g.window.Show()
 	openTestMermaid(t, g, "flowchart LR\n A --> B")
-	view, entry := g.markdownView, g.activeDocument
-	view.scheduleThumbnail()
+	entry := g.activeDocument
+	g.refreshDocumentSidebar()
 	g.closeWindow()
-	driver.drain()
-	if view.captureThumbnail() || entry.thumbnail != nil {
+	for entry.thumbnailCancel != nil {
+		driver.runNext(t)
+	}
+	if entry.thumbnail != nil {
 		t.Fatal("closed Markdown published a thumbnail")
 	}
 }

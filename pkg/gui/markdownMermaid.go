@@ -196,7 +196,6 @@ func (v *markdownView) updateDiagramLayout(update func()) {
 		}
 	}
 	v.pendingReadingOffset = nil
-	v.scheduleThumbnail()
 }
 
 func (d *markdownDiagram) TappedSecondary(event *fyne.PointEvent) {

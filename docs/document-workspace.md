@@ -197,8 +197,15 @@ are discarded. Failures retain the ordinary/last valid preview and are logged.
 
 ## Markdown documents
 
+Dragging the sidebar divider resizes existing document cards and previews in
+place. It does not rebuild the document list, restart thumbnail workers or
+recursively refresh the document viewport. The reading layout still reflows to
+its new width; explicit refreshes continue to propagate theme changes.
+
 Markdown files share the sidebar with images and STL models. Their thumbnail
-is a bounded snapshot of the rendered reading viewport, captured once after
-diagrams settle and retained across scrolling, zoom and document switching. Reading size and scroll position survive document switching. They stay
+is a fixed 320 × 240 light card of the opening content, generated in a worker
+using the Markdown print layout and stopped at the first card boundary. It never
+shrinks the whole document or captures the live window. Scrolling, zoom, theme,
+viewport size and document switching leave it unchanged. Reading size and scroll position survive document switching. They stay
 read-only and never use PDF/image history or saving. The existing PDF/non-PDF
 separate-window rule also applies to Markdown. See [Markdown viewer](markdown-viewer.md).

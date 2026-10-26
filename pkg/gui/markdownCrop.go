@@ -42,7 +42,6 @@ func (v *markdownViewport) Resize(size fyne.Size) {
 		v.view.cancelCrop()
 	}
 	v.BaseWidget.Resize(size)
-	v.view.scheduleThumbnail()
 }
 func (v *markdownView) resumeDiagramUpdates() {
 	updates := v.pendingDiagramUpdates

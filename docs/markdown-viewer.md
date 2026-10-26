@@ -8,9 +8,14 @@ browser, container or additional display backend.
 
 Open `.md` and `.markdown` files through File → Open, the command line,
 desktop file associations or drag and drop. Markdown shares the document
-sidebar with images and STL models. Each Markdown entry gets a cached thumbnail
-of its rendered viewport after diagram loading; it stays stable while reading
-and switching documents. PDF/non-PDF opening keeps the existing
+sidebar with images and STL models. Each Markdown entry gets a cached 320 × 240
+preview of its opening content, laid out as a compact light card using the print
+renderer. Text keeps a fixed readable size; overflow stops at the first card
+boundary instead of shrinking the entire document. The worker renders only that
+card, including initial code, tables, images and Mermaid, without capturing the
+window. Scroll, zoom, theme and viewport size do not affect it. Switching keeps
+the worker alive; closing the entry cancels it and rejects late results.
+PDF/non-PDF opening keeps the existing
 separate-window policy. Switching documents retains reading size and scroll
 position. Closing Markdown restores the previous retained document.
 
@@ -137,7 +142,10 @@ full equivalence to official Mermaid.
   source limits, local images and rejection of escaping/remote resource paths.
 - GUI tests cover queued opening, workspace switching and closing, read-only
   controls, zoom/scroll restoration, heading links, keyboard navigation and cached
-  viewport thumbnails with closed-document callback rejection.
+  opening-content thumbnails independent of canvas capture and reading state,
+  background completion after switching and closed-document callback rejection.
+- Preview layout tests cover a fixed single-card boundary for long prose, code
+  and tables, retained opening headings, omitted tail content and cancellation.
 - Mermaid adapter tests cover valid output, cache reuse/eviction, theme and zoom,
   source/edge/image budgets, cancellation and concurrent callers.
 - Mermaid GUI tests cover asynchronous rendering, theme/zoom/viewport changes,

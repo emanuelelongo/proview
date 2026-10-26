@@ -23,6 +23,7 @@ type fixedSidebarSplit struct {
 	leading       fyne.CanvasObject
 	trailing      fyne.CanvasObject
 	width         float32
+	renderer      *fixedSidebarSplitRenderer
 	onWidthChange func()
 }
 
@@ -35,13 +36,29 @@ func newFixedSidebarSplit(leading, trailing fyne.CanvasObject, width float32, on
 
 func (s *fixedSidebarSplit) CreateRenderer() fyne.WidgetRenderer {
 	divider := newSidebarDivider(func(delta float32) {
+		previous := s.width
 		s.SetSidebarWidth(s.width + delta)
-		s.Refresh()
+		if s.width == previous {
+			return
+		}
 		if s.onWidthChange != nil {
 			s.onWidthChange()
 		}
+		s.relayout()
 	})
-	return &fixedSidebarSplitRenderer{split: s, divider: divider}
+	s.renderer = &fixedSidebarSplitRenderer{split: s, divider: divider}
+	return s.renderer
+}
+
+// Width and visibility changes need layout, without recursively refreshing the
+// document widgets, their text measurements and GPU textures.
+func (s *fixedSidebarSplit) relayout() {
+	if s.renderer == nil {
+		s.Refresh()
+		return
+	}
+	s.renderer.Layout(s.Size())
+	canvas.Refresh(s)
 }
 
 func (s *fixedSidebarSplit) SetSidebarWidth(width float32) {
@@ -149,8 +166,21 @@ func thumbnailSizeForSidebar(pageSize image.Point, sidebarWidth float32) fyne.Si
 }
 
 func (g *Gui) updatePDFThumbnailSizes() {
-	g.refreshDocumentSidebar()
-	if g.document == nil || g.document.Format() != document.FormatPDF || g.sidebarSplit == nil {
+	if g.sidebarSplit == nil {
+		return
+	}
+	// Retain cards and immutable thumbnail pixels throughout the drag.
+	for _, object := range g.documentList.Objects {
+		card, ok := object.(*fyne.Container)
+		if !ok || len(card.Objects) == 0 {
+			continue
+		}
+		if preview, ok := card.Objects[0].(*canvas.Image); ok && preview.Image != nil {
+			preview.SetMinSize(thumbnailSizeForSidebar(preview.Image.Bounds().Size(), g.sidebarSplit.width))
+		}
+	}
+	g.sidebar.documents.Refresh()
+	if g.document == nil || g.document.Format() != document.FormatPDF {
 		return
 	}
 	for page, thumbnail := range g.pdfThumbImages {

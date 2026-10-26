@@ -27,8 +27,6 @@ import (
 )
 
 type markdownView struct {
-	thumbnailCapturing     bool
-	thumbnailPending       bool
 	themeReady             bool
 	doc                    *markdown.Document
 	scroll                 *container.Scroll

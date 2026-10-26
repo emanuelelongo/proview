@@ -724,7 +724,12 @@ with document-local bounded image caches and coalesced background view jobs.
 Theme, viewport, zoom and display scale form the render key. Cancel waiting jobs
 on teardown and reject stale results; active sketch calls finish within limits. Never fetch remote images automatically; resolve relative resources
 within the canonical document directory. editorDocument owns reading state.
-Preserve the PDF/non-PDF window policy and shared opening queue. Keep a code-copy button visible above Mermaid previews and display source only
+Preserve the PDF/non-PDF window policy and shared opening queue.
+Sidebar Markdown thumbnails use a fixed 320 × 240 light opening-content
+card from the print renderer, stopped at the first card boundary in a background
+worker; never capture the live viewport or shrink the entire document. Retained
+entries own these jobs across switching; closing cancels them and rejects stale results.
+Keep a code-copy button visible above Mermaid previews and display source only
 on failure. Diagram context menus copy rendered PNGs. Markdown Crop starts
 selection without capturing the canvas, captures only after confirmation and
 adds an independent PNG to the same workspace. Keep diagram layout updates

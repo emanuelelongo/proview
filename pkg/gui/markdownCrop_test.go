@@ -308,9 +308,6 @@ func TestMarkdownCropCancelResumesDiagramLayout(t *testing.T) {
 	if updated {
 		t.Fatal("late diagram changed the view during crop")
 	}
-	if view.captureThumbnail() {
-		t.Fatal("thumbnail captured the crop overlay")
-	}
 	g.cancelCurrentOperation()
 	if !updated {
 		t.Fatal("cancel did not resume diagram updates")

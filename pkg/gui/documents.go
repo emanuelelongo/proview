@@ -71,7 +71,6 @@ func (g *Gui) captureDocument() {
 	entry.markdown = nil
 	if g.showingMarkdown() {
 		entry.markdown = g.markdownView.doc
-		g.markdownView.captureThumbnail()
 		entry.markdownScale = g.markdownView.scale
 		entry.offset = g.markdownView.scroll.Offset
 		if g.markdownView.pendingReadingOffset != nil {
@@ -164,6 +163,7 @@ func (g *Gui) refreshDocumentSidebar() {
 		g.activeDocument.thumbnail = g.image.Image
 	}
 	for _, entry := range g.documents {
+		g.ensureMarkdownThumbnail(entry)
 		g.ensureModelThumbnail(entry)
 	}
 	// Reuse immutable image/model previews; switching never renders on the UI thread.
@@ -251,7 +251,7 @@ func (g *Gui) refreshDocumentSidebar() {
 	}
 	g.sidebar.panel.Refresh()
 	if g.sidebarSplit != nil {
-		g.sidebarSplit.Refresh()
+		g.sidebarSplit.relayout()
 	}
 	g.updateSelectionActions()
 }

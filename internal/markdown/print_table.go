@@ -94,7 +94,7 @@ func (p *markdownPrinter) table(table *east.Table, x, width float64) error {
 	}
 	header := rows[0]
 	headerHeight := 8 + float64(header.lines)*tableLineHeight
-	fullHeight := p.bottom - printMargin
+	fullHeight := p.bottom - p.margin
 	if headerHeight > fullHeight/4 {
 		return p.tableRecords(table, x, width)
 	}
