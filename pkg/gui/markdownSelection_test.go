@@ -49,6 +49,18 @@ func TestMarkdownSelectionAcrossStyledWrappedBlocks(t *testing.T) {
 	if v.selectedText() != want {
 		t.Fatal("reverse selection changed copied text")
 	}
+	// Replacing a selection must clear its previous blocks even when their
+	// layout is unchanged and no full RichText refresh is needed.
+	v.selection = &markdownTextSelection{anchor: markdownTextPoint{block: second.index}, end: markdownTextPoint{block: second.index, offset: len(second.text)}}
+	v.refreshSelection()
+	if len(first.renderer.highlights) != 0 || len(second.renderer.highlights) == 0 || v.selectedText() != second.text {
+		t.Fatal("replacing the selection left stale highlights or copied text")
+	}
+	v.selection = &markdownTextSelection{anchor: markdownTextPoint{}, end: markdownTextPoint{offset: len(first.text)}}
+	v.refreshSelection()
+	if len(first.renderer.highlights) == 0 || len(second.renderer.highlights) != 0 {
+		t.Fatal("moving selection back did not replace the highlights")
+	}
 	if !v.clearSelection() || v.selectedText() != "" || len(first.renderer.highlights) != 0 {
 		t.Fatal("selection did not clear")
 	}

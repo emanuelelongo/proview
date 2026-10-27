@@ -92,8 +92,15 @@ func (b *markdownSelectableText) Dragged(e *fyne.DragEvent) {
 	// The drag owner stays fixed while crossing paragraphs and table cells.
 	best := b
 	distance := float32(math.MaxFloat32)
+	var pageOrigin fyne.Position
+	if v.scroll != nil {
+		pageOrigin = v.editor.app.Driver().AbsolutePositionForObject(v.scroll.Scroll).Subtract(v.scroll.Offset)
+	}
 	for _, candidate := range v.textBlocks {
-		origin := candidate.absolutePosition()
+		origin := pageOrigin.Add(candidate.pagePosition)
+		if !candidate.positioned {
+			origin = candidate.absolutePosition()
+		}
 		pos := e.AbsolutePosition.Subtract(origin)
 		dx := max(0, max(-pos.X, pos.X-candidate.Size().Width))
 		dy := max(0, max(-pos.Y, pos.Y-candidate.Size().Height))
@@ -160,11 +167,21 @@ func (v *markdownView) selectedText() string {
 	return strings.ReplaceAll(strings.Join(parts, "\n\n"), "\u0336", "")
 }
 func (v *markdownView) refreshSelection() {
+	var changed fyne.CanvasObject
 	for _, b := range v.textBlocks {
-		if b.renderer != nil {
+		start, end := b.selectionRange()
+		if b.renderer != nil && (b.renderer.selectionStart != start || b.renderer.selectionEnd != end) {
 			b.renderer.updateSelection()
-			canvas.Refresh(b)
+			changed = b
 		}
+	}
+	if changed != nil {
+		// Highlight rectangles are updated in place. Queue one frame instead
+		// of a canvas lookup, thread check and refresh for every text block.
+		if v.viewport != nil {
+			changed = v.viewport
+		}
+		canvas.Refresh(changed)
 	}
 }
 func (v *markdownView) clearSelection() bool {
@@ -195,7 +212,10 @@ func (b *markdownSelectableText) fragments() []markdownTextFragment {
 	if b.renderer == nil {
 		return nil
 	}
-	var fragments []markdownTextFragment
+	if b.renderer.fragmentsReady {
+		return b.renderer.fragments
+	}
+	fragments := b.renderer.fragments[:0]
 	cursor := 0
 	for _, object := range b.renderer.WidgetRenderer.Objects() {
 		f := markdownTextFragment{position: object.Position(), size: object.Size()}
@@ -225,13 +245,15 @@ func (b *markdownSelectableText) fragments() []markdownTextFragment {
 		cursor = f.start + len(f.text)
 		fragments = append(fragments, f)
 	}
+	b.renderer.fragments, b.renderer.fragmentsReady = fragments, true
 	return fragments
 }
 func (b *markdownSelectableText) point(pos fyne.Position) markdownTextPoint {
 	fragments := b.fragments()
 	point := markdownTextPoint{block: b.index}
 	distance := float32(math.MaxFloat32)
-	for _, f := range fragments {
+	nearest := -1
+	for i, f := range fragments {
 		dx := max(0, max(f.position.X-pos.X, pos.X-f.position.X-f.size.Width))
 		dy := max(0, max(f.position.Y-pos.Y, pos.Y-f.position.Y-f.size.Height))
 		d := dx*dx + dy*dy
@@ -239,56 +261,115 @@ func (b *markdownSelectableText) point(pos fyne.Position) markdownTextPoint {
 			continue
 		}
 		distance = d
-		x := pos.X - f.position.X
-		boundaries := make([]int, 0, len(f.text)+1)
-		for i := range f.text {
-			boundaries = append(boundaries, i)
-		}
-		boundaries = append(boundaries, len(f.text))
-		// Binary search avoids repeatedly measuring every prefix of long lines.
-		index := sort.Search(len(boundaries)-1, func(i int) bool {
-			left := f.width(f.text[:boundaries[i]])
-			right := f.width(f.text[:boundaries[i+1]])
-			return x < (left+right)/2
-		})
-		offset := boundaries[index]
-		point.offset = f.start + offset
+		nearest = i
 	}
+	if nearest < 0 {
+		return point
+	}
+	f := fragments[nearest]
+	x := pos.X - f.position.X
+	boundaries := make([]int, 0, len(f.text)+1)
+	for i := range f.text {
+		boundaries = append(boundaries, i)
+	}
+	boundaries = append(boundaries, len(f.text))
+	// Shape prefixes only for the nearest fragment, including in long code blocks.
+	index := sort.Search(len(boundaries)-1, func(i int) bool {
+		left := f.width(f.text[:boundaries[i]])
+		right := f.width(f.text[:boundaries[i+1]])
+		return x < (left+right)/2
+	})
+	point.offset = f.start + boundaries[index]
 	return point
 }
 
 type markdownSelectionRenderer struct {
 	fyne.WidgetRenderer
-	block      *markdownSelectableText
-	highlights []fyne.CanvasObject
-	pool       []*canvas.Rectangle
+	block                        *markdownSelectableText
+	highlights, objects          []fyne.CanvasObject
+	pool                         []*canvas.Rectangle
+	selectionStart, selectionEnd int
+	fragments                    []markdownTextFragment
+	fragmentsReady               bool
+	minimum                      fyne.Size
+	minimumReady                 bool
+	layoutSize                   fyne.Size
+	laidOut                      bool
 }
 
 func (r *markdownSelectionRenderer) Layout(size fyne.Size) {
+	// Newly visible lines/highlights make Fyne request another parent layout.
+	// Their minimum sizes do not change the immutable text at the same width.
+	if r.laidOut && r.layoutSize == size {
+		return
+	}
+	r.fragmentsReady, r.minimumReady = false, false
 	r.WidgetRenderer.Layout(size)
+	r.layoutSize, r.laidOut = size, true
 	r.updateSelection()
 }
 func (r *markdownSelectionRenderer) Refresh() {
+	r.laidOut = false
+	r.fragmentsReady, r.minimumReady = false, false
 	r.WidgetRenderer.Refresh()
 	r.updateSelection()
 }
-func (r *markdownSelectionRenderer) Objects() []fyne.CanvasObject {
-	objects := append([]fyne.CanvasObject{}, r.WidgetRenderer.Objects()...)
-	return append(objects, r.highlights...)
-}
-func (r *markdownSelectionRenderer) updateSelection() {
-	r.highlights = r.highlights[:0]
-	a, b, ok := r.block.view.selectionBounds()
-	index := r.block.index
-	if !ok || index < a.block || index > b.block {
-		return
+func (r *markdownSelectionRenderer) MinSize() fyne.Size {
+	if !r.minimumReady {
+		r.minimum = r.WidgetRenderer.MinSize()
+		r.minimumReady = true
 	}
-	start, end := 0, len(r.block.text)
+	return r.minimum
+}
+func (r *markdownSelectionRenderer) Objects() []fyne.CanvasObject {
+	objects := r.WidgetRenderer.Objects()
+	b := r.block
+	if b.positioned && b.view.scroll != nil {
+		// Cull individual lines too: a single highlighted code block or prose
+		// paragraph can span many screens. Retain complete hit-test geometry.
+		scroll := b.view.scroll
+		top := scroll.Offset.Y - scroll.Size().Height - b.pagePosition.Y
+		bottom := scroll.Offset.Y + 2*scroll.Size().Height - b.pagePosition.Y
+		r.objects = r.objects[:0]
+		appendVisible := func(items []fyne.CanvasObject) {
+			for _, object := range items {
+				if object.Position().Y+object.Size().Height >= top && object.Position().Y <= bottom {
+					r.objects = append(r.objects, object)
+				}
+			}
+		}
+		appendVisible(objects)
+		appendVisible(r.highlights)
+		return r.objects
+	}
+	if len(r.highlights) == 0 {
+		return objects
+	}
+	r.objects = append(r.objects[:0], objects...)
+	r.objects = append(r.objects, r.highlights...)
+	return r.objects
+}
+func (block *markdownSelectableText) selectionRange() (start, end int) {
+	a, b, ok := block.view.selectionBounds()
+	index := block.index
+	if !ok || index < a.block || index > b.block {
+		return 0, 0
+	}
+	start, end = 0, len(block.text)
 	if index == a.block {
 		start = a.offset
 	}
 	if index == b.block {
 		end = b.offset
+	}
+	return start, end
+}
+func (r *markdownSelectionRenderer) updateSelection() {
+	r.highlights = r.highlights[:0]
+	start, end := r.block.selectionRange()
+	r.selectionStart, r.selectionEnd = start, end
+	if start == end {
+		return
 	}
 	for _, f := range r.block.fragments() {
 		lo, hi := max(start, f.start)-f.start, min(end, f.start+len(f.text))-f.start

@@ -752,7 +752,12 @@ Keep links clickable and code scrolling independent. No private Fyne caches or O
 needed for Markdown selection.
 Keep distant prose/table text out of the renderer tree while retaining full layout
 and selection geometry; Fyne otherwise remeasures offscreen wrapped lines every
-native frame. Update culling on scroll, resize and diagram reflow. Offscreen drag
+native frame. Cull individual lines and selection rectangles inside long code/prose
+as well, retaining public Card.Content geometry. Selection fragments and minimum
+sizes are cached per layout; invalidate on reflow/refresh and skip repeated Layout
+calls at unchanged sizes. Newly visible nodes must not relayout the entire code
+block. Resolve the viewport origin once per drag, update changed ranges only and
+coalesce their canvas repaint. Update culling on scroll, resize and diagram reflow. Offscreen drag
 hit testing must use retained page coordinates, not renderer-tree position lookup.
 Tables use shared content-based column widths, remain compact when possible and
 scroll horizontally when their minimum word widths exceed the reading column.

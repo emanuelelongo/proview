@@ -81,3 +81,84 @@ application latency or GPU frame times. Automated regressions cover eviction and
 reload, stable page geometry/history, pinned selections, obsolete load rejection,
 linked fields, newest-value publication and reuse across searches. Real document
 scrolling, display scaling and desktop memory behavior still need manual review.
+
+## Markdown selection and scrolling (2026-10-27)
+
+A native Linux/X11 CPU/heap investigation reproduced selection-related stalls
+against `a691e28`, using the reported private `probe.md` (272 text blocks), a
+1,681-block table/prose stress document and a 700-line highlighted Go block.
+A temporary launcher used the actual GLFW application at 1000 × 740 logical
+units, without changing normal preferences or copying document contents into the
+repository. Five separate phases exercised idle, scroll, selection drag, scroll
+with a selection and scroll after clearing it. Each phase scheduled 120 UI-thread
+operations with 16 ms pauses; timings include UI queue latency and profiler
+overhead, and are not measured display frame times.
+
+The profiles identified:
+
+- Selection refreshed every initialized block on each pointer event and repeatedly
+  walked the canvas tree to resolve the same viewport origin. Native Fyne thread
+  checks made these redundant refreshes particularly costly.
+- Every renderer traversal allocated a combined text/highlight object slice.
+  Hit testing rebuilt all fragment geometry and shaped prefixes in successively
+  closer fragments rather than just the nearest fragment.
+- Long code inside a Card lacked retained page coordinates. Its individual lines
+  and highlight rectangles were traversed even when far outside the viewport.
+  Newly visible child nodes also caused repeated same-size RichText layouts,
+  reshaping/repositioning all code and reconstructing its selection highlights.
+
+The viewer now caches selection geometry/minimum sizes until layout or refresh,
+resolves page origin once per drag, updates changed ranges, queues one repaint,
+reuses render slices, culls individual lines/highlights and skips unchanged-size
+layouts. Full source and offscreen geometry remain available for selection/copy.
+
+Representative native results on the same i7-13700H Linux/AMD64 machine:
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| Private probe: selection event p95 | 8.54 ms | 1.55 ms |
+| 700-line code: selection event p95 | 69.72 ms | 7.41 ms |
+| 700-line code: scroll with selection p95 | 23.45 ms | 11.48 ms |
+| 700-line code: allocated during selection phase | 346.36 MiB | 15.78 MiB |
+| 700-line code: allocated during selected-scroll phase | 211.68 MiB | 28.27 MiB |
+| 700-line code: selected-scroll sampled CPU | 2.21 s | 1.16 s |
+
+The 1,681-block synthetic table/prose case still reaches roughly 15–17 ms in the
+upper latency tail: native traversal of the many remaining structural containers
+is still material there, even though median drag latency fell from 4.69 to
+0.36 ms. These fixes do not promise a fixed frame budget for arbitrarily large
+Markdown documents.
+
+CPU/heap/allocations were captured with `runtime/pprof`; allocation totals include
+profiling overhead. Heap was sampled after explicit GC between phases, separately
+from cumulative allocation churn. In eight further select-all/scroll cycles,
+retained Go heap stayed between 57.635 and 57.644 MiB; process RSS varied around
+234–235 MiB, including native fonts/OpenGL resources. This run found allocation
+churn and redundant UI work, without evidence of continuing heap growth in that
+scenario. Cached selection geometry trades some retained memory for avoiding
+repeated allocations. This does not establish a universal memory cap or exclude
+leaks in other documents/backends; native macOS/Wayland verification is separate.
+
+The repository benchmark isolates drag hit testing and the repeated
+layout/minimum-size/render traversal of a selected 300-line highlighted block,
+without a sidebar thumbnail worker. Two one-second runs gave:
+
+| Isolated operation | Before | After |
+| --- | ---: | ---: |
+| Selection drag | 2.62–2.70 ms/op; 1.88 MB/op | 0.127–0.129 ms/op; 1.7 KB/op |
+| Unchanged selected frame | 2.16–2.21 ms/op; 1.05 MB/op | 0.023 ms/op; 0 allocs/op |
+
+These are software-driver component benchmarks, not end-to-end GPU frame rates.
+Regressions cover selection replacement, culled code navigation/copy, highlights,
+UTF-8 hit testing after resize and allocation-free unchanged selected layouts.
+
+```sh
+go test ./pkg/gui -run 'TestMarkdown.*Selection|TestMarkdownTable' -count=1
+go test -o /tmp/proview-md-selection.test ./pkg/gui -run '^$' \
+  -bench '^BenchmarkMarkdownSelection$' -benchmem -benchtime=2s \
+  -cpuprofile /tmp/proview-md-selection.cpu \
+  -memprofile /tmp/proview-md-selection.heap
+go tool pprof -top /tmp/proview-md-selection.test /tmp/proview-md-selection.cpu
+go tool pprof -alloc_space -top /tmp/proview-md-selection.test /tmp/proview-md-selection.heap
+go tool pprof -inuse_space -top /tmp/proview-md-selection.test /tmp/proview-md-selection.heap
+```

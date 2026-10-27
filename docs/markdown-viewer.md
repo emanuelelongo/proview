@@ -107,8 +107,18 @@ Prose and table cells retain their full layout, but text farther than one viewpo
 above or below the visible region is omitted from the renderer tree. Scrolling,
 reflow and diagram layout update that region; returning to a block reuses its
 retained text and selection geometry. This avoids Fyne's native per-frame traversal
-and measurement of every offscreen wrapped line. Code panels retain their existing
-independent horizontal scrolling. This is rendering culling, not a document memory cap.
+and measurement of every offscreen wrapped line. Code panels retain independent horizontal scrolling. Individual text lines and
+selection rectangles are culled too, including within a single long paragraph or
+syntax-highlighted code block. Card contents retain page coordinates just like
+prose and tables, so offscreen code remains selectable and programmatic navigation
+reveals its destination. This is rendering culling, not a document memory cap.
+
+Selection hit testing reuses fragment geometry until layout/theme refresh and
+measures byte offsets only in the nearest fragment. A drag resolves the viewport
+origin once, updates only changed selection ranges and queues one canvas repaint.
+The selection renderer caches minimum size and skips repeated layouts at identical
+sizes; reflow and refresh invalidate those caches. This prevents newly visible
+lines or selection rectangles from repeatedly laying out the entire code block.
 
 **File → Print…** prints the whole Markdown document using a separate light A4
 layout, including syntax-colored code, local images and Mermaid. The output does
@@ -201,7 +211,12 @@ full equivalence to official Mermaid.
   document verified current-section tracking and outline navigation; 100 scroll
   steps with 16 ms scheduled pauses completed in 1.76 seconds.
 - Text-selection tests cover styled/wrapped paragraphs, cross-block and reverse
-  drags, UTF-8 hit testing, exact code whitespace, copy precedence and clearing.
+  drags, replacing selection ranges, UTF-8 hit testing, exact code whitespace,
+  copy precedence and clearing. A 300-line highlighted-code regression checks
+  offscreen selection/copy, line/highlight culling, navigation, resize and cached
+  hit-test invalidation, plus allocation-free repeated layout/measurement/traversal
+  at the same size. See [performance measurements](performance.md) for profiling
+  and reproducible selection benchmarks.
 - A long-table regression checks offscreen text exclusion, scrolling to both ends,
   programmatic jumps, stable page height, retained cross-block selection and
   reflow after resizing.

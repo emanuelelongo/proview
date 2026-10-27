@@ -258,6 +258,10 @@ func (v *markdownView) updateTextViewport() {
 		case *container.Scroll:
 			// OnScrolled runs before Fyne moves Content to the new offset.
 			walk(o.Content, position.Subtract(o.Offset).Subtract(o.Content.Position()))
+		case *widget.Card:
+			if o.Content != nil {
+				walk(o.Content, position)
+			}
 		case *markdownText:
 			o.pageY, o.positioned = position.Y, true
 			if block, ok := o.object.(*markdownSelectableText); ok {
