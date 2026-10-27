@@ -17,7 +17,7 @@ type OpenOptions struct {
 func (g *Gui) openStartupFiles(paths []string) {
 	if g.closed {
 		editor := g.newEditor()
-		editor.window.Show()
+		editor.prepareWindowOpening(paths)
 		editor.openStartupFiles(paths)
 		return
 	}
@@ -45,13 +45,13 @@ func (g *Gui) openLaunchRequest(paths []string, options OpenOptions) {
 		// is occupied. In-window pickers and drops bypass this entry point.
 		// Launches get their own settings, not the active window's.
 		editor.workDir = options.WorkDir
-		editor.window.Show()
+		editor.prepareWindowOpening(paths)
 	} else if options.WorkDir != "" {
 		editor.workDir = options.WorkDir
 	}
 	editor.activateEditor()
 	editor.openStartupFiles(paths)
-	if !editor.closed {
+	if !editor.closed && !editor.showAfterOpening {
 		editor.window.RequestFocus()
 	}
 }

@@ -43,7 +43,7 @@ func (v *markdownView) mermaidBlock(source string) fyne.CanvasObject {
 func (v *markdownView) mermaidSourceFallback(source string) fyne.CanvasObject {
 	text := v.styleText(widget.NewRichText(&widget.TextSegment{Text: source, Style: widget.RichTextStyleCodeInline}))
 	scroll := container.NewHScroll(container.NewPadded(text))
-	return container.NewStack(scroll, newMarkdownCodeScrollSurface(v, scroll, text))
+	return container.NewStack(scroll, newMarkdownHorizontalScrollSurface(v, scroll))
 }
 
 // Each widget coalesces size/theme changes into one active job and one latest
@@ -178,10 +178,6 @@ func (v *markdownView) restoreReadingOffset(offset fyne.Position) {
 	v.restoringReadingOffset = false
 }
 func (v *markdownView) updateDiagramLayout(update func()) {
-	if v.cropCapturing || v.crop != nil && v.crop.active {
-		v.pendingDiagramUpdates = append(v.pendingDiagramUpdates, update)
-		return
-	}
 	v.restoringReadingOffset = true
 	update()
 	v.relayout()
@@ -197,6 +193,8 @@ func (v *markdownView) updateDiagramLayout(update func()) {
 	}
 	v.pendingReadingOffset = nil
 }
+
+func (d *markdownDiagram) Tapped(*fyne.PointEvent) { d.view.dismissOutline() }
 
 func (d *markdownDiagram) TappedSecondary(event *fyne.PointEvent) {
 	if d.result.Image == nil || !d.image.Visible() || d.view.editor.closed || d.view.editor.markdownView != d.view {

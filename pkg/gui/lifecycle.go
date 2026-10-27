@@ -312,11 +312,11 @@ func (g *Gui) cancelCurrentOperation() bool {
 		g.hideObjectOrderMenu()
 		return true
 	}
-	if g.showingMarkdown() && g.markdownView.crop != nil && g.markdownView.crop.active {
-		g.markdownView.cancelCrop()
+	if g.showingMarkdown() && g.markdownView.clearSelection() {
 		return true
 	}
-	if g.showingMarkdown() && g.markdownView.clearSelection() {
+	if g.showingMarkdown() && g.markdownOutlineExpanded {
+		g.markdownView.toggleOutline()
 		return true
 	}
 	if g.modelCrop != nil && g.modelCrop.active {

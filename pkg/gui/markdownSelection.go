@@ -33,6 +33,8 @@ type markdownSelectableText struct {
 	text         string
 	renderer     *markdownSelectionRenderer
 	segmentTheme *container.ThemeOverride
+	pagePosition fyne.Position
+	positioned   bool
 }
 
 func (v *markdownView) selectable(segments ...widget.RichTextSegment) *markdownSelectableText {
@@ -91,7 +93,7 @@ func (b *markdownSelectableText) Dragged(e *fyne.DragEvent) {
 	best := b
 	distance := float32(math.MaxFloat32)
 	for _, candidate := range v.textBlocks {
-		origin := v.editor.app.Driver().AbsolutePositionForObject(candidate)
+		origin := candidate.absolutePosition()
 		pos := e.AbsolutePosition.Subtract(origin)
 		dx := max(0, max(-pos.X, pos.X-candidate.Size().Width))
 		dy := max(0, max(-pos.Y, pos.Y-candidate.Size().Height))
@@ -100,16 +102,25 @@ func (b *markdownSelectableText) Dragged(e *fyne.DragEvent) {
 			best, distance = candidate, d
 		}
 	}
-	origin := v.editor.app.Driver().AbsolutePositionForObject(best)
+	origin := best.absolutePosition()
 	v.selection.end = best.point(e.AbsolutePosition.Subtract(origin))
 	v.refreshSelection()
+}
+
+func (b *markdownSelectableText) absolutePosition() fyne.Position {
+	v := b.view
+	if b.positioned && v.scroll != nil {
+		origin := v.editor.app.Driver().AbsolutePositionForObject(v.scroll.Scroll)
+		return origin.Add(b.pagePosition).Subtract(v.scroll.Offset)
+	}
+	return v.editor.app.Driver().AbsolutePositionForObject(b)
 }
 func (b *markdownSelectableText) DragEnd() {
 	if b.view.selection != nil {
 		b.view.selection.dragging = false
 	}
 }
-func (b *markdownSelectableText) Tapped(*fyne.PointEvent) {}
+func (b *markdownSelectableText) Tapped(*fyne.PointEvent) { b.view.dismissOutline() }
 func (b *markdownSelectableText) TappedSecondary(e *fyne.PointEvent) {
 	text := b.view.selectedText()
 	if text == "" {

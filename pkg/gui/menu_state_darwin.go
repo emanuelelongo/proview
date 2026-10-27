@@ -22,6 +22,7 @@ func refreshMenuState(_ *fyne.Menu) {}
 func prepareModelMenu(g *Gui) {
 	C.proviewObserveModelMenus()
 	g.modelMenu.Items = append(g.modelMenu.Items, g.modelMenuItems...)
+	g.modelMenu.Items = append(g.modelMenu.Items, g.markdownThemeItem)
 }
 func updateModelMenu(g *Gui) {
 	for _, item := range g.modelMenuItems {

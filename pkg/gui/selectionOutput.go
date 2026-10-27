@@ -175,6 +175,6 @@ func (g *Gui) createSelectionPDF(sources []selectedPageSource, layout *document.
 		// A PDF owns its own window, including when extracting pages from a PDF.
 		editor := g.newEditor()
 		editor.addDocument(doc, nil, nil)
-		editor.window.Show()
+		editor.showWindow()
 	})
 }

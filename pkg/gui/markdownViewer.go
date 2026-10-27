@@ -29,7 +29,7 @@ import (
 type markdownView struct {
 	themeReady             bool
 	doc                    *markdown.Document
-	scroll                 *container.Scroll
+	scroll                 *markdownReaderScroll
 	page                   *markdownPage
 	body                   *fyne.Container
 	content                *fyne.Container
@@ -41,10 +41,14 @@ type markdownView struct {
 	diagrams               []*markdownDiagram
 	pendingReadingOffset   *fyne.Position
 	restoringReadingOffset bool
-	cropGeneration         uint64
-	pendingDiagramUpdates  []func()
-	crop                   *cropOverlay
-	cropCapturing          bool
+	headings               []markdownHeading
+	outline                *widget.List
+	outlinePanel           *fyne.Container
+	outlineContent         fyne.CanvasObject
+	outlineTitle           fyne.CanvasObject
+	outlineToggle          *toggleToolbarAction
+	viewport               *markdownViewport
+	activeHeading          int
 	textBlocks             []*markdownSelectableText
 	selection              *markdownTextSelection
 }
@@ -52,11 +56,11 @@ type markdownView struct {
 func (g *Gui) showingMarkdown() bool { return g.markdownView != nil }
 func (g *Gui) clearMarkdown() {
 	if g.markdownView != nil {
-		g.markdownView.cancelCrop()
 		if g.markdownView.cancelDiagrams != nil {
 			g.markdownView.cancelDiagrams()
 		}
 		g.markdownView = nil
+		g.restoreToolPanel()
 	}
 	if g.markdownPanel != nil {
 		g.markdownPanel.Hide()
@@ -68,7 +72,7 @@ func (g *Gui) addMarkdown(d *markdown.Document, target fyne.URI) {
 	if g.document != nil && g.document.Format() == document.FormatPDF {
 		editor := g.newEditor()
 		editor.addMarkdown(d, target)
-		editor.window.Show()
+		editor.showWindow()
 		return
 	}
 	g.activateEditor()
@@ -79,6 +83,9 @@ func (g *Gui) addMarkdown(d *markdown.Document, target fyne.URI) {
 	g.singleDocumentSelection(entry)
 	g.document = nil
 	g.showMarkdown(d)
+	if target != nil {
+		g.sizeWindowForOpenedFile()
+	}
 	g.captureDocument()
 }
 func (g *Gui) showMarkdown(d *markdown.Document) {
@@ -104,7 +111,9 @@ func (g *Gui) showMarkdown(d *markdown.Document) {
 func (v *markdownView) rebuild() {
 	v.selection = nil
 	v.textBlocks = nil
-	v.cancelCrop()
+	v.headings = nil
+	v.outline = nil
+	v.activeHeading = -1
 	if v.cancelDiagrams != nil {
 		v.cancelDiagrams()
 	}
@@ -118,22 +127,24 @@ func (v *markdownView) rebuild() {
 	v.themeReady = false
 	v.content = container.NewVBox(v.blocks(v.doc.Root)...)
 	// Keep a readable line length while allowing narrow windows to reflow.
-	v.body = container.New(&markdownPageLayout{view: v}, newMarkdownPageSurface(), v.content)
-	themed := container.NewThemeOverride(v.body, &markdownTheme{scale: v.scale})
+	v.body = container.New(&markdownPageLayout{view: v}, newMarkdownPageSurface(v), v.content)
+	themed := container.NewThemeOverride(v.body, v.readingTheme())
 	v.themeReady = true
 	v.body.Refresh()
 	v.page = newMarkdownPage(v, themed)
 	if v.scroll == nil {
-		v.scroll = container.NewVScroll(v.page)
+		v.scroll = &markdownReaderScroll{Scroll: container.NewVScroll(v.page), view: v}
 		v.scroll.OnScrolled = func(fyne.Position) {
 			if !v.restoringReadingOffset {
 				v.pendingReadingOffset = nil
 			}
+			v.updateOutlinePosition()
 		}
 	} else {
 		v.scroll.Content = v.page
 		v.scroll.Refresh()
 	}
+	v.buildOutline()
 	v.restoreReadingOffset(offset)
 }
 func (v *markdownView) zoom(delta int) {
@@ -197,6 +208,7 @@ func (v *markdownView) relayout() {
 		}
 		diagram.request()
 	}
+	v.updateTextViewport()
 }
 
 func (l *markdownPageLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -225,6 +237,37 @@ func (l *markdownPageLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 	if h := content.MinSize().Height; content.Size().Height != h {
 		content.Resize(fyne.NewSize(width, h))
 	}
+	l.view.updateTextViewport()
+}
+
+// Keep the complete layout for scrolling and selection, but leave distant text
+// out of the renderer tree. Fyne otherwise measures every wrapped line on each
+// native frame, including thousands of lines below a long table's viewport.
+func (v *markdownView) updateTextViewport() {
+	if v.scroll == nil || v.content == nil || v.scroll.Size().Height <= 0 {
+		return
+	}
+	var walk func(fyne.CanvasObject, fyne.Position)
+	walk = func(object fyne.CanvasObject, position fyne.Position) {
+		position = position.Add(object.Position())
+		switch o := object.(type) {
+		case *fyne.Container:
+			for _, child := range o.Objects {
+				walk(child, position)
+			}
+		case *container.Scroll:
+			// OnScrolled runs before Fyne moves Content to the new offset.
+			walk(o.Content, position.Subtract(o.Offset).Subtract(o.Content.Position()))
+		case *markdownText:
+			o.pageY, o.positioned = position.Y, true
+			if block, ok := o.object.(*markdownSelectableText); ok {
+				block.pagePosition = position.Add(block.Position())
+				block.positioned = true
+			}
+		}
+	}
+	walk(v.content, fyne.Position{})
+	v.updateOutlinePosition()
 }
 
 // markdownPage shields the ThemeOverride from resetting global Fyne font caches
@@ -269,13 +312,18 @@ func (r *markdownPageHolderRenderer) Objects() []fyne.CanvasObject {
 func (*markdownPageHolderRenderer) Refresh() {}
 
 // The page and its surrounding workspace follow theme changes independently.
-type markdownPageSurface struct{ widget.BaseWidget }
+type markdownPageSurface struct {
+	widget.BaseWidget
+	view *markdownView
+}
 
-func newMarkdownPageSurface() *markdownPageSurface {
-	surface := &markdownPageSurface{}
+func newMarkdownPageSurface(view *markdownView) *markdownPageSurface {
+	surface := &markdownPageSurface{view: view}
 	surface.ExtendBaseWidget(surface)
 	return surface
 }
+func (s *markdownPageSurface) Tapped(*fyne.PointEvent) { s.view.dismissOutline() }
+
 func (s *markdownPageSurface) CreateRenderer() fyne.WidgetRenderer {
 	r := &markdownPageRenderer{surface: s, workspace: canvas.NewRectangle(color.Transparent), paper: canvas.NewRectangle(color.Transparent)}
 	r.paper.StrokeWidth = 1
@@ -300,9 +348,11 @@ func (r *markdownPageRenderer) Layout(size fyne.Size) {
 	r.paper.Resize(fyne.NewSize(width, max(0, size.Height-2*markdownPageMargin)))
 }
 func (r *markdownPageRenderer) Refresh() {
-	windowBackground := theme.ColorForWidget(theme.ColorNameBackground, r.surface)
-	r.workspace.FillColor = windowBackground
-	r.paper.FillColor = lightenMarkdownPage(windowBackground)
+	app := fyne.CurrentApp()
+	// The Markdown override themes the paper and its contents; the surrounding
+	// workspace keeps the application's background, including in Light mode.
+	r.workspace.FillColor = app.Settings().Theme().Color(theme.ColorNameBackground, app.Settings().ThemeVariant())
+	r.paper.FillColor = lightenMarkdownPage(theme.ColorForWidget(theme.ColorNameBackground, r.surface))
 	r.paper.StrokeColor = theme.ColorForWidget(theme.ColorNameInputBorder, r.surface)
 	r.workspace.Refresh()
 	r.paper.Refresh()
@@ -332,13 +382,21 @@ func resolvedChromaStyle(name string) *chroma.Style {
 // markdownTheme keeps code colours and text sizing in the normal Fyne theme path.
 type markdownTheme struct {
 	scale float32
+	mode  string
 }
 
 func (t *markdownTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	base := fyne.CurrentApp().Settings().Theme()
+	switch t.mode {
+	case "light":
+		base, variant = theme.DefaultTheme(), theme.VariantLight
+	case "dark":
+		base, variant = theme.DefaultTheme(), theme.VariantDark
+	}
 	if suffix, ok := strings.CutPrefix(string(name), "markdown-token-"); ok {
 		if token, err := strconv.Atoi(suffix); err == nil {
 			palette := markdownLightPalette
-			r, g, b, _ := fyne.CurrentApp().Settings().Theme().Color(theme.ColorNameBackground, variant).RGBA()
+			r, g, b, _ := base.Color(theme.ColorNameBackground, variant).RGBA()
 			if r+g+b < 3*32768 {
 				palette = markdownDarkPalette
 			}
@@ -349,7 +407,7 @@ func (t *markdownTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVarian
 		}
 		name = theme.ColorNameForeground
 	}
-	return fyne.CurrentApp().Settings().Theme().Color(name, variant)
+	return base.Color(name, variant)
 }
 func (t *markdownTheme) Font(s fyne.TextStyle) fyne.Resource {
 	return fyne.CurrentApp().Settings().Theme().Font(s)
@@ -415,13 +473,13 @@ func (v *markdownView) inline(parent ast.Node, style widget.RichTextStyle) []wid
 		case *ast.Link:
 			label := v.inlineText(n)
 			dest := string(n.Destination)
-			result = append(result, &widget.HyperlinkSegment{Text: label, OnTapped: func() { v.openLink(dest) }})
+			result = append(result, &widget.HyperlinkSegment{Text: label, Alignment: style.Alignment, OnTapped: func() { v.openLink(dest) }})
 		case *ast.AutoLink:
 			dest := string(n.URL(v.doc.Source))
 			if n.AutoLinkType == ast.AutoLinkEmail {
 				dest = "mailto:" + dest
 			}
-			result = append(result, &widget.HyperlinkSegment{Text: string(n.Label(v.doc.Source)), OnTapped: func() { v.openLink(dest) }})
+			result = append(result, &widget.HyperlinkSegment{Text: string(n.Label(v.doc.Source)), Alignment: style.Alignment, OnTapped: func() { v.openLink(dest) }})
 		case *ast.Image:
 			if img := v.doc.Images[string(n.Destination)]; img != nil {
 				result = append(result, &markdownImageSegment{image: img})
@@ -512,7 +570,7 @@ func (v *markdownView) styleText(text *widget.RichText, target ...fyne.CanvasObj
 		// Segments use the embedded RichText as their theme identity. Theme it
 		// once while empty; the page scope themes the selectable widget itself.
 		if selectable, ok := object.(*markdownSelectableText); ok {
-			selectable.segmentTheme = container.NewThemeOverride(text, &markdownTheme{scale: v.scale})
+			selectable.segmentTheme = container.NewThemeOverride(text, v.readingTheme())
 		}
 	}
 	text.Refresh()
@@ -539,6 +597,7 @@ func (v *markdownView) blocks(parent ast.Node) []fyne.CanvasObject {
 			style := widget.RichTextStyleStrong
 			style.SizeName = fyne.ThemeSizeName(fmt.Sprintf("markdown-h%d", min(n.Level, 4)))
 			object = v.prose(n, style)
+			v.headings = append(v.headings, markdownHeading{title: v.inlineText(n), level: n.Level, text: object.(*markdownText)})
 			if id, ok := n.AttributeString("id"); ok {
 				v.anchors[string(id.([]byte))] = object
 			}
@@ -654,33 +713,12 @@ func (v *markdownView) codePanel(text fyne.CanvasObject, source, language string
 	header := container.NewBorder(nil, nil, widget.NewLabel(language), copy)
 	// Horizontal overflow stays within the code block, never the whole page.
 	code := container.NewHScroll(container.NewPadded(text))
-	surface := newMarkdownCodeScrollSurface(v, code, text)
+	surface := newMarkdownHorizontalScrollSurface(v, code)
 	return widget.NewCard("", "", container.NewBorder(header, nil, nil, nil, container.NewStack(code, surface)))
-}
-func (v *markdownView) table(n *east.Table) fyne.CanvasObject {
-	rows := []fyne.CanvasObject{}
-	for row := n.FirstChild(); row != nil; row = row.NextSibling() {
-		cells := []fyne.CanvasObject{}
-		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
-			st := widget.RichTextStyleInline
-			if _, ok := row.(*east.TableHeader); ok {
-				st.TextStyle.Bold = true
-			}
-			c := cell.(*east.TableCell)
-			switch c.Alignment {
-			case east.AlignCenter:
-				st.Alignment = fyne.TextAlignCenter
-			case east.AlignRight:
-				st.Alignment = fyne.TextAlignTrailing
-			}
-			cells = append(cells, container.NewPadded(v.prose(cell, st)))
-		}
-		rows = append(rows, container.NewGridWithColumns(len(n.Alignments), cells...), widget.NewSeparator())
-	}
-	return container.NewVBox(rows...)
 }
 
 func (v *markdownView) openLink(destination string) {
+	v.dismissOutline()
 	u, err := url.Parse(destination)
 	if err != nil {
 		return
@@ -697,9 +735,9 @@ func (v *markdownView) openLink(destination string) {
 	if u.Path == "" && u.Fragment != "" {
 		v.pendingReadingOffset = nil
 		if o := v.anchors[u.Fragment]; o != nil {
-			position := v.editor.app.Driver().AbsolutePositionForObject(o)
-			origin := v.editor.app.Driver().AbsolutePositionForObject(v.content)
-			v.scroll.ScrollToOffset(fyne.NewPos(0, position.Y-origin.Y+markdownPageMargin+markdownPagePadding))
+			if text, ok := o.(*markdownText); ok {
+				v.scroll.ScrollToOffset(fyne.NewPos(0, max(0, text.pageY-markdownPageMargin)))
+			}
 		}
 		return
 	}
@@ -740,9 +778,6 @@ func (s *markdownImageSegment) Update(o fyne.CanvasObject) {
 }
 
 func (g *Gui) handleMarkdownKey(key fyne.KeyName) bool {
-	if g.markdownView.cropCapturing || g.markdownView.crop != nil && g.markdownView.crop.active {
-		return false
-	}
 	if g.closed || g.working || g.window == nil || g.modifiers() != 0 || g.window.Canvas().Focused() != nil || g.window.Canvas().Overlays().Top() != nil {
 		return false
 	}
@@ -773,6 +808,8 @@ func (g *Gui) handleMarkdownKey(key fyne.KeyName) bool {
 // redundant Harfbuzz shaping passes when layout or scrollbars refresh.
 type markdownText struct {
 	widget.BaseWidget
+	pageY          float32
+	positioned     bool
 	view           *markdownView
 	text           *widget.RichText
 	object         fyne.CanvasObject
@@ -860,44 +897,53 @@ func (r *markdownTextRenderer) Layout(size fyne.Size) {
 		r.text.object.Resize(size)
 	}
 }
-func (r *markdownTextRenderer) MinSize() fyne.Size { return r.text.text.MinSize() }
+func (r *markdownTextRenderer) MinSize() fyne.Size { return r.text.MinSize() }
 func (r *markdownTextRenderer) Objects() []fyne.CanvasObject {
+	t := r.text
+	if t.positioned && t.view != nil && t.view.scroll != nil {
+		// Read the current offset here: Fyne's ScrollToOffset does not call
+		// OnScrolled, so keyboard/anchor navigation must not rely on it.
+		scroll := t.view.scroll
+		top := scroll.Offset.Y - scroll.Size().Height
+		bottom := scroll.Offset.Y + 2*scroll.Size().Height
+		if t.pageY+t.Size().Height < top || t.pageY > bottom {
+			return nil
+		}
+	}
 	return []fyne.CanvasObject{r.text.object}
 }
 func (*markdownTextRenderer) Refresh() {}
 
 // A nested horizontal scroller consumes vertical wheel events in Fyne. Route
 // each axis explicitly while leaving clicks and scrollbar dragging untouched.
-type markdownCodeScrollSurface struct {
+type markdownHorizontalScrollSurface struct {
 	widget.BaseWidget
-	view *markdownView
-	code *container.Scroll
-	text fyne.CanvasObject
+	view       *markdownView
+	horizontal *container.Scroll
 }
 
-func newMarkdownCodeScrollSurface(view *markdownView, code *container.Scroll, text fyne.CanvasObject) *markdownCodeScrollSurface {
-	surface := &markdownCodeScrollSurface{view: view, code: code, text: text}
+func newMarkdownHorizontalScrollSurface(view *markdownView, scroll *container.Scroll) *markdownHorizontalScrollSurface {
+	surface := &markdownHorizontalScrollSurface{view: view, horizontal: scroll}
 	surface.ExtendBaseWidget(surface)
 	return surface
 }
-func (s *markdownCodeScrollSurface) CreateRenderer() fyne.WidgetRenderer {
+func (s *markdownHorizontalScrollSurface) CreateRenderer() fyne.WidgetRenderer {
 	return &panOverlayRenderer{background: canvas.NewRectangle(color.Transparent)}
 }
-func (s *markdownCodeScrollSurface) MinSize() fyne.Size {
-	h := float32(16)
-	if s.text != nil {
-		h += s.text.MinSize().Height
+func (s *markdownHorizontalScrollSurface) MinSize() fyne.Size {
+	minimum := s.horizontal.Content.MinSize()
+	h := minimum.Height
+	if minimum.Width > s.horizontal.Size().Width {
+		h += theme.ScrollBarSize()
 	}
-	if s.code != nil {
-		s.code.SetMinSize(fyne.NewSize(100, h))
-	}
+	s.horizontal.SetMinSize(fyne.NewSize(100, h))
 	return fyne.NewSize(100, h)
 }
-func (s *markdownCodeScrollSurface) Scrolled(event *fyne.ScrollEvent) {
+func (s *markdownHorizontalScrollSurface) Scrolled(event *fyne.ScrollEvent) {
 	if event.Scrolled.DX != 0 {
 		horizontal := *event
 		horizontal.Scrolled.DY = 0
-		s.code.Scrolled(&horizontal)
+		s.horizontal.Scrolled(&horizontal)
 	}
 	if event.Scrolled.DY != 0 && s.view.scroll != nil {
 		s.view.pendingReadingOffset = nil

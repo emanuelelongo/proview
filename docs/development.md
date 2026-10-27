@@ -454,10 +454,12 @@ and project documentation use English.
   opacity use icon dropdowns with an integrated arrow; tooltips show the current
   value. Menus and the magnifier slider open over the document without widening
   the panel.
-- A slim, left-aligned bottom bar presents each startup tip for ten seconds,
-  beginning ten seconds after launch, with a five-second pause between tips.
-  The sequence runs once per application session and can be replayed immediately
-  with **Help → Show Tips**.
+- A slim, left-aligned bottom bar cycles through tips about less obvious gestures
+  and behavior. Each tip stays for 20 seconds including its fade-in, beginning
+  five seconds after launch, with an eight-second pause between tips. Only the
+  first editor window starts the sequence automatically. **Help → Show Tips**
+  saves its enabled preference; re-enabling restarts after the five-second delay.
+  Selected-text status temporarily pauses the sequence.
 - **Text** stays active after placement. The entry is cleared immediately after a
   text object is created, preventing a later page click from duplicating it. The
   font, style and color settings remain available for the next object.

@@ -26,7 +26,7 @@ Drag files onto any Proview window to open them on Linux, Windows and macOS.
 Images, Markdown documents and STL models share a window, with thumbnails for switching between
 documents. PDFs use separate windows from other file types. Opening a PDF while
 viewing another PDF offers a new window or appending its pages. New images from
-blank pages, the clipboard and Markdown/STL crops join the current sidebar.
+blank pages, the clipboard and STL crops join the current sidebar.
 Opening files from the operating system uses a new window when one is occupied.
 See [Document workspace](docs/document-workspace.md) for details.
 
@@ -36,7 +36,9 @@ Read Markdown files with formatted text, tables, task lists, local images and
 syntax-highlighted code and Mermaid diagrams. The native viewer works offline
 and keeps documents read-only. Each diagram has a code-copy button and a
 right-click Copy image action; unsupported diagrams display their source.
-Crop creates an image from the visible Markdown without changing the source. Formulas and HTML display as source.
+The right-hand `list-tree` button toggles the Contents panel, which lists all
+heading levels for navigation and marks the current section while scrolling.
+Formulas and HTML display as source.
 See [Markdown viewer](docs/markdown-viewer.md) for scope and controls.
 
 ### Image viewing and basic editing

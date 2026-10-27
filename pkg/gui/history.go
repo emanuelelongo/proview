@@ -112,7 +112,7 @@ func (g *Gui) updateHistoryActions() {
 	}
 	g.updateTransformActions()
 	if g.cropAction != nil {
-		setToggleToolbarActionEnabled(g.cropAction, g.hasOpenContent())
+		setToggleToolbarActionEnabled(g.cropAction, g.hasOpenContent() && !g.showingMarkdown())
 	}
 	for tool, action := range g.annotationActions {
 		setToggleToolbarActionEnabled(action, hasDocument)
@@ -144,6 +144,9 @@ func (g *Gui) updateHistoryActions() {
 		}
 		if item.Label == "Crop" || item.Label == "Close" || item.Label == "Zoom In" || item.Label == "Zoom Out" || item.Label == "Fit to Window" {
 			item.Disabled = !g.hasOpenContent()
+		}
+		if item.Label == "Crop" && g.showingMarkdown() {
+			item.Disabled = true
 		}
 	}
 	if g.document == nil || g.document.Format() != document.FormatPDF {

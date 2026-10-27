@@ -19,7 +19,15 @@ PDF/non-PDF opening keeps the existing
 separate-window policy. Switching documents retains reading size and scroll
 position. Closing Markdown restores the previous retained document.
 
-Markdown is read-only. Annotation, transformation, signature and save
+**View → Markdown Theme → System / Light / Dark** selects the reading theme.
+The choice is saved in application preferences, applies to all open Markdown
+windows and is restored after restarting. System is the default. The preference
+affects the reading page, text, code and Mermaid previews independently of the
+application chrome and surrounding workspace; thumbnails and printed output keep their light layout.
+Changing theme retains reading zoom and scroll position and clears
+text selection. Inactive workspace documents use the saved choice when revisited.
+
+Markdown is read-only. Crop, annotation, transformation, signature and save
 commands are disabled. Source files are never rewritten. Zoom In/Out adjusts
 text size from 25% to 200%; Fit to Window restores the default reading size.
 The text column reflows up to a 900-point maximum width. A theme-aware page
@@ -27,11 +35,42 @@ border, inner padding and contrasting workspace margins distinguish its bounds.
 Arrow keys, Page Up,
 Page Down, Home and End scroll when no control or dialog owns keyboard focus.
 
+The right-hand `list-tree` icon toggles the **Contents** panel. It starts collapsed
+to the same compact column as the editing tools; opening it reveals a translucent
+heading panel above the right side of the paper. Clicking the icon again, clicking the Markdown page or
+pressing Escape closes it. The reading width, wrapping and scroll position do
+not change when toggling the panel. The button stays
+at the same position and is highlighted while the panel is open. Its tooltip is
+**Show contents** / **Hide contents**. Visibility is retained within the window
+across document switching, zoom and theme changes. The floating panel is part of
+the normal canvas tree: its list scrolls independently, while the uncovered page
+and toolbar remain interactive. It stays within the viewport after resizing,
+without resizing/recentering the window or rebuilding the document.
+
+The **Contents** panel replaces the editing tool rail. It includes all
+Markdown headings (levels 1–6, including Setext headings) in document order, with
+indentation for their level. Click any heading to navigate to it, including the
+current heading to return to its start. A colored bar and bold text identify the
+current section, following wheel scrolling, keyboard navigation and internal links.
+The outline scrolls to keep that entry visible. Duplicate titles remain separate
+entries; formatting is reduced to readable heading text. Headings inside fenced
+code or literal HTML are not indexed. Documents without headings show **No headings**.
+
+The list renders only its visible rows and locates the current section by binary
+search over retained heading positions. Reflow, zoom, theme changes and completed
+Mermaid renders update those positions without reparsing source during scrolling.
+Switching documents restores the appropriate outline and reading position.
+
 ## Supported content
 
 - Headings, paragraphs, nested bold/italic, strikethrough and inline code.
 - Ordered/unordered nested lists, task lists, quotations and separators.
-- GFM tables with column alignment and inline formatting.
+- GFM tables with column alignment and inline formatting. Short tables keep
+  their natural width; columns share widths across all rows and allocate more
+  space to longer content. Text wraps between words and cells align at the top.
+  Tables with too many columns or unbroken identifiers wider than the reading
+  column scroll horizontally inside their own viewport. Vertical wheel movement
+  over a table continues scrolling the document. Links preserve column alignment.
 - Fenced code with explicit language highlighting, using Chroma and palettes
   for the current light/dark theme. Unknown languages remain plain code.
   Code overflow scrolls horizontally inside its block. Vertical wheel/trackpad
@@ -53,25 +92,23 @@ Command/Ctrl+C copies the selection, preserving code whitespace; without a
 selection or focused text field it copies the full Markdown source. Right-click
 text and choose **Copy text** to copy the selection, or the whole block when
 nothing is selected. Code blocks retain their complete-source copy button.
-Escape, zoom and document switching clear the text selection. Starting Crop
-also clears it so the captured image does not contain selection shading.
+Escape, zoom and document switching clear the text selection.
 Links remain clickable and diagrams keep their image context menu.
 
 Right-click a rendered diagram and choose **Copy image** to copy its PNG at the
-rendered resolution. **Crop** selects a rectangle over the visible Markdown
-viewport, including text and diagrams at the current theme and zoom. Selection
-starts without capturing the canvas. Confirmation hides the selection overlay,
-then captures the viewport and copies only the selected pixels in a worker into
-an independent, unsaved PNG in the same window's sidebar. Pending Mermaid layout
-updates remain suspended through capture, so completed diagrams cannot move the
-selected content before its pixels are acquired. Wheel events are consumed by
-the crop overlay to keep the view fixed. The original Markdown remains available.
-Escape, zoom, resize or document switching cancels selection; resize, switching,
-closing or starting a new selection also invalidates a queued capture. Crop
-captures visible content only.
+rendered resolution. Markdown Crop has been removed, including capture jobs,
+selection overlays and diagram-layout deferral. Mermaid updates publish normally.
 
-The reading page uses a slightly lighter shade than the application background;
-the surrounding workspace keeps the application background color.
+The reading page uses a slightly lighter shade of its selected reading theme
+(white in Light mode). The surrounding workspace always keeps the application
+background color, independently of the Markdown theme.
+
+Prose and table cells retain their full layout, but text farther than one viewport
+above or below the visible region is omitted from the renderer tree. Scrolling,
+reflow and diagram layout update that region; returning to a block reuses its
+retained text and selection geometry. This avoids Fyne's native per-frame traversal
+and measurement of every offscreen wrapped line. Code panels retain their existing
+independent horizontal scrolling. This is rendering culling, not a document memory cap.
 
 **File → Print…** prints the whole Markdown document using a separate light A4
 layout, including syntax-colored code, local images and Mermaid. The output does
@@ -151,12 +188,30 @@ full equivalence to official Mermaid.
 - Mermaid GUI tests cover asynchronous rendering, theme/zoom/viewport changes,
   source fallback, preservation of following content, late-layout scroll restoration
   closing during work, exact code copying and image clipboard output.
-- Markdown crop tests cover viewport pixel mapping, cancellation and independent
-  image creation in the same workspace without source changes, selection before
-  canvas capture, worker-side pixel copying, obsolete confirmation rejection and
-  diagram layout deferral through capture.
+- Outline tests cover all six heading levels, formatted/duplicate titles, actual
+  pointer navigation, wheel/keyboard/anchor tracking, reflow and Mermaid completion,
+  theme/workspace restoration, empty documents and a virtualized 400-heading list.
+  Crop is disabled in the Markdown toolbar and menu; image Crop remains available.
+  Overlay tests cover the compact default, fixed button position, translucency,
+  unchanged reading width/text geometry/offset, independent scroll input, Escape,
+  retained section tracking while hidden and visibility across rebuilds and
+  workspace switching, without recreating document widgets or resizing the window.
+  The outline and its current-section marker were visually inspected in a
+  software-rendered frame. A native Linux/X11 probe on the reported private
+  document verified current-section tracking and outline navigation; 100 scroll
+  steps with 16 ms scheduled pauses completed in 1.76 seconds.
 - Text-selection tests cover styled/wrapped paragraphs, cross-block and reverse
   drags, UTF-8 hit testing, exact code whitespace, copy precedence and clearing.
+- A long-table regression checks offscreen text exclusion, scrolling to both ends,
+  programmatic jumps, stable page height, retained cross-block selection and
+  reflow after resizing.
+- Table layout tests cover compact tables, shared content-based column widths,
+  wrapped cell heights, narrow/wide reflow, light/dark themes and reading zoom.
+  Overflow tests cover independent scroll axes, link alignment and selection
+  coordinates after horizontal scrolling. Software-rendered table previews in
+  both themes were visually inspected.
+- Theme tests cover persisted preferences, checkmarks across windows, newly
+  opened windows, preserved reading state and Mermaid palette changes.
 - Fyne software-rendered frames were visually inspected for prose, tables,
   strikethrough, code highlighting and flowchart/sequence previews in both themes. These do not establish native desktop
   input, accessibility or Linux/Wayland runtime verification.
@@ -167,6 +222,23 @@ application. Use its standard build instructions; there are no Markdown build
 flags or extra runtime dependencies. Native Ubuntu 24.04/GNOME verification is
 still pending.
 
+On 2026-10-27, a temporary native Linux/X11 scroll probe using the reported
+`probe.md` (about 10 KB, with long table cells) took 6.23 seconds before rendering
+culling and 1.91 seconds afterwards for 100 scheduled scroll steps. Both runs
+included a 16 ms pause per step. CPU profiling identified native renderer-tree
+traversal and minimum-size checks as the principal work. These are local scripted
+scroll timings, not a manual input or frame-rate benchmark; the private document
+and temporary profiling launcher are not repository fixtures.
+
+After content-based table sizing, the same native scroll probe completed in
+1.78–1.91 seconds across two runs. Column widths and wrapped row heights are cached across scroll
+frames and recomputed on available-width or theme/font-size changes. Table
+overflow reuses code blocks' axis routing and keeps offscreen text culling active
+inside the horizontal viewport. Code and table viewports reserve scrollbar space
+only when their content overflows horizontally. Culling reads the current scroll
+offset while building the render tree, including programmatic navigation, which
+does not reliably trigger Fyne's `OnScrolled` callback.
+
 ## Deferred work
 
 In-document search, remote-image opt-in and live reload are not implemented. Mathematical rendering and HTML layout remain
@@ -176,11 +248,13 @@ The [native Mermaid renderer review](mermaid-renderers-review.md) records the
 source examination and comparisons that led to this integration.
 
 
-## Crop responsiveness check
+## Rendering responsiveness history
 
 On 2026-10-24, a native macOS investigation and CPU profile identified the causes
-of the Crop delay when opening Markdown documents with syntax-highlighted code
-and Mermaid diagrams:
+of rendering delays when opening Markdown documents with syntax-highlighted code
+and Mermaid diagrams. The investigation started with the former Crop command;
+that command and its capture-specific workarounds were removed on 2026-10-27.
+The general rendering improvements remain:
 
 - Diagrams were serialized behind a single global rendering slot (`renderSlot`),
   causing sequential diagram queues and chained layout reflows; parallelizing
@@ -193,9 +267,3 @@ and Mermaid diagrams:
   keep a single page-level theme scope, cache `MinSize()` per wrap width, coalesce
   adjacent same-color Chroma tokens on each line, and relayout diagram height
   updates without resetting unchanged text blocks.
-- Crop captures the canvas only after confirmation, keeping activation independent
-  of capture cost and avoiding an intermediate frozen viewport image. Pixel
-  copying and PNG creation run in a worker through the public `image.Image` API;
-  there is no reflection into Fyne's private OpenGL capture fields. Diagram
-  updates remain deferred until capture completes. Image/PDF/STL Crop reuses
-  existing preview pixels instead of capturing a Markdown viewport.

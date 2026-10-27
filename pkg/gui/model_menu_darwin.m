@@ -9,11 +9,11 @@ extern BOOL menuEnabled(int);
 @end
 @implementation ProviewModelMenuDelegate
 - (void)menuNeedsUpdate:(NSMenu *)menu {
-    if (menu.numberOfItems != 12 || ![menu.title isEqualToString:@"View"] ||
+    if (menu.numberOfItems < 12 || ![menu.title isEqualToString:@"View"] ||
         ![[menu itemAtIndex:4].title isEqualToString:@"Isometric"]) return;
     NSMenuItem *firstView = [menu itemAtIndex:4];
     BOOL hidden = !menuEnabled((int)firstView.tag - 5000);
-    for (NSInteger i = 3; i < menu.numberOfItems; i++) {
+    for (NSInteger i = 3; i < 12; i++) {
         [[menu itemAtIndex:i] setHidden:hidden];
     }
 }

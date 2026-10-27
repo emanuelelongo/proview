@@ -6,3 +6,5 @@ License: MIT (see LICENSE).
 
 Assets come from `icons/outline`, except `circle-filled.svg`, which comes from
 `icons/filled/circle.svg` at the same pinned revision.
+
+`list-tree.svg` is used for the collapsible Markdown Contents panel.

@@ -730,18 +730,50 @@ card from the print renderer, stopped at the first card boundary in a background
 worker; never capture the live viewport or shrink the entire document. Retained
 entries own these jobs across switching; closing cancels them and rejects stale results.
 Keep a code-copy button visible above Mermaid previews and display source only
-on failure. Diagram context menus copy rendered PNGs. Markdown Crop starts
-selection without capturing the canvas, captures only after confirmation and
-adds an independent PNG to the same workspace. Keep diagram layout updates
-suspended until capture finishes; invalidate queued captures on cancellation,
-resize, switching or closing. Copy selected pixels in a worker using public image
-APIs; do not inspect Fyne's private capture fields through reflection.
+on failure. Diagram context menus copy rendered PNGs. Markdown has no Crop:
+keep its toolbar/menu command disabled and do not restore canvas-capture jobs,
+crop overlays or diagram-layout suspension. Image/PDF/STL Crop is independent.
+The right panel has a compact `list-tree` toggle for a virtualized heading outline
+instead of the editing rail. Start collapsed, retain visibility within the window
+across rebuilds/switching and keep the toggle fixed at the top right. Show the
+outline in a translucent, viewport-bounded canvas layer above the paper, keeping
+the rail width, text wrapping and reading offset unchanged. Do not use a global
+PopUp/input-blocking overlay or relayout the document on toggle. Keep independent
+list scrolling, interaction with the uncovered document and dismissal by page click or Escape;
+keep section tracking current while hidden.
+Include all heading levels in source order, keep duplicate titles navigable and
+mark the current section on scrolling, keyboard/anchor navigation and reflow.
+Use retained heading geometry and binary search; never reparse on scroll.
+Restore the compact editing rail when leaving Markdown.
 Formulas and HTML remain literal source. Rendered text selection wraps the public
 RichText renderer, preserving style and byte offsets through reflow. Selection
 crosses text blocks in reading order; copy it before falling back to full source.
-Keep links clickable and code scrolling independent. Clear selection before Crop
-so its shading never enters captured pixels. No private Fyne caches or OCR are
+Keep links clickable and code scrolling independent. No private Fyne caches or OCR are
 needed for Markdown selection.
+Keep distant prose/table text out of the renderer tree while retaining full layout
+and selection geometry; Fyne otherwise remeasures offscreen wrapped lines every
+native frame. Update culling on scroll, resize and diagram reflow. Offscreen drag
+hit testing must use retained page coordinates, not renderer-tree position lookup.
+Tables use shared content-based column widths, remain compact when possible and
+scroll horizontally when their minimum word widths exceed the reading column.
+Cache measurements across frames and route vertical wheel events to the document.
+Read the current offset when culling: Fyne's `ScrollToOffset` does not emit
+`OnScrolled` for ordinary programmatic navigation.
+Markdown reading theme is a saved System/Light/Dark preference, independent of
+application chrome and shared across editor windows. Preserve reading zoom/offset
+when rebuilding for a theme change; thumbnails and printing remain light.
+
+File opening chooses monitor-bounded window geometry: first-page PDF aspect,
+tall Markdown reading window, standard fitted image window. Switching retained
+documents and generated unsaved content must not resize the window. Native
+windows may lay out intermediate viewports: coalesce the opening fit after layout
+and discard it after explicit zoom or document switching. Keep fullscreen/fixed
+windows and STL geometry. See docs/document-workspace.md for sizing and limits.
+Fresh startup/desktop file windows must load and size before their first Show;
+center once before Show and never recenter after opening into a visible editor.
+Reveal the window on opening errors so the dialog remains accessible. Account
+for primary-monitor DPI/user scaling before Canvas.Scale is initialized. Preserve
+the immediate empty launch and macOS open-request registration order.
 
 ## STL viewer prototype
 

@@ -84,6 +84,7 @@ func (g *Gui) captureDocument() {
 }
 
 func (g *Gui) prepareDocumentSwitch() {
+	g.openingFitDocument = nil
 	g.window.Canvas().Focus(nil)
 	g.setTextEditing(false)
 	g.setFormsActive(false)
@@ -112,8 +113,11 @@ func (g *Gui) addDocument(doc *document.Document, mesh *model3d.Mesh, target fyn
 		g.showDocument(doc)
 		g.saveTarget = target
 	}
-	g.captureDocument()
 	g.refreshDocumentSidebar()
+	if target != nil {
+		g.sizeWindowForOpenedFile()
+	}
+	g.captureDocument()
 }
 
 func (g *Gui) selectDocument(entry *editorDocument) {
@@ -292,7 +296,7 @@ func (g *Gui) receiveDocument(doc *document.Document, mesh *model3d.Mesh, target
 	if g.hasOpenContent() && incomingPDF != currentPDF {
 		editor := g.newEditor()
 		editor.addDocument(doc, mesh, target)
-		editor.window.Show()
+		editor.showWindow()
 		done()
 		return
 	}
@@ -321,7 +325,7 @@ func (g *Gui) receiveDocument(doc *document.Document, mesh *model3d.Mesh, target
 			consumed = true
 			editor := g.newEditor()
 			editor.addDocument(doc, nil, target)
-			editor.window.Show()
+			editor.showWindow()
 			prompt.Hide()
 		}),
 		widget.NewButton("Append pages", func() {

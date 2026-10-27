@@ -23,7 +23,7 @@ func TestMarkdownThumbnailRendersExcerptAfterSwitchWithoutCanvasCapture(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.window = markdownCropCaptureWindow{Window: g.window, capture: &markdownCropCaptureCanvas{Canvas: g.window.Canvas(), frame: &markdownSlowCapture{}, onCapture: func() { t.Fatal("thumbnail captured the live canvas") }}}
+	g.window = markdownThumbnailNoCaptureWindow{Window: g.window, canvas: markdownThumbnailNoCaptureCanvas{Canvas: g.window.Canvas(), t: t}}
 	g.addMarkdown(doc, nil)
 	entry := g.activeDocument
 	g.markdownView.zoom(2)
@@ -35,6 +35,23 @@ func TestMarkdownThumbnailRendersExcerptAfterSwitchWithoutCanvasCapture(t *testi
 	if entry.thumbnail == nil || entry.thumbnail.Bounds().Size() != image.Pt(320, 240) {
 		t.Fatal("background excerpt was lost after switching documents")
 	}
+}
+
+type markdownThumbnailNoCaptureWindow struct {
+	fyne.Window
+	canvas fyne.Canvas
+}
+
+func (w markdownThumbnailNoCaptureWindow) Canvas() fyne.Canvas { return w.canvas }
+
+type markdownThumbnailNoCaptureCanvas struct {
+	fyne.Canvas
+	t *testing.T
+}
+
+func (c markdownThumbnailNoCaptureCanvas) Capture() image.Image {
+	c.t.Fatal("thumbnail captured the live canvas")
+	return nil
 }
 
 func TestMarkdownThumbnailRetainsRenderedContentAcrossSwitches(t *testing.T) {

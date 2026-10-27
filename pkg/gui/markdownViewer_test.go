@@ -15,7 +15,6 @@ import (
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 )
 
 func readingDocument(t *testing.T) *markdown.Document {
@@ -41,7 +40,7 @@ func TestMarkdownWorkspacePreservesReadingStateAndDisablesEditing(t *testing.T) 
 	if g.document != nil || !g.hasOpenContent() || !g.markdownPanel.Visible() || g.imageScroll.Visible() || g.pdfScroll.Visible() {
 		t.Fatal("wrong document mode")
 	}
-	if g.window.Title() != "reading.md — Proview" || !g.saveItem.Disabled || !g.saveAsItem.Disabled || !g.signatureItem.Disabled || g.cropAction.button.Disabled() {
+	if g.window.Title() != "reading.md — Proview" || !g.saveItem.Disabled || !g.saveAsItem.Disabled || !g.signatureItem.Disabled || !g.cropAction.button.Disabled() {
 		t.Fatal("editing enabled or title missing")
 	}
 	for _, a := range g.annotationActions {
@@ -96,14 +95,16 @@ func TestMarkdownRendersNativeBlocksAndResponsiveThemes(t *testing.T) {
 		}
 	}
 	texts := ""
-	for _, o := range test.LaidOutObjects(g.markdownPanel) {
-		switch rich := o.(type) {
-		case *widget.RichText:
-			texts += rich.String() + "\n"
-		case *markdownSelectableText:
-			texts += rich.String() + "\n"
+	scroll := g.markdownView.scroll
+	for offset := float32(0); offset < scroll.Content.MinSize().Height; offset += max(1, scroll.Size().Height) {
+		scroll.ScrollToOffset(fyne.NewPos(0, offset))
+		for _, object := range test.LaidOutObjects(g.markdownPanel) {
+			if rich, ok := object.(*markdownSelectableText); ok {
+				texts += rich.String() + "\n"
+			}
 		}
 	}
+	scroll.ScrollToTop()
 	for _, want := range []string{"Markdown in Proview", "fmt.Println", "HTML is shown literally", "Unknown languages", "E = mc^2"} {
 		if !strings.Contains(texts, want) {
 			t.Fatalf("missing rendered content %q", want)
@@ -217,9 +218,9 @@ func TestMarkdownCodeScrollRoutesBothAxes(t *testing.T) {
 				t.Fatal(err)
 			}
 			g.addMarkdown(d, nil)
-			var surface *markdownCodeScrollSurface
+			var surface *markdownHorizontalScrollSurface
 			for _, object := range test.LaidOutObjects(g.markdownPanel) {
-				if found, ok := object.(*markdownCodeScrollSurface); ok {
+				if found, ok := object.(*markdownHorizontalScrollSurface); ok {
 					surface = found
 					break
 				}
@@ -229,7 +230,7 @@ func TestMarkdownCodeScrollRoutesBothAxes(t *testing.T) {
 			}
 			position := app.Driver().AbsolutePositionForObject(surface).Add(fyne.NewPos(20, 20))
 			test.Scroll(g.window.Canvas(), position, 0, -40)
-			if g.markdownView.scroll.Offset.Y <= 0 || surface.code.Offset.X != 0 {
+			if g.markdownView.scroll.Offset.Y <= 0 || surface.horizontal.Offset.X != 0 {
 				t.Fatal("vertical wheel over code did not scroll the document")
 			}
 			g.markdownView.scroll.ScrollToTop()
@@ -237,10 +238,10 @@ func TestMarkdownCodeScrollRoutesBothAxes(t *testing.T) {
 			if g.markdownView.scroll.Offset.Y != 0 {
 				t.Fatal("horizontal scroll moved the document")
 			}
-			if longLine && surface.code.Offset.X <= 0 {
+			if longLine && surface.horizontal.Offset.X <= 0 {
 				t.Fatal("horizontal code overflow no longer scrolls")
 			}
-			if !longLine && surface.code.Offset.X != 0 {
+			if !longLine && surface.horizontal.Offset.X != 0 {
 				t.Fatal("short code unexpectedly moved horizontally")
 			}
 			if _, ok := any(surface).(fyne.Tappable); ok {

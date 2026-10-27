@@ -91,6 +91,13 @@ type Gui struct {
 	pdfCrops                          map[int]*cropOverlay
 	app                               fyne.App
 	window                            fyne.Window
+	markdownThemeItem                 *fyne.MenuItem
+	markdownThemeItems                []*fyne.MenuItem
+	windowWorkArea                    func() fyne.Size
+	openingFitDocument                *document.Document
+	openingFitQueued                  bool
+	showAfterOpening                  bool
+	windowShown                       bool
 	image                             *canvas.Image
 	imageContent                      *fyne.Container
 	imageScroll                       *container.Scroll
@@ -164,6 +171,8 @@ type Gui struct {
 	annotationControls                *fyne.Container
 	annotationPropertyScroll          *container.Scroll
 	toolPropertyPanel                 *fyne.Container
+	rightPanel                        *fyne.Container
+	markdownOutlineExpanded           bool
 	currentToolIndicator              *toolIndicator
 	toolIndicatorHeader               *fyne.Container
 	annotationJobs                    chan func() func()
@@ -298,6 +307,7 @@ func newGui(application fyne.App) *Gui {
 	g.mainSplit = g.sidebarSplit
 
 	g.newToolPropertyPanel()
+	g.rightPanel = container.NewStack(g.toolPropertyPanel)
 	g.tipText = canvas.NewText("", theme.Color(theme.ColorNameForeground))
 	g.tipText.TextSize = 12
 	g.tipText.Alignment = fyne.TextAlignLeading
@@ -315,7 +325,7 @@ func newGui(application fyne.App) *Gui {
 
 	documentArea := container.NewBorder(g.newSearchBar(), nil, nil, nil, g.mainSplit)
 	g.search.host = documentArea
-	layout := container.NewBorder(toolbar, g.tipBar, nil, g.toolPropertyPanel, documentArea)
+	layout := container.NewBorder(toolbar, g.tipBar, nil, g.rightPanel, documentArea)
 
 	g.window = g.app.NewWindow("Proview")
 	g.window.SetContent(newTooltipSurface(layout))
@@ -343,7 +353,7 @@ func (g *Gui) RunWithOptions(paths []string, options OpenOptions) {
 	// Showing the first window runs the native macOS launch event loop.
 	// Capture document requests before AppKit starts processing them.
 	registerOpenFilesHandler(nil)
-	g.window.Show()
+	g.prepareWindowOpening(paths)
 	g.openStartupFiles(paths)
 	registerOpenFilesHandler(g.openFilesFromFinder)
 	g.app.Run()
@@ -354,7 +364,6 @@ func (g *Gui) startCrop() {
 		return
 	}
 	if g.showingMarkdown() {
-		g.startMarkdownCrop()
 		return
 	}
 	if g.showingModel() {

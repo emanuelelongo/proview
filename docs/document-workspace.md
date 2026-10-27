@@ -7,7 +7,7 @@ removed locally and remotely before this work.
 ## Opening behavior
 
 - Open file and file drops target the window where the interaction started.
-  New blank images, images from the clipboard and Markdown/STL crops also join
+  New blank images, images from the clipboard and STL crops also join
   that window's sidebar and select the new document. Existing documents retain
   their edits, save destinations and view state.
 - Startup paths and desktop Open With requests use the same ordered loader.
@@ -165,6 +165,44 @@ Native Finder/Explorer/desktop behavior and visual interaction still need manual
 acceptance on the destination platforms; headless GUI tests and cross compilation
 do not establish that acceptance.
 
+## Window geometry on opening
+
+Opening a new file chooses an initial window size for its content. PDFs use the
+first page's actual aspect ratio; Markdown uses a tall A4-like reading viewport
+(its reading layout remains continuous). The requested content height is at most
+1120 logical units, reduced to the monitor's usable desktop area with room for
+window decorations. The toolbar, property panel and visible sidebar are included
+in the width calculation. Landscape PDF pages can use a wider window. Images use
+a standard 1000 × 740 window, also bounded to the available desktop, and start
+fitted to the viewport.
+
+When startup or a forwarded desktop request supplies file paths for a fresh
+window, its first Show waits for the opening worker and geometry preparation.
+It is centered once before that Show. Opening into an already visible editor
+never recenters it. Empty launches still show immediately; opening failures show
+the empty window and error dialog. File loading remains asynchronous, with the
+Opening dialog used only in already visible editors.
+
+Only file opening applies this policy: switching retained documents, editing and
+app-created unsaved content retain window geometry. Fullscreen/fixed windows and
+STL keep their geometry. macOS uses the screen's visible frame, Windows the
+window monitor's work area, and X11 the selected monitor intersected with the
+current desktop's work area. Before the native window exists, work-area sizing
+uses the primary monitor and accounts for system/user DPI scaling; the initial
+Canvas.Scale value alone is not reliable. Other/unavailable backends use a conservative
+1280 × 960 logical-area fallback. Native windows finish their initial fit after
+viewport layout; a queued fit yields to explicit user zoom or document switching.
+
+Window-sizing tests cover orientation, desktop bounds, image defaults, fitting
+the first PDF page, retained manual geometry and coalesced native layout. A native
+Linux/X11 probe verified Markdown sizing and first-page PDF fit in a newly created
+window. Startup tests record first-Show size and document readiness, reject
+post-Show centering/resizing for the initial file, and cover unreadable/invalid
+files. On a scaled multi-monitor Linux/X11 desktop, native startup traces showed
+both Markdown and a portrait PDF at about 790 × 927 logical units, with Resize
+and Center called before Show and no later application repositioning. These
+checks do not establish macOS/Windows runtime acceptance.
+
 ## Zoom anchoring
 
 Use Command on macOS or Control elsewhere with `+` / `=` to zoom in,
@@ -209,3 +247,11 @@ shrinks the whole document or captures the live window. Scrolling, zoom, theme,
 viewport size and document switching leave it unchanged. Reading size and scroll position survive document switching. They stay
 read-only and never use PDF/image history or saving. The existing PDF/non-PDF
 separate-window rule also applies to Markdown. See [Markdown viewer](markdown-viewer.md).
+
+Markdown uses a compact right-hand `list-tree` toggle, opening a translucent
+220-unit Contents panel above the paper on demand. Its heading list follows the source hierarchy and tracks the
+section at the top of the reading viewport, including while collapsed. Opening
+and closing the panel keeps document wrapping, scroll position and window geometry
+unchanged. The uncovered document remains interactive; Escape dismisses the panel.
+Returning to images/PDFs/STL restores the compact tool rail.
+Markdown has no Crop or canvas-capture flow; diagram PNG copying remains available.

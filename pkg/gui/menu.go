@@ -77,6 +77,7 @@ func BuildMenu(g *Gui) {
 	resetZoomItem := fyne.NewMenuItem("Fit to Window", g.resetZoom)
 	resetZoomItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.Key0, Modifier: shortcutModifier}
 	viewMenu := fyne.NewMenu("View", zoomInItem, zoomOutItem, resetZoomItem)
+	g.markdownThemeItem = g.newMarkdownThemeMenu()
 	g.modelMenu = viewMenu
 	g.modelMenuItems = []*fyne.MenuItem{fyne.NewMenuItemSeparator()}
 	for i, name := range modelViews {
@@ -210,12 +211,14 @@ func BuildOpenFileCallback(g *Gui) func(fyne.URIReadCloser, error) {
 
 func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 	finish := func() {
+		g.showPreparedWindow()
 		if done != nil {
 			done()
 		}
 		g.processPendingFiles()
 	}
 	if err != nil {
+		g.showPreparedWindow()
 		g.showOperationError("open", err)
 		finish()
 		return
@@ -241,8 +244,11 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 	started := time.Now()
 	g.logEvent("open_started", "extension=%q", filepath.Ext(target.Name()))
 	g.working = true
-	progress := dialog.NewCustomWithoutButtons("Opening", widget.NewProgressBarInfinite(), g.window)
-	progress.Show()
+	var progress dialog.Dialog
+	if !g.showAfterOpening {
+		progress = dialog.NewCustomWithoutButtons("Opening", widget.NewProgressBarInfinite(), g.window)
+		progress.Show()
+	}
 	go func() {
 		var doc *document.Document
 		var mesh *model3d.Mesh
@@ -256,7 +262,9 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 			doc, err = loadDocumentReader(uri)
 		}
 		fyne.Do(func() {
-			progress.Hide()
+			if progress != nil {
+				progress.Hide()
+			}
 			g.working = false
 			if g.closed {
 				if doc != nil {
@@ -266,6 +274,7 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 				return
 			}
 			if err != nil {
+				g.showPreparedWindow()
 				g.showOperationError("open", err)
 				finish()
 				return

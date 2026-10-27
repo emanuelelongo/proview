@@ -15,7 +15,7 @@ import (
 
 const (
 	startupTipDelay   = 5 * time.Second
-	tipDuration       = 8 * time.Second
+	tipDuration       = 20 * time.Second
 	tipGap            = 8 * time.Second
 	tipsPreferenceKey = "tips.enabled"
 	tipFadeStep       = 100 * time.Millisecond
