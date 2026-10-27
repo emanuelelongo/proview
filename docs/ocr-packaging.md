@@ -61,12 +61,16 @@ platform standard runtime libraries and existing AppImage/glibc baseline.
 macOS helpers receive an ad hoc signature before embedding; the enclosing app
 is signed after the application binary is produced.
 
-Build prerequisites are Python 3.10+, CMake 3.18+, Make and C/C++ compilers, in
+Build prerequisites are Python 3.10+ with `tarfile.data_filter` support,
+CMake 3.18+, Make and C/C++ compilers, in
 addition to the existing Go/Fyne requirements. Native Windows uses MinGW Makefiles;
 the Docker Windows build uses MinGW POSIX for the OCR helper and retains the
 existing Zig compiler for the Go/Fyne application. `PROVIEW_OCR_CC` and
 `PROVIEW_OCR_CXX` can select OCR compilers separately from CGO. Linux builds are native
 to each container architecture; macOS explicitly selects ARM64 or AMD64.
+Local macOS Task builds select a compatible Python from `PATH` or Homebrew,
+using `packaging/macos_python.sh`; install Homebrew Python with `brew install python`
+if the system interpreter lacks safe tar extraction support.
 
 ## Verification
 

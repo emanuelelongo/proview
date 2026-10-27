@@ -13,9 +13,12 @@ and leaves the original file unchanged.
 
 ## Requirements
 
-- Go **1.26+**, Python **3.10+** for native builds, and [Task](https://taskfile.dev/).
+- Go **1.26+**, Python **3.10+** with `tarfile.data_filter` support for native builds,
+  and [Task](https://taskfile.dev/).
 - CGO enabled, C/C++ compilers, CMake **3.18+** and Make for the target platform.
 - macOS: Xcode Command Line Tools (`xcode-select --install`).
+  Local Task builds use Python from `PATH` when compatible, otherwise Homebrew's
+  Python (`brew install python`) through `packaging/macos_python.sh`.
 - Linux: GCC and OpenGL/X11 development libraries. The CI installs
   `gcc g++ cmake make libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev` on Ubuntu.
 - Windows: MinGW (including `g++` and `mingw32-make`) and CMake available in PATH.

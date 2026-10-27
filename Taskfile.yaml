@@ -73,7 +73,7 @@ tasks:
     desc: Build a binary for the current OS and architecture
     cmds:
       - mkdir -p build
-      - python3 packaging/build.py --bundle-ocr -o ./build/proview{{if eq OS "windows"}}.exe{{end}}
+      - '{{if eq OS "darwin"}}bash packaging/macos_python.sh{{else}}python3{{end}} packaging/build.py --bundle-ocr -o ./build/proview{{if eq OS "windows"}}.exe{{end}}'
 
   build:macos:
     desc: Build a macOS binary (ARCH=arm64 or amd64; run on macOS)
@@ -85,7 +85,7 @@ tasks:
       GOARCH: '{{.ARCH}}'
     cmds:
       - mkdir -p build/macos-{{.ARCH}}
-      - python3 packaging/build.py --bundle-ocr -o build/macos-{{.ARCH}}/proview
+      - bash packaging/macos_python.sh packaging/build.py --bundle-ocr -o build/macos-{{.ARCH}}/proview
 
   build:linux:
     desc: Build a Linux binary (run on Linux with Fyne development libraries)
