@@ -24,7 +24,7 @@ on run argv
             set size of win to {1000, 740}
             set frontmost of proc to true
             perform action "AXRaise" of win
-        else if operation is "assert" or operation is "key" or operation is "close" then
+        else if operation is "assert" or operation is "key" or operation is "close" or operation is "menu" then
             if not frontmost of proc then error "Demo application lost focus; stopping input"
             if name of front window of proc does not contain marker then error "Demo window lost focus; stopping input"
         end if
@@ -48,6 +48,13 @@ on run argv
             else
                 keystroke keyName using keyModifiers
             end if
+        else if operation is "menu" then
+            set menuName to item 4 of argv
+            set itemName to item 5 of argv
+            tell proc
+                click menu bar item menuName of menu bar 1
+                click menu item itemName of menu 1 of menu bar item menuName of menu bar 1
+            end tell
         else if operation is "close" then
             click (first button of win whose subrole is "AXCloseButton")
             return "closed"

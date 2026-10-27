@@ -12,6 +12,27 @@ spec.loader.exec_module(record)
 
 
 class RecorderTests(unittest.TestCase):
+    def test_menu_action_requires_labels_and_uses_the_owned_window(self):
+        for path in (None, [], ["File"], ["File", ""], "File", ["File", "Item", "Extra"]):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                record.validate_action({"op": "menu", "path": path})
+        action = {"op": "menu", "path": ["File", "Create PDF from Selection"]}
+        record.validate_action(action)
+        session = record.Session("owned-window", Path("unused"))
+        with patch.object(session, "window") as window:
+            session.action(action)
+        self.assertEqual(window.call_args_list[-1].args, ("menu", "File", "Create PDF from Selection"))
+
+    def test_modified_click_releases_keys_after_input_failure(self):
+        session = record.Session("owned-window", Path("unused"))
+        session.bounds = [80, 60, 1000, 740]
+        action = {"op": "click", "at": [.1, .2], "modifiers": ["shift"]}
+        record.validate_action(action)
+        with patch.object(session, "window"), patch.object(session, "input", side_effect=RuntimeError("input failed")), patch.object(record, "run") as release:
+            with self.assertRaisesRegex(RuntimeError, "input failed"):
+                session.action(action)
+        release.assert_called_once_with(["cliclick", "ku:shift"], timeout=5)
+
     def test_subprocess_diagnostics_reach_the_report_and_console(self):
         error = record.subprocess.CalledProcessError(1, ["osascript", "window.applescript"], stderr=b"System Events: keystroke failed (-1700)\n")
         self.assertIn("System Events: keystroke failed (-1700)", record.error_details(error))

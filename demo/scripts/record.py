@@ -23,7 +23,7 @@ from clean import reset_workspace, workspace_lock
 ROOT = Path(__file__).resolve().parents[2]
 DEMO = ROOT / "demo"
 TOOLS = ("osascript", "screencapture", "cliclick", "ffmpeg", "ffprobe")
-ACTIONS = {"key", "click", "drag", "wait", "text", "choose-file", "choose-color"}
+ACTIONS = {"key", "click", "drag", "wait", "text", "choose-file", "choose-color", "menu"}
 FORMATS = {"png", "gif", "mp4"}
 
 
@@ -69,12 +69,13 @@ def validate_action(action):
     op = action.get("op")
     if op not in ACTIONS:
         raise ValueError("Unknown action: " + str(op))
+    if op in {"key", "click"}:
+        if set(action.get("modifiers", [])) - {"command", "shift", "option", "control"}:
+            raise ValueError("Unsupported key modifier")
     if op == "key":
         key = action.get("key", "")
         if key not in {"escape", "return", "tab", "pageup", "pagedown"} and len(key) != 1:
             raise ValueError("Unsupported key: " + key)
-        if set(action.get("modifiers", [])) - {"command", "shift", "option", "control"}:
-            raise ValueError("Unsupported key modifier")
     if op in {"click", "drag"}:
         for name in (["at"] if op == "click" else ["from", "to"]):
             point = action[name]
@@ -90,6 +91,10 @@ def validate_action(action):
         raise ValueError("Color action needs a six-digit hex value")
     if op == "text" and not isinstance(action.get("value"), str):
         raise ValueError("Text action needs a value")
+    if op == "menu":
+        path = action.get("path")
+        if not isinstance(path, list) or len(path) != 2 or not all(isinstance(label, str) and label for label in path):
+            raise ValueError("Menu action needs a menu and item label")
     for key in ("seconds", "duration"):
         if key in action and not 0 < action[key] <= 60:
             raise ValueError("Action time must be between 0 and 60 seconds")
@@ -161,7 +166,7 @@ def load_catalog(path=DEMO / "cases.json", readme=ROOT / "README.md"):
             for name, value in options.items():
                 if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0 or value > 10:
                     raise ValueError("Invalid clip timing: " + name)
-        for action in case.get("setup", []) + case.get("actions", []):
+        for action in case.get("setup", []) + case.get("actions", []) + case.get("cleanup", []):
             validate_action(action)
     images = readme_media(readme)
     if outputs != set(images):
@@ -358,6 +363,8 @@ class Session:
             self.window("assert")
         if op == "key":
             self.window("key", action["key"], ",".join(action.get("modifiers", [])))
+        elif op == "menu":
+            self.window("menu", *action["path"])
         elif op == "choose-file":
             self.choose_file(confined(self.folder / "work", action["file"]))
         elif op == "choose-color":
@@ -380,7 +387,13 @@ class Session:
                 rect = page_rect(raw)
             if op == "click":
                 x, y = self.point(action["at"], space, rect)
-                self.input(["cliclick", "c:%d,%d" % (x, y)], timeout=10)
+                names = {"command": "cmd", "shift": "shift", "option": "alt", "control": "ctrl"}
+                modifiers = [names[name] for name in action.get("modifiers", [])]
+                try:
+                    self.input(["cliclick", *["kd:" + name for name in modifiers], "c:%d,%d" % (x, y)], timeout=10)
+                finally:
+                    if modifiers:
+                        run(["cliclick", *["ku:" + name for name in reversed(modifiers)]], timeout=5)
             elif op == "drag":
                 start = self.point(action["from"], space, rect)
                 end = self.point(action["to"], space, rect)
@@ -389,7 +402,9 @@ class Session:
                 # despite its help advertising 20 ms. Avoid extra wait events:
                 # 20 steps/s plus w commands made a short drag take seconds.
                 steps = max(2, round(duration * 10) - 1)
-                args = ["cliclick", "-w", "100", "dd:%d,%d" % start]
+                # Give the native window a pointer move before pressing, so hit
+                # testing starts on the intended canvas rather than the old hover.
+                args = ["cliclick", "-w", "100", "m:%d,%d" % start, "dd:%d,%d" % start]
                 for i in range(1, steps + 1):
                     x = round(start[0] + (end[0] - start[0]) * i / steps)
                     y = round(start[1] + (end[1] - start[1]) * i / steps)
@@ -526,6 +541,7 @@ def record_case(binary, case, run_folder):
             length = float(metadata["format"]["duration"])
             sheet = f"fps={6 / length:.6f},scale=320:-1,tile=3x2"
             run(["ffmpeg", "-v", "error", "-y", "-i", output, "-vf", sheet, "-frames:v", "1", folder / "contact-sheet.png"], timeout=60)
+        session.actions(case.get("cleanup", []))
         session.actions([{"op": "key", "key": "escape"}, {"op": "key", "key": "v", "modifiers": ["command", "shift"]}])
         session.actions([{"op": "key", "key": "z", "modifiers": ["command"]}] * case.get("cleanup_undo", 0))
         # Close only our window. Never quit/kill a shared Proview application.
