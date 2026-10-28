@@ -316,6 +316,7 @@ func loadDocumentReader(uri fyne.URIReadCloser) (*document.Document, error) {
 }
 
 func (g *Gui) showDocument(loadedDocument *document.Document) {
+	g.stopGIFPlayback()
 	g.clearMarkdown()
 	g.clearModel()
 	g.clearAreaSelection()

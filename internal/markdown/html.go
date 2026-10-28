@@ -16,6 +16,12 @@ func expandHTML(root ast.Node, source []byte) {
 	var candidates []ast.Node
 	_ = ast.Walk(root, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
+			// Inline anchors are split into separate RawHTML nodes by Goldmark.
+			// Convert a complete static HTML paragraph together, preserving pairs.
+			if paragraph, ok := node.(*ast.Paragraph); ok && htmlLinkParagraph(paragraph, source) {
+				candidates = append(candidates, paragraph)
+				return ast.WalkSkipChildren, nil
+			}
 			switch node.(type) {
 			case *ast.HTMLBlock, *ast.RawHTML:
 				candidates = append(candidates, node)
@@ -26,6 +32,8 @@ func expandHTML(root ast.Node, source []byte) {
 	for _, node := range candidates {
 		var raw string
 		switch n := node.(type) {
+		case *ast.Paragraph:
+			raw = Code(source, n)
 		case *ast.HTMLBlock:
 			raw = Code(source, n)
 			if n.HasClosure() {
@@ -63,6 +71,28 @@ func expandHTML(root ast.Node, source []byte) {
 		}
 		parent.RemoveChild(parent, node)
 	}
+}
+
+func htmlLinkParagraph(paragraph *ast.Paragraph, source []byte) bool {
+	linked := false
+	for child := paragraph.FirstChild(); child != nil; child = child.NextSibling() {
+		switch node := child.(type) {
+		case *ast.RawHTML:
+			var raw strings.Builder
+			for i := 0; i < node.Segments.Len(); i++ {
+				segment := node.Segments.At(i)
+				raw.Write(segment.Value(source))
+			}
+			tokenizer := html.NewTokenizer(strings.NewReader(raw.String()))
+			if tokenizer.Next() == html.StartTagToken && tokenizer.Token().Data == "a" {
+				linked = true
+			}
+		case *ast.Text:
+		default:
+			return false
+		}
+	}
+	return linked
 }
 
 func htmlAttribute(node *html.Node, name string) string {
@@ -142,6 +172,20 @@ func htmlInline(node *html.Node, depth int) ([]ast.Node, bool) {
 		return nil, false
 	}
 	switch node.Data {
+	case "a":
+		link := ast.NewLink()
+		link.Destination = []byte(htmlAttribute(node, "href"))
+		link.Title = []byte(htmlAttribute(node, "title"))
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			converted, ok := htmlInline(child, depth+1)
+			if !ok {
+				return nil, false
+			}
+			for _, item := range converted {
+				link.AppendChild(link, item)
+			}
+		}
+		return []ast.Node{link}, true
 	case "img":
 		link := ast.NewLink()
 		src := htmlAttribute(node, "src")

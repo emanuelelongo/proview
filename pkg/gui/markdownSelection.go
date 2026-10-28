@@ -32,6 +32,12 @@ type markdownTextLink struct {
 	onTapped   func()
 }
 
+// Retain the original formatting while adding a clickable text range.
+type markdownLinkSegment struct {
+	*widget.TextSegment
+	onTapped func()
+}
+
 type markdownSelectableText struct {
 	widget.RichText
 	view          *markdownView
@@ -53,8 +59,13 @@ func (v *markdownView) selectable(segments ...widget.RichTextSegment) *markdownS
 	segments = append([]widget.RichTextSegment(nil), segments...)
 	offset := 0
 	for i, segment := range segments {
+		if link, ok := segment.(*markdownLinkSegment); ok {
+			segments[i] = link.TextSegment
+			b.links = append(b.links, markdownTextLink{start: offset, end: offset + len(link.Text), onTapped: link.onTapped})
+		}
 		if image, ok := segment.(*markdownImageSegment); ok {
 			image.text = &b.RichText
+			image.block = b
 			b.hasImages = true
 		}
 		if link, ok := segment.(*widget.HyperlinkSegment); ok {

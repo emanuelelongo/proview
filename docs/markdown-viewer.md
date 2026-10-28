@@ -88,9 +88,17 @@ Switching documents restores the appropriate outline and reading position.
 - Mermaid diagrams rendered natively as images, with an always-visible compact
   code-copy button. Successful previews do not show a source section.
 - Relative local raster images; missing/remote images show their alternative text.
+- Animated local GIFs play while visible, including in the enlarged image overlay.
+  Offscreen GIFs pause; repeated uses of the same resource share a player. Switching,
+  rebuilding or closing the view stops its clock and rejects obsolete updates.
+  Printing and thumbnails retain the immutable first frame.
 - Static HTML image tags, standalone or inside simple `p`/`div` wrappers, with
   `alt`, numeric pixel `width` and left/center/right paragraph alignment. Basic
-  `strong`/`b`, `em`/`i` and `br` tags in these paragraphs are supported. HTML is
+  `strong`/`b`, `em`/`i` and `br` tags in these paragraphs are supported. Static
+  `a` links preserve their text, formatting and image children; linked images
+  retain the enlarged-preview interaction. Link-only HTML paragraphs also support
+  inline anchors; mixed Markdown formatting and inline HTML anchors remain literal.
+  HTML is
   converted into the same immutable Markdown tree for reading, printing and
   thumbnails. Source copying remains unchanged. HTML image paths starting with
   one slash (such as `/assets/logo.png?raw=true`) resolve beneath the document
@@ -177,6 +185,16 @@ images are limited to 16 MiB encoded and eight million decoded pixels; aggregate
 image loading has a bounded budget. Non-file URI documents do not resolve
 relative resources. External links open only after a click.
 
+Static images have a 64 MiB aggregate decoded budget.
+Pre-decode checks reserve eight bytes per pixel for 16-bit formats; retained
+static buffers are charged at their decoded representation. GIFs additionally share a
+128 MiB animation budget per document, checked before decoding their frame arrays;
+the estimate includes palette buffers and compositing images. The shared GIF
+decoder limits logical screens to eight million pixels and animations to 2,000
+frames. Animations exceeding these limits remain static. Frame offsets,
+transparency, disposal, delays and repeat counts are preserved; delays below
+20 ms use 100 ms. Decoding happens in the opening worker, never on a playback tick.
+
 `pkg/gui/markdownViewer.go` maps the tree to native Fyne objects, with a local
 theme for text sizes and token colours. `editorDocument` owns the immutable
 Markdown model and its reading state. Markdown never creates an editable
@@ -225,6 +243,11 @@ full equivalence to official Mermaid.
 
 - Loader tests cover GFM content, exact highlighted source, UTF-8/BOM/CRLF,
   source limits, local images and rejection of escaping/remote resource paths.
+- GIF regressions cover offset/transparency/disposal composition, delays, repeat
+  counts, pause/resume, immutable frames, truncation and allocation limits. GUI
+  tests cover direct opening, editing/Undo, switching/closing, linked/repeated
+  Markdown GIFs, offscreen pause, enlarged playback and theme teardown. Repository
+  demo GIFs fit the shared animation budget.
 - GUI tests cover queued opening, workspace switching and closing, read-only
   controls, zoom/scroll restoration, heading links, keyboard navigation and cached
   opening-content thumbnails independent of canvas capture and reading state,

@@ -84,6 +84,7 @@ func (g *Gui) captureDocument() {
 }
 
 func (g *Gui) prepareDocumentSwitch() {
+	g.stopGIFPlayback()
 	g.openingFitDocument = nil
 	g.window.Canvas().Focus(nil)
 	g.setTextEditing(false)

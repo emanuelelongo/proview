@@ -24,5 +24,5 @@ Recognition does not change history or saved files.
 
 Raster input is limited to a 2400-pixel long side. Small, blurry or heavily
 distorted codes may be missed. Recognition targets the underlying document;
-editable overlay objects are excluded. GIF and TIFF use the displayed first
-frame/page. Other barcode formats are not recognized.
+editable overlay objects are excluded. GIF and TIFF recognition uses the first
+frame/page, independently of GIF playback. Other barcode formats are not recognized.

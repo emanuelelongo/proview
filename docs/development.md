@@ -6,10 +6,21 @@ Build, test, package and release Proview. For the product overview, see
 ## Supported images
 
 Open PNG, JPEG, GIF, TIFF (`.tif` / `.tiff`), BMP and WebP, as well as PDF documents.
-GIFs show their first frame and multipage TIFFs show their first page. Images keep
+GIF animations play in the image viewer and Markdown, including enlarged Markdown
+previews. Editing, OCR, thumbnails, printing and export use the first frame;
+cropping, annotation tools and text selection suspend image playback. Edited GIFs
+remain static until their edits are undone. Frame editing and GIF export are not
+implemented. Multipage TIFFs show their first page. Images keep
 transparency when the source format supports it; TIFF and JPEG orientation is applied
 when opening. Editing imported GIF/TIFF/BMP/WebP images uses Save As in PNG or JPEG
 and leaves the original file unchanged.
+
+GIF decoding checks frame dimensions, count (at most 2,000), palette buffers and
+compositing memory before allocating all frames. Animations are limited to eight
+million logical-screen pixels and a 128 MiB decoded budget; oversized animations
+fall back to their static first frame. The compositor handles frame offsets,
+transparency, background/previous disposal, delays and finite/infinite repeats.
+Delays below 20 ms use 100 ms. Sources and published frames remain immutable.
 
 ## Requirements
 

@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"emanuelelongo/proview/internal/gifplay"
 	"emanuelelongo/proview/internal/markdown"
 	"emanuelelongo/proview/pkg/document"
 	"errors"
@@ -27,6 +28,8 @@ import (
 )
 
 type markdownView struct {
+	animatedImages         []*markdownImageSegment
+	gifGroups              map[*gifplay.Animation]*markdownGIFGroup
 	imagePreview           *markdownImagePreview
 	themeReady             bool
 	doc                    *markdown.Document
@@ -57,6 +60,7 @@ type markdownView struct {
 func (g *Gui) showingMarkdown() bool { return g.markdownView != nil }
 func (g *Gui) clearMarkdown() {
 	if g.markdownView != nil {
+		g.stopGIFPlayback()
 		if g.markdownView.imagePreview != nil {
 			g.markdownView.imagePreview.close()
 		}
@@ -113,6 +117,12 @@ func (g *Gui) showMarkdown(d *markdown.Document) {
 	g.updateHistoryActions()
 }
 func (v *markdownView) rebuild() {
+	if v.imagePreview != nil {
+		v.imagePreview.close()
+	}
+	v.editor.stopGIFPlayback()
+	v.animatedImages = nil
+	v.gifGroups = make(map[*gifplay.Animation]*markdownGIFGroup)
 	v.selection = nil
 	v.textBlocks = nil
 	v.headings = nil
@@ -150,6 +160,7 @@ func (v *markdownView) rebuild() {
 	}
 	v.buildOutline()
 	v.restoreReadingOffset(offset)
+	v.editor.ensureGIFPlayback()
 }
 func (v *markdownView) zoom(delta int) {
 	scale := float32(math.Max(.25, math.Min(2, float64(v.scale)+float64(delta)*.125)))
@@ -501,9 +512,14 @@ func (v *markdownView) inline(parent ast.Node, style widget.RichTextStyle) []wid
 			}
 			add(strings.ReplaceAll(b.String(), "\n", " "), st)
 		case *ast.Link:
-			label := v.inlineText(n)
 			dest := string(n.Destination)
-			result = append(result, &widget.HyperlinkSegment{Text: label, Alignment: style.Alignment, OnTapped: func() { v.openLink(dest) }})
+			for _, child := range v.inline(n, style) {
+				if text, ok := child.(*widget.TextSegment); ok {
+					text.Style.ColorName = theme.ColorNameHyperlink
+					child = &markdownLinkSegment{TextSegment: text, onTapped: func() { v.openLink(dest) }}
+				}
+				result = append(result, child)
+			}
 		case *ast.AutoLink:
 			dest := string(n.URL(v.doc.Source))
 			if n.AutoLinkType == ast.AutoLinkEmail {
@@ -512,7 +528,18 @@ func (v *markdownView) inline(parent ast.Node, style widget.RichTextStyle) []wid
 			result = append(result, &widget.HyperlinkSegment{Text: string(n.Label(v.doc.Source)), Alignment: style.Alignment, OnTapped: func() { v.openLink(dest) }})
 		case *ast.Image:
 			if img := v.doc.Images[string(n.Destination)]; img != nil {
-				result = append(result, &markdownImageSegment{image: img, width: markdown.ImageWidth(n)})
+				segment := &markdownImageSegment{image: img, width: markdown.ImageWidth(n)}
+				if animation := v.doc.Animations[string(n.Destination)]; animation != nil {
+					group := v.gifGroups[animation]
+					if group == nil {
+						group = &markdownGIFGroup{player: animation.NewPlayer()}
+						v.gifGroups[animation] = group
+					}
+					segment.player = group.player
+					group.segments = append(group.segments, segment)
+					v.animatedImages = append(v.animatedImages, segment)
+				}
+				result = append(result, segment)
 			} else {
 				add("[Image: "+v.inlineText(n)+"]", style)
 			}
@@ -803,9 +830,12 @@ func loadMarkdownReader(uri fyne.URIReadCloser) (*markdown.Document, error) {
 }
 
 type markdownImageSegment struct {
-	image image.Image
-	width float32
-	text  *widget.RichText
+	block  *markdownSelectableText
+	player *gifplay.Player
+	visual *canvas.Image
+	image  image.Image
+	width  float32
+	text   *widget.RichText
 }
 
 func (*markdownImageSegment) Inline() bool                        { return false }
@@ -814,7 +844,12 @@ func (*markdownImageSegment) Select(fyne.Position, fyne.Position) {}
 func (*markdownImageSegment) SelectedText() string                { return "" }
 func (*markdownImageSegment) Unselect()                           {}
 func (s *markdownImageSegment) Visual() fyne.CanvasObject {
+	if s.visual != nil {
+		s.Update(s.visual)
+		return s.visual
+	}
 	o := canvas.NewImageFromImage(s.image)
+	s.visual = o
 	o.FillMode = canvas.ImageFillContain
 	s.Update(o)
 	return o

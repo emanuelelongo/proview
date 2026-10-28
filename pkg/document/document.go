@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"emanuelelongo/proview/internal/gifplay"
 	"emanuelelongo/proview/internal/pdfengine"
 	img "emanuelelongo/proview/pkg/images"
 	"github.com/gen2brain/go-fitz"
@@ -48,6 +49,7 @@ type pageData struct {
 }
 
 type Source struct {
+	animation         *gifplay.Animation
 	annotationBase    *Source
 	importedOverlays  []Overlay
 	hasPDFAnnotations bool
@@ -109,6 +111,13 @@ func loadSource(name, location string, reader io.Reader, importAnnotations bool)
 		original: data,
 		pages:    pages,
 		pdf:      pdf,
+	}
+	if format == FormatGIF {
+		// Keep oversized animations usable as static images.
+		if animation, e := gifplay.Decode(data, gifplay.MaxBytes); e == nil && animation.Animated() {
+			source.animation = animation
+			source.pages[0].preview = animation.NewPlayer().Image()
+		}
 	}
 	if pdf != nil {
 		if importAnnotations {

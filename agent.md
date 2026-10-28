@@ -89,8 +89,13 @@ and IPC identity. No dedicated demo launcher or test-only GUI entrypoint is need
 ## Product and editing rules
 
 Proview is a desktop image/PDF viewer and editor.
-Supported images: PNG, JPEG, GIF, TIFF, BMP and WebP. GIF and multipage TIFF
-show the first frame/page. Keep original bytes; new import formats save through
+Supported images: PNG, JPEG, GIF, TIFF, BMP and WebP. GIF animations play in the
+image viewer and Markdown, including enlarged Markdown previews. Use the shared
+bounded decoder/compositor in `internal/gifplay` and a native Fyne animation clock
+owned by the active view. Pause offscreen Markdown images; share players for
+repeated resources. Image editing, OCR, thumbnails and output use the immutable
+first frame; edited GIFs stay static until their edits are undone. Multipage TIFF
+shows its first page. Keep original bytes; new import formats save through
 PNG/JPEG Save As instead of overwriting the source. Use document.OpenExtensions
 for the opening picker and keep Linux/macOS file associations aligned. It supports reusable
 signatures, single-line text, freehand drawing, highlighting, image cropping,
@@ -733,7 +738,9 @@ worker. Mermaid uses the pinned sketch core/raster packages through internal/mer
 with document-local bounded image caches and coalesced background view jobs.
 Theme, viewport, zoom and display scale form the render key. Cancel waiting jobs
 on teardown and reject stale results; active sketch calls finish within limits. Static HTML image/paragraph wrappers are converted into the shared Markdown AST;
-unsupported HTML remains literal. Root-relative HTML image paths resolve beneath
+HTML links preserve text/image children in the shared AST; clicking an image
+retains the enlarged-preview interaction. Unsupported HTML remains literal.
+Root-relative HTML image paths resolve beneath
 the document directory, with the same confinement and decoding limits.
 Never fetch remote images automatically; resolve relative resources
 within the canonical document directory. editorDocument owns reading state.

@@ -30,6 +30,8 @@ See [Document workspace](docs/document-workspace.md) for details.
 ### Image viewing and basic editing
 
 Proview opens the most common image formats and supports basic editing, such as cropping, rotating and annotating.
+Animated GIFs play both when opened directly and inside Markdown documents.
+Editing a GIF uses its first frame; frame editing and GIF export are not supported.
 
 <a href="docs/screenshots/image-editing.png" target="_blank" rel="noopener noreferrer">
   <img src="docs/screenshots/image-editing.png" alt="Image editing: Lenna with a crop selection and confirmation controls." width="400">
@@ -196,7 +198,7 @@ See [Development and packaging](docs/development.md) for setup, native and cross
 
 These are directions to explore, rather than a release schedule:
 
-- **Full GIF support:** animation playback, frame editing and GIF export.
+- **GIF editing:** frame editing and GIF export.
 - **Full TIFF support:** navigating and editing every page, plus TIFF export.
 - **More image formats:** HEIC/HEIF and AVIF.
 - **Certificate-based PDF signatures:** [detection, verification and signing plan](docs/pdf-digital-signatures.md), separate from visible handwritten signatures.

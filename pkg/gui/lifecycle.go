@@ -64,6 +64,7 @@ func (g *Gui) closeDocumentEntry(entry *editorDocument) {
 }
 
 func (g *Gui) closeDocument() {
+	g.stopGIFPlayback()
 	g.logEvent("document_closed", "")
 	g.removeActiveDocument()
 	g.closeSearch()
@@ -135,6 +136,7 @@ func (g *Gui) closeDocument() {
 }
 
 func (g *Gui) closeWindow() {
+	g.stopGIFPlayback()
 	if !g.closed {
 		g.saveSession()
 	}

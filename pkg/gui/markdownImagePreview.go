@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"emanuelelongo/proview/internal/gifplay"
 	"image"
 	"image/color"
 	"math"
@@ -15,6 +16,7 @@ import (
 // The preview shares decoded pixels with the document and owns only view state.
 // It is a temporary canvas overlay, not a native window or a session entry.
 type markdownImagePreview struct {
+	animation     *gifplay.Player
 	view          *markdownView
 	overlay       *markdownPreviewOverlay
 	previousFocus fyne.Focusable
@@ -34,6 +36,12 @@ func (v *markdownView) showImagePreview(picture image.Image) {
 		v.imagePreview.close()
 	}
 	p := &markdownImagePreview{view: v, previousFocus: v.editor.window.Canvas().Focused(), picture: canvas.NewImageFromImage(picture), scale: 1, fitted: true}
+	for _, segment := range v.animatedImages {
+		if segment.image == picture {
+			p.animation = segment.player
+			break
+		}
+	}
 	p.picture.FillMode = canvas.ImageFillContain
 	p.picture.ScaleMode = canvas.ImageScaleSmooth
 	p.scroll = container.NewScroll(container.New(&markdownPreviewImageLayout{preview: p}, p.picture))

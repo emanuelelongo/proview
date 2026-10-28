@@ -22,6 +22,7 @@ import (
 )
 
 type Gui struct {
+	gifPlayback                       *gifPlayback
 	printJob                          *printState
 	printBackend                      printBackend
 	editors                           *editorGroup
@@ -388,6 +389,7 @@ func (g *Gui) startCrop() {
 	}
 	g.clearSignatureSelection()
 	g.setAnnotationTool(toolSelect)
+	g.pauseGIFImage()
 	g.cropOverlay.Resize(g.image.Size())
 	g.cropOverlay.Activate(g.image.Image.Bounds(), func(rect image.Rectangle) {
 		if g.image.Image == nil || g.document == nil {

@@ -33,7 +33,8 @@ create a searchable PDF for use in other applications.
 Scope: source-page text, not Proview's added vector-text annotations. The native
 selection pipeline does not expose newly edited form values as page text. Mixed
 pages with native text do not additionally OCR embedded images. Only the first
-frame/page of GIF and multipage TIFF is opened by Proview.
+frame of GIF and first page of multipage TIFF are searched; GIF playback does not
+change the OCR input.
 
 Entry points: `internal/textselect/search.go`, `pkg/gui/search.go`, menu/key
 bindings and a dedicated highlight in `signatureLayer`. Tests cover Unicode,

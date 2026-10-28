@@ -156,6 +156,7 @@ func (g *Gui) setAnnotationTool(tool annotationTool) {
 	}
 	g.annotationTool = tool
 	if tool != toolSelect {
+		g.pauseGIFImage()
 		g.clearSignatureSelection()
 		g.clearRedactionSelection()
 	}

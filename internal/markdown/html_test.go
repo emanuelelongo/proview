@@ -77,3 +77,69 @@ func TestHTMLUnsupportedMarkupRemainsLiteralAndImagesStayLocal(t *testing.T) {
 		t.Fatal("external HTML image loaded")
 	}
 }
+
+func TestHTMLLinkedImagesPreserveLinkAndFormatting(t *testing.T) {
+	source := "<a href=\"local.gif\" title=\"Demo\" target=\"_blank\"><strong>Watch</strong><img src=\"local.gif\" alt=\"Animation\" width=\"400\"></a>\n"
+	doc, err := Load("read.md", "", strings.NewReader(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var links, images, bold int
+	_ = ast.Walk(doc.Root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			switch node := n.(type) {
+			case *ast.Link:
+				links++
+				if string(node.Destination) != "local.gif" || string(node.Title) != "Demo" {
+					t.Fatal("link attributes lost")
+				}
+			case *ast.Image:
+				images++
+				if _, ok := node.Parent().(*ast.Link); !ok || ImageWidth(node) != 400 {
+					t.Fatal("image detached from link")
+				}
+			case *ast.Emphasis:
+				if node.Level == 2 {
+					bold++
+				}
+			case *ast.HTMLBlock, *ast.RawHTML:
+				t.Fatal("supported link remained literal")
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	if links != 1 || images != 1 || bold != 1 || string(doc.Source) != source {
+		t.Fatal("linked HTML content changed")
+	}
+}
+
+func TestHTMLRepositoryReadmeLoadsEveryImageAndAnimation(t *testing.T) {
+	path, err := filepath.Abs("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Load("README.md", path, strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	images := 0
+	_ = ast.Walk(doc.Root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if node, ok := n.(*ast.Image); entering && ok {
+			images++
+			if doc.Images[string(node.Destination)] == nil {
+				t.Errorf("README image missing: %s", node.Destination)
+			}
+			if strings.HasSuffix(string(node.Destination), ".gif") && doc.Animations[string(node.Destination)] == nil {
+				t.Errorf("README animation missing: %s", node.Destination)
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	if images != strings.Count(string(data), "<img ") {
+		t.Fatalf("README image blocks lost: %d", images)
+	}
+}

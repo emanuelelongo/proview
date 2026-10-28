@@ -4,6 +4,7 @@ package markdown
 import (
 	"bufio"
 	"bytes"
+	"emanuelelongo/proview/internal/gifplay"
 	"emanuelelongo/proview/internal/mermaid"
 	"errors"
 	"fmt"
@@ -31,13 +32,14 @@ import (
 const MaxSourceBytes = 2 << 20
 
 type Document struct {
-	Name      string
-	Source    []byte
-	Root      ast.Node
-	Images    map[string]image.Image
-	Tokens    map[ast.Node][]chroma.Token
-	Diagrams  *mermaid.Renderer
-	directory string
+	Name       string
+	Source     []byte
+	Root       ast.Node
+	Images     map[string]image.Image
+	Animations map[string]*gifplay.Animation
+	Tokens     map[ast.Node][]chroma.Token
+	Diagrams   *mermaid.Renderer
+	directory  string
 }
 
 func IsFile(name string) bool {
@@ -67,10 +69,12 @@ func Load(name, path string, r io.Reader) (*Document, error) {
 	reader.Advance(frontMatterEnd(source))
 	d := &Document{Name: name, Source: source, Root: md.Parser().Parse(reader), Images: map[string]image.Image{}, Tokens: map[ast.Node][]chroma.Token{}, Diagrams: mermaid.NewRenderer()}
 	expandHTML(d.Root, source)
+	d.Animations = make(map[string]*gifplay.Animation)
 	if path != "" {
 		d.directory, _ = filepath.EvalSymlinks(filepath.Dir(path))
 	}
 	imageBytes := int64(0)
+	animationBytes := int64(0)
 	attemptedImages := make(map[string]bool)
 	_ = ast.Walk(d.Root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -81,9 +85,13 @@ func Load(name, path string, r io.Reader) (*Document, error) {
 			dest := string(n.Destination)
 			if !attemptedImages[dest] && imageBytes < 64<<20 {
 				attemptedImages[dest] = true
-				if img := d.loadImage(dest, (64<<20)-imageBytes); img != nil {
+				if img, animation := d.loadImageResource(dest, (64<<20)-imageBytes, gifplay.MaxBytes-animationBytes); img != nil {
 					d.Images[dest] = img
-					imageBytes += int64(img.Bounds().Dx()) * int64(img.Bounds().Dy()) * 8
+					imageBytes += decodedImageBytes(img)
+					if animation != nil {
+						d.Animations[dest] = animation
+						animationBytes += animation.Bytes
+					}
 				}
 			}
 		case *ast.FencedCodeBlock:
@@ -94,6 +102,31 @@ func Load(name, path string, r io.Reader) (*Document, error) {
 		return ast.WalkContinue, nil
 	})
 	return d, nil
+}
+
+// Charge retained buffers at their actual representation; the pre-decode check
+// still reserves eight bytes per pixel for a possibly 16-bit image.
+func decodedImageBytes(img image.Image) int64 {
+	switch img := img.(type) {
+	case *image.NRGBA:
+		return int64(len(img.Pix))
+	case *image.RGBA:
+		return int64(len(img.Pix))
+	case *image.NRGBA64:
+		return int64(len(img.Pix))
+	case *image.RGBA64:
+		return int64(len(img.Pix))
+	case *image.Gray:
+		return int64(len(img.Pix))
+	case *image.Gray16:
+		return int64(len(img.Pix))
+	case *image.Paletted:
+		return int64(len(img.Pix)) + 8192
+	case *image.YCbCr:
+		return int64(len(img.Y) + len(img.Cb) + len(img.Cr))
+	default:
+		return int64(img.Bounds().Dx()) * int64(img.Bounds().Dy()) * 8
+	}
 }
 
 func Code(source []byte, n ast.Node) string {
@@ -147,33 +180,49 @@ func (d *Document) LocalPath(destination string) (string, error) {
 
 // Budget conservatively allows eight bytes per pixel, including 16-bit PNGs.
 func (d *Document) loadImage(destination string, budget int64) image.Image {
+	img, _ := d.loadImageResource(destination, budget, 0)
+	return img
+}
+
+func (d *Document) loadImageResource(destination string, budget, animationBudget int64) (image.Image, *gifplay.Animation) {
 	path, err := d.LocalPath(destination)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Size() > 16<<20 {
-		return nil
+		return nil, nil
 	}
 	reader := bufio.NewReader(io.LimitReader(f, 16<<20))
-	config, _, err := image.DecodeConfig(reader)
+	config, format, err := image.DecodeConfig(reader)
 	if err != nil || config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 8_000_000 || int64(config.Width)*int64(config.Height) > budget/8 {
-		return nil
+		return nil, nil
 	}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return nil
+		return nil, nil
+	}
+	if format == "gif" && animationBudget > 0 {
+		data, err := io.ReadAll(io.LimitReader(f, (16<<20)+1))
+		if err == nil && len(data) <= 16<<20 {
+			if animation, err := gifplay.Decode(data, animationBudget); err == nil && animation.Animated() {
+				return animation.NewPlayer().Image(), animation
+			}
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil, nil
+		}
 	}
 	reader.Reset(io.LimitReader(f, 16<<20))
 	img, _, err := image.Decode(reader)
-	if err != nil {
-		return nil
+	if err != nil || decodedImageBytes(img) > budget {
+		return nil, nil
 	}
-	return img
+	return img, nil
 }
 
 func (d *Document) Info() string {
