@@ -47,14 +47,17 @@ An alternative executable can be selected with `--binary /absolute/path`.
 | `overview` | `overview.png` | Scripted |
 | `image-crop` | `image-editing.png` | Scripted; uses Lenna |
 | `image-ocr` | `ocr.png` | Scripted |
-| `stl-orbit` | `stl.gif` | Scripted; uses the supplied STL |
 | `pdf-highlight` | `highlight.gif` | Scripted; multiline selection and recoloring |
 | `pdf-page-drag` | `pdf.gif` | Scripted; short drag visually verified |
+| `pdf-forms` | `forms.png` | Scripted |
 | `sign-pdf` | `sign-pdf.gif` | Scripted; uses John Doe |
 | `import-signature` | `import-signature.png` | Scripted; uses John Doe |
-| `pdf-redact` | `redaction.gif` | Scripted |
-| `pdf-forms` | `forms.png` | Scripted |
 | `pdf-text-edit` | `pdf-text-edit.gif` | Scripted |
+| `pdf-redact` | `redaction.gif` | Scripted |
+| `pdf-print` | `printing.png` | Scripted; page selection, canceled before printing |
+| `create-pdf` | `create-pdf.png` | Scripted; layout selection, canceled before creating a document |
+| `markdown-read` | `markdown.png` | Scripted; local Markdown, Mermaid and floating Contents |
+| `stl-orbit` | `stl.gif` | Scripted; uses the supplied STL |
 
 Every case uses the standard executable with `--new-window`, `--work-dir` and
 `--data-dir`. Working documents and signature data live under the case's disposable
@@ -79,6 +82,8 @@ word through the actual editor dialog.
 
 Each case specifies `id`, `fixture`, `format`, `target`, `readme_section`,
 `readme_alt`, `automation`, `setup`, `actions`, `cleanup_undo` and `expected`.
+Optional `cleanup` actions dismiss dialogs through their Cancel buttons before
+the normal Escape/Undo/window-close sequence. Printing demos never submit a job.
 `target` is required and relative to `docs/screenshots/`. The catalog's targets
 must exactly match README image references, and their alt text must agree.
 **Update the README in the same change whenever a case's purpose, media name or
@@ -87,12 +92,15 @@ behavior changes. Add new cases only when requested.
 
 `setup` runs before capture. Available actions are `key` (single character or
 escape/return/tab/pageup/pagedown, with modifiers), `click`, `drag`, `text` and
-`wait`, plus `choose-color` for a visible hex-color swatch in the centered picker
+`wait`, plus `menu` with a two-label `path` (menu and item) in the owned app,
+`choose-color` for a visible hex-color swatch in the centered picker
 and `choose-file` for a fixture displayed in the owned native Import
 signature picker. It resolves only that GUI process's picker and selects the
 matching fixture through accessibility geometry and a double-click. Points are fractions in `[0,1]`, relative to the window by default; use
 `space: page` for the detected white PDF page. Each edit counts one Undo in
 `cleanup_undo`. Inputs are copied; original fixtures are never edited by recording.
+Clicks accept the same `modifiers` as keys, for example Shift-click to select
+several thumbnails; the runner releases those modifiers even after an input failure.
 
 GIFs should show a quick gesture with only a short initial/final hold. `seconds`
 is the raw recording safety budget. `clip`, for example

@@ -17,6 +17,7 @@ Never add real customer files, credentials, signatures or personal information.
 | `transparent.png` | Overlapping translucent shapes on transparent pixels for alpha/export checks |
 | `qr.png` | QR code containing only `https://example.com/proview-demo` |
 | `model.stl` | User-supplied Desktop model for orbit, wireframe and frame-crop demonstrations |
+| `reading.md` | Short local reading sample with a Mermaid flowchart, table, Go code and headings for the floating Contents panel |
 
 PDF pages: 01 text/annotation, 02 search/redaction/QR, 03 forms, 04 landscape
 vector chart, 05 signature space, 06 image-only scan. Page 06 intentionally has

@@ -128,3 +128,36 @@ seconds, and highlight recoloring takes 3.08 seconds. All owned windows closed
 cleanly after Undo. Checks cover fixtures, catalog/README alignment and 22 Python
 runner tests. These captures verify the demonstrated UI interactions; they do
 not add export/reopen compatibility coverage.
+
+## README refresh on 2026-10-27
+
+The catalog now follows the README's order: images/OCR, PDF markup and page
+organization, forms, signatures, native text edits, redaction, printing/PDF
+creation, Markdown and STL. The three added PNG cases are `pdf-print`,
+`create-pdf` and `markdown-read`. The first two capture the real page-selection
+and layout dialogs, then click Cancel; no print job or output PDF is submitted.
+The Markdown fixture is a short local document with Mermaid, a table, Go code
+and headings for the floating Contents panel.
+
+Current recipes use the compact right property rail for highlight recoloring.
+Native text editing clicks the center of `mountain`, rather than the adjacent
+`route`. Crop setup clicks the toolbar button before dragging within Lenna's
+displayed bounds; the keyboard-only setup did not retain a selection in native
+capture. Form filling targets the checkbox itself, not its adjacent PDF label,
+and the Translate row in the interactive list (whose row spacing differs from
+the saved PDF appearance). Keep its five Undo steps.
+
+The recorder supports `menu` actions with a two-label path in the owned app,
+modified clicks for thumbnail multi-selection, and optional `cleanup` actions
+for explicit dialog cancellation. Menu actions assert the owned window in the
+same AppleScript call. Modified clicks release their keys even after failure.
+
+All fourteen cases were regenerated and visually reviewed against the current
+macOS app: eight 1000 × 740 PNGs and six 800 × 592 GIFs. Review checked loaded
+thumbnails, crop bounds and confirmation, OCR text selection, actual page
+reordering, highlight recoloring, the `mountain` → `forest` replacement, Sam's
+checked form and multiple choices, fictional signature import/placement, redaction
+marking, both canceled output dialogs, rendered Markdown/Contents and STL orbit.
+Owned windows closed after cancellation or Undo; no fixture was saved over.
+Fixture/catalog/README checks and 24 Python recorder/cleanup tests pass. These
+are native UI documentation captures, not destination-platform or export tests.

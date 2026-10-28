@@ -22,24 +22,10 @@ Proview is an independent project and is not affiliated with, sponsored by, or e
 
 ## Features
 
-Drag files onto any Proview window to open them on Linux, Windows and macOS.
-Images, Markdown documents and STL models share a window, with thumbnails for switching between
-documents. PDFs use separate windows from other file types. Opening a PDF while
-viewing another PDF offers a new window or appending its pages. New images from
-blank pages, the clipboard and STL crops join the current sidebar.
-Opening files from the operating system uses a new window when one is occupied.
+Open files from your desktop or drag them onto a Proview window. Switch between
+images, Markdown documents and STL models in the sidebar. PDFs open in separate
+windows, with the option to append pages when another PDF is already open.
 See [Document workspace](docs/document-workspace.md) for details.
-
-### Markdown viewing
-
-Read Markdown files with formatted text, tables, task lists, local images and
-syntax-highlighted code and Mermaid diagrams. The native viewer works offline
-and keeps documents read-only. Each diagram has a code-copy button and a
-right-click Copy image action; unsupported diagrams display their source.
-The right-hand `list-tree` button toggles the Contents panel, which lists all
-heading levels for navigation and marks the current section while scrolling.
-Formulas and HTML display as source.
-See [Markdown viewer](docs/markdown-viewer.md) for scope and controls.
 
 ### Image viewing and basic editing
 
@@ -53,12 +39,6 @@ It also has a built-in OCR engine that recognizes text in images and scanned PDF
 
 <a href="docs/screenshots/ocr.png" target="_blank" rel="noopener noreferrer">
   <img src="docs/screenshots/ocr.png" alt="OCR: recognized text selected directly in an image." width="400">
-</a>
-
-Proview also opens ASCII and binary STL files, letting you inspect 3D models with rotation, panning and zoom. You can switch between standard views, toggle wireframe, and crop the current view into an image.
-
-<a href="docs/screenshots/stl.gif" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/stl.gif" alt="STL model viewing: rotating the supplied model to inspect it." width="400">
 </a>
 
 ### PDF markup and organization
@@ -88,6 +68,18 @@ page previews adapt to zoom and display density for sharper viewing.
   <img src="docs/screenshots/pdf.gif" alt="PDF pages: dragging the second thumbnail before the first to reorder the document." width="400">
 </a>
 
+### Fill PDF forms
+
+Use **Fill PDF form** to edit supported fields directly on the page. Text,
+passwords, checkbox/radio controls, dropdowns and single/multiple-selection lists
+remain editable after saving. Standard ResetForm buttons restore field defaults;
+missing required values are marked without blocking draft saves. Current scope,
+limitations and development status are in [PDF forms](docs/pdf-forms.md).
+
+<a href="docs/screenshots/forms.png" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/forms.png" alt="PDF forms: text fields, choices and checkboxes edited directly on the page." width="400">
+</a>
+
 ### Add handwritten signatures
 
 Signing documents is still a common task in the digital age, and we have to accept that.
@@ -109,26 +101,6 @@ Google Drive sync uses the published Proview OAuth app. Cloud sync is optional a
   <img src="docs/screenshots/import-signature.png" alt="Importing a signature: fictional signature artwork beside its transparent vector preview, with the sensitivity control visible." width="400">
 </a>
 
-### Remove sensitive PDF content
-
-The **Redact PDF** tool marks words, lines or rectangular regions for removal. When you export, Proview removes the underlying content and sanitizes the PDF, including metadata, attachments and other supported document structures.
-
-<a href="docs/screenshots/redaction.gif" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/redaction.gif" alt="Redaction: marking a fictional contact line for removal from a PDF." width="400">
-</a>
-
-### Fill PDF forms
-
-Use **Fill PDF form** to edit supported fields directly on the page. Text,
-passwords, checkbox/radio controls, dropdowns and single/multiple-selection lists
-remain editable after saving. Standard ResetForm buttons restore field defaults;
-missing required values are marked without blocking draft saves. Current scope,
-limitations and development status are in [PDF forms](docs/pdf-forms.md).
-
-<a href="docs/screenshots/forms.png" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/forms.png" alt="PDF forms: text fields, choices and checkboxes edited directly on the page." width="400">
-</a>
-
 ### Search and edit PDF text
 
 Find (**Ctrl/Command+F**) searches the entire document, using native PDF text or
@@ -144,6 +116,53 @@ for scope and current limits.
   <img src="docs/screenshots/pdf-text-edit.gif" alt="Editing native PDF text: replacing a word while preserving the surrounding page." width="400">
 </a>
 
+### Remove sensitive PDF content
+
+The **Redact PDF** tool marks words, lines or rectangular regions for removal. When you export, Proview removes the underlying content and sanitizes the PDF, including metadata, attachments and other supported document structures.
+
+<a href="docs/screenshots/redaction.gif" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/redaction.gif" alt="Redaction: marking a fictional contact line for removal from a PDF." width="400">
+</a>
+
+### Print and create PDFs
+
+Print PDFs, images and Markdown with **Ctrl/Command+P**, including your unsaved
+edits. Choose all PDF pages, the current page, a range or selected thumbnails,
+then use the system print dialog.
+
+<a href="docs/screenshots/printing.png" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/printing.png" alt="Printing a PDF: selected page thumbnails ready for the system print dialog." width="400">
+</a>
+
+Use **Create PDF from Selection** to turn selected pages, images or Markdown
+into a new PDF. Keep individual page sizes or fit everything onto A4, US Letter
+or a custom sheet. Original files stay unchanged. See [Printing](docs/printing.md)
+for details.
+
+<a href="docs/screenshots/create-pdf.png" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/create-pdf.png" alt="Creating a PDF from selected pages: choosing a uniform sheet size or individual page sizes." width="400">
+</a>
+
+### Read Markdown
+
+Read Markdown with formatted text, tables, local images, syntax-highlighted code
+and Mermaid diagrams. Select and copy text, adjust the reading size, choose a
+light or dark page, and use Contents to jump between headings. Everything renders
+offline; source files stay unchanged. See [Markdown viewer](docs/markdown-viewer.md)
+for supported syntax.
+
+<a href="docs/screenshots/markdown.png" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/markdown.png" alt="Markdown reading: a Mermaid diagram, table and highlighted code with the Contents panel open." width="400">
+</a>
+
+### View 3D models
+
+Proview opens ASCII and binary STL files, letting you inspect 3D models with rotation, panning and zoom. You can switch between standard views, toggle wireframe, and crop the current view into an image.
+
+<a href="docs/screenshots/stl.gif" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/stl.gif" alt="STL model viewing: rotating the supplied model to inspect it." width="400">
+</a>
+
 ## Get Proview
 
 Builds are available from the repository's [Releases](../../releases).
@@ -156,7 +175,7 @@ Builds are available from the repository's [Releases](../../releases).
 
 ### Build and contribute
 
-Proview is written in Go with Fyne, using MuPDF and pdfcpu for PDF work and Tesseract for OCR. Build dependencies include Go 1.26+, Python 3.10+, Task and the native libraries for your platform.
+Proview is written in Go with Fyne, using MuPDF and pdfcpu for PDF work and Tesseract for OCR. Build dependencies include Go 1.26+, Python 3.10+ with safe tar extraction support, Task and the native libraries for your platform.
 
 ```sh
 task run     # Run the app
@@ -174,7 +193,6 @@ These are directions to explore, rather than a release schedule:
 - **Full TIFF support:** navigating and editing every page, plus TIFF export.
 - **More image formats:** HEIC/HEIF and AVIF.
 - **Certificate-based PDF signatures:** [detection, verification and signing plan](docs/pdf-digital-signatures.md), separate from visible handwritten signatures.
-- **Markdown viewing:** read rendered Markdown documents.
 - **Better recognition and signature acquisition:** more OCR languages, mixed text/image PDF pages, and better handling of photographed signatures, shadows and paper backgrounds.
 - **Easier distribution:** macOS Developer ID signing and notarization, and broader testing across desktop environments.
 
