@@ -2,6 +2,7 @@ package markdown
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -18,41 +19,47 @@ func TestLoadParsesGFMAndHighlightsWithoutLosingCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := Load("reading.md", "", bytes.NewReader(source))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(d.Source, source) {
-		t.Fatal("source changed")
-	}
-	counts := map[string]int{}
-	_ = ast.Walk(d.Root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if entering {
-			switch n := n.(type) {
-			case *east.Table:
-				counts["table"]++
-			case *east.TaskCheckBox:
-				counts["task"]++
-			case *ast.FencedCodeBlock:
-				if tokens := d.Tokens[n]; len(tokens) > 0 {
-					counts["highlight"]++
-					var b strings.Builder
-					for _, token := range tokens {
-						b.WriteString(token.Value)
-					}
-					if b.String() != Code(source, n) {
-						t.Fatal("highlighting changed code")
-					}
-				}
-				if string(n.Language(source)) == "mermaid" && len(d.Tokens[n]) != 0 {
-					t.Fatal("unexpected Mermaid interpretation")
-				}
+	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
+	for _, newline := range []string{"\n", "\r\n"} {
+		t.Run(fmt.Sprintf("newline=%q", newline), func(t *testing.T) {
+			input := bytes.ReplaceAll(source, []byte("\n"), []byte(newline))
+			d, err := Load("reading.md", "", bytes.NewReader(input))
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-		return ast.WalkContinue, nil
-	})
-	if counts["table"] != 1 || counts["task"] != 3 || counts["highlight"] != 2 {
-		t.Fatalf("missing content: %v", counts)
+			if !bytes.Equal(d.Source, source) {
+				t.Fatal("source changed")
+			}
+			counts := map[string]int{}
+			_ = ast.Walk(d.Root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+				if entering {
+					switch n := n.(type) {
+					case *east.Table:
+						counts["table"]++
+					case *east.TaskCheckBox:
+						counts["task"]++
+					case *ast.FencedCodeBlock:
+						if tokens := d.Tokens[n]; len(tokens) > 0 {
+							counts["highlight"]++
+							var b strings.Builder
+							for _, token := range tokens {
+								b.WriteString(token.Value)
+							}
+							if b.String() != Code(d.Source, n) {
+								t.Fatal("highlighting changed code")
+							}
+						}
+						if string(n.Language(d.Source)) == "mermaid" && len(d.Tokens[n]) != 0 {
+							t.Fatal("unexpected Mermaid interpretation")
+						}
+					}
+				}
+				return ast.WalkContinue, nil
+			})
+			if counts["table"] != 1 || counts["task"] != 3 || counts["highlight"] != 2 {
+				t.Fatalf("missing content: %v", counts)
+			}
+		})
 	}
 }
 func TestLoadRejectsNonTextAndOversize(t *testing.T) {
