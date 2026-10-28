@@ -52,16 +52,13 @@ func (d *Document) TextGeometry(page int) (TextLayout, error) {
 	}
 	source.mu.Lock()
 	defer source.mu.Unlock()
-	if source.textLayouts == nil {
-		source.textLayouts = make(map[int]TextLayout)
-	}
-	layout, ok := source.textLayouts[index]
+	layout, ok := source.textLayouts.get(index)
 	if !ok {
 		layout, err = pdfengine.TextLayout(source.original, index)
 		if err != nil {
 			return TextLayout{}, err
 		}
-		source.textLayouts[index] = layout
+		source.textLayouts.put(index, layout)
 	}
 	layout.Glyphs = append([]pdfengine.Glyph(nil), layout.Glyphs...)
 	if turns := d.pages[page].turns; turns != 0 {

@@ -48,3 +48,31 @@ func TestPreviewPDFHonorsCancellation(t *testing.T) {
 		t.Fatalf("canceled preview: %v", err)
 	}
 }
+
+func TestPreviewPDFHidesFrontMatterAndRendersAdmonition(t *testing.T) {
+	doc, err := Load("metadata.md", "", strings.NewReader("---\nid: hidden-metadata\n---\n\n# Visible title\n\n:::warning\nKeep **all content**.\n:::\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := doc.PreviewPDF(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := fitz.NewFromMemory(preview.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Close()
+	text, err := renderer.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Visible title", "Warning", "all content"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing printed content %q: %q", want, text)
+		}
+	}
+	if strings.Contains(text, "hidden-metadata") || strings.Contains(text, ":::") {
+		t.Fatalf("source delimiters leaked into preview: %q", text)
+	}
+}

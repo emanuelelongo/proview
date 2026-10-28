@@ -27,6 +27,7 @@ import (
 )
 
 type markdownView struct {
+	imagePreview           *markdownImagePreview
 	themeReady             bool
 	doc                    *markdown.Document
 	scroll                 *markdownReaderScroll
@@ -56,6 +57,9 @@ type markdownView struct {
 func (g *Gui) showingMarkdown() bool { return g.markdownView != nil }
 func (g *Gui) clearMarkdown() {
 	if g.markdownView != nil {
+		if g.markdownView.imagePreview != nil {
+			g.markdownView.imagePreview.close()
+		}
 		if g.markdownView.cancelDiagrams != nil {
 			g.markdownView.cancelDiagrams()
 		}
@@ -390,6 +394,9 @@ type markdownTheme struct {
 }
 
 func (t *markdownTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	if name == theme.ColorNameShadow {
+		return color.Transparent
+	}
 	base := fyne.CurrentApp().Settings().Theme()
 	switch t.mode {
 	case "light":
@@ -405,7 +412,7 @@ func (t *markdownTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVarian
 				palette = markdownDarkPalette
 			}
 			c := palette.Get(chroma.TokenType(token)).Colour
-			if c.IsSet() {
+			if c.IsSet() && markdownColorContrast(c, base.Color(theme.ColorNameInputBackground, variant)) >= 3 {
 				return color.NRGBA{R: c.Red(), G: c.Green(), B: c.Blue(), A: 255}
 			}
 		}
@@ -413,6 +420,25 @@ func (t *markdownTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVarian
 	}
 	return base.Color(name, variant)
 }
+
+// Token backgrounds are not rendered by RichText. In particular, Chroma's
+// error tokens may have white foregrounds intended for a red background.
+func markdownColorContrast(c chroma.Colour, background color.Color) float64 {
+	luminance := func(r, g, b float64) float64 {
+		linear := func(v float64) float64 {
+			if v <= 0.04045 {
+				return v / 12.92
+			}
+			return math.Pow((v+0.055)/1.055, 2.4)
+		}
+		return 0.2126*linear(r) + 0.7152*linear(g) + 0.0722*linear(b)
+	}
+	r, g, b, _ := background.RGBA()
+	a := luminance(float64(c.Red())/255, float64(c.Green())/255, float64(c.Blue())/255)
+	z := luminance(float64(r)/65535, float64(g)/65535, float64(b)/65535)
+	return (max(a, z) + 0.05) / (min(a, z) + 0.05)
+}
+
 func (t *markdownTheme) Font(s fyne.TextStyle) fyne.Resource {
 	return fyne.CurrentApp().Settings().Theme().Font(s)
 }
@@ -486,7 +512,7 @@ func (v *markdownView) inline(parent ast.Node, style widget.RichTextStyle) []wid
 			result = append(result, &widget.HyperlinkSegment{Text: string(n.Label(v.doc.Source)), Alignment: style.Alignment, OnTapped: func() { v.openLink(dest) }})
 		case *ast.Image:
 			if img := v.doc.Images[string(n.Destination)]; img != nil {
-				result = append(result, &markdownImageSegment{image: img})
+				result = append(result, &markdownImageSegment{image: img, width: markdown.ImageWidth(n)})
 			} else {
 				add("[Image: "+v.inlineText(n)+"]", style)
 			}
@@ -586,6 +612,14 @@ func (v *markdownView) styleText(text *widget.RichText, target ...fyne.CanvasObj
 	return newMarkdownText(v, text, object)
 }
 func (v *markdownView) prose(n ast.Node, style widget.RichTextStyle) fyne.CanvasObject {
+	if align, ok := n.AttributeString("align"); ok {
+		switch align {
+		case "center":
+			style.Alignment = fyne.TextAlignCenter
+		case "right":
+			style.Alignment = fyne.TextAlignTrailing
+		}
+	}
 	text := v.selectable(v.inline(n, style)...)
 	text.Wrapping = fyne.TextWrapWord
 	return v.styleText(&text.RichText, text)
@@ -633,6 +667,13 @@ func (v *markdownView) blocks(parent ast.Node) []fyne.CanvasObject {
 				rows = append(rows, container.NewBorder(nil, nil, label, nil, container.NewVBox(v.blocks(item)...)))
 			}
 			object = container.NewVBox(rows...)
+		case *markdown.Admonition:
+			title := v.selectable(&widget.TextSegment{Text: n.Label, Style: widget.RichTextStyleStrong})
+			label := v.styleText(&title.RichText, title)
+			bar := canvas.NewRectangle(theme.Color(theme.ColorNameWarning))
+			bar.SetMinSize(fyne.NewSize(3, 0))
+			children := append([]fyne.CanvasObject{label}, v.blocks(n)...)
+			object = container.NewBorder(nil, nil, bar, nil, container.NewPadded(container.NewVBox(children...)))
 		case *ast.Blockquote:
 			bar := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
 			bar.SetMinSize(fyne.NewSize(3, 0))
@@ -761,7 +802,11 @@ func loadMarkdownReader(uri fyne.URIReadCloser) (*markdown.Document, error) {
 	return d, errors.Join(err, uri.Close())
 }
 
-type markdownImageSegment struct{ image image.Image }
+type markdownImageSegment struct {
+	image image.Image
+	width float32
+	text  *widget.RichText
+}
 
 func (*markdownImageSegment) Inline() bool                        { return false }
 func (*markdownImageSegment) Textual() string                     { return "" }
@@ -771,13 +816,22 @@ func (*markdownImageSegment) Unselect()                           {}
 func (s *markdownImageSegment) Visual() fyne.CanvasObject {
 	o := canvas.NewImageFromImage(s.image)
 	o.FillMode = canvas.ImageFillContain
-	size := s.image.Bounds().Size()
-	w := min(float32(300), float32(size.X), 400*float32(size.X)/float32(size.Y))
-	o.SetMinSize(fyne.NewSize(w, w*float32(size.Y)/float32(size.X)))
+	s.Update(o)
 	return o
 }
-func (s *markdownImageSegment) Update(o fyne.CanvasObject) {
-	o.(*canvas.Image).Image = s.image
+func (s *markdownImageSegment) Update(object fyne.CanvasObject) {
+	o := object.(*canvas.Image)
+	o.Image = s.image
+	size := s.image.Bounds().Size()
+	limit := float32(300)
+	if s.width > 0 {
+		limit = s.width
+	}
+	if s.text != nil && s.text.Size().Width > 0 {
+		limit = min(limit, max(1, s.text.Size().Width-2*theme.SizeForWidget(theme.SizeNameInnerPadding, s.text)))
+	}
+	w := min(limit, float32(size.X), 400*float32(size.X)/float32(size.Y))
+	o.SetMinSize(fyne.NewSize(w, w*float32(size.Y)/float32(size.X)))
 	o.Refresh()
 }
 

@@ -129,6 +129,12 @@ PDF page combination/reordering/deletion and blank pages.
   when the active editor is occupied; empty idle editors can be reused.
   The sidebar switches documents and keeps the selected PDF's page thumbnails.
   Busy requests wait; switching preserves edits, source ownership and save targets.
+- Command-line requests reuse the active workspace when compatible; Finder retains
+  the separate-window policy. Normal executable launches detach from the terminal;
+  `--foreground` retains synchronous diagnostics (`task run` uses it). A window automatically
+  saves its local file paths on close (last writer wins, including empty sets).
+  Launching without file arguments restores that set; explicit files skip restore.
+  There are no session menu commands or serialized edits/history. See docs/document-workspace.md.
 - Desktop launches with paths use `internal/openfiles` to forward to an existing
   process through a private authenticated loopback endpoint and OS file lock.
   macOS retains its Apple Event bridge. Keep `--check-ocr` free of IPC/registration.
@@ -716,13 +722,20 @@ the selection before the modal chooser and release queued openings on Cancel.
 ## Native Markdown viewer
 
 Read [docs/markdown-viewer.md](docs/markdown-viewer.md) for scope and verification.
+Markdown hides complete leading YAML front matter without changing source offsets,
+and supports Docusaurus-style admonitions in the shared reading/printing AST.
+Render links as wrapping styled text with retained click ranges: Fyne's native
+HyperlinkSegment does not wrap within RichText and can overflow the paper.
 Markdown uses Goldmark, Chroma and native Fyne widgets; do not restore the
 abandoned webview/WPE probe. Keep it read-only and outside document.Document's
 PDF/image editing/export paths. Images and highlighting load in the opening
 worker. Mermaid uses the pinned sketch core/raster packages through internal/mermaid,
 with document-local bounded image caches and coalesced background view jobs.
 Theme, viewport, zoom and display scale form the render key. Cancel waiting jobs
-on teardown and reject stale results; active sketch calls finish within limits. Never fetch remote images automatically; resolve relative resources
+on teardown and reject stale results; active sketch calls finish within limits. Static HTML image/paragraph wrappers are converted into the shared Markdown AST;
+unsupported HTML remains literal. Root-relative HTML image paths resolve beneath
+the document directory, with the same confinement and decoding limits.
+Never fetch remote images automatically; resolve relative resources
 within the canonical document directory. editorDocument owns reading state.
 Preserve the PDF/non-PDF window policy and shared opening queue.
 Sidebar Markdown thumbnails use a fixed 320 × 240 light opening-content
@@ -730,7 +743,12 @@ card from the print renderer, stopped at the first card boundary in a background
 worker; never capture the live viewport or shrink the entire document. Retained
 entries own these jobs across switching; closing cancels them and rejects stale results.
 Keep a code-copy button visible above Mermaid previews and display source only
-on failure. Diagram context menus copy rendered PNGs. Markdown has no Crop:
+on failure. Diagram context menus copy rendered PNGs. Clicking loaded images or rendered
+diagrams opens a temporary zoomable canvas overlay sharing their decoded pixels;
+keep it free of native window chrome and controls. Outside clicks, Escape and
+focus loss dismiss it without click-through. Route zoom/close shortcuts to it
+while open, preserving reading state and workspace/session entries. Close previews
+on source teardown. Links and image previews use a hand cursor on hover. Markdown has no Crop:
 keep its toolbar/menu command disabled and do not restore canvas-capture jobs,
 crop overlays or diagram-layout suspension. Image/PDF/STL Crop is independent.
 The right panel has a compact `list-tree` toggle for a virtualized heading outline
@@ -745,7 +763,8 @@ Include all heading levels in source order, keep duplicate titles navigable and
 mark the current section on scrolling, keyboard/anchor navigation and reflow.
 Use retained heading geometry and binary search; never reparse on scroll.
 Restore the compact editing rail when leaving Markdown.
-Formulas and HTML remain literal source. Rendered text selection wraps the public
+Formulas and unsupported HTML remain literal source. Keep the reading theme
+free of scroll-edge shadows; application chrome retains its normal styling. Rendered text selection wraps the public
 RichText renderer, preserving style and byte offsets through reflow. Selection
 crosses text blocks in reading order; copy it before falling back to full source.
 Keep links clickable and code scrolling independent. No private Fyne caches or OCR are
@@ -778,7 +797,8 @@ Fresh startup/desktop file windows must load and size before their first Show;
 center once before Show and never recenter after opening into a visible editor.
 Reveal the window on opening errors so the dialog remains accessible. Account
 for primary-monitor DPI/user scaling before Canvas.Scale is initialized. Preserve
-the immediate empty launch and macOS open-request registration order.
+the immediate empty launch when no session is saved, automatic restoration without
+file arguments and macOS open-request registration order.
 
 ## STL viewer prototype
 

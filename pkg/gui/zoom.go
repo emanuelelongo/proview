@@ -20,6 +20,10 @@ func (g *Gui) zoomOut() { g.zoomBy(-1, nil) }
 func (g *Gui) zoomBy(delta int, point *fyne.Position) {
 	g.openingFitDocument = nil
 	if g.showingMarkdown() {
+		if p := g.markdownView.imagePreview; p != nil {
+			p.zoom(delta, nil)
+			return
+		}
 		g.markdownView.zoom(delta)
 		return
 	}
@@ -47,6 +51,10 @@ func (g *Gui) zoomBy(delta int, point *fyne.Position) {
 func (g *Gui) resetZoom() {
 	g.openingFitDocument = nil
 	if g.showingMarkdown() {
+		if p := g.markdownView.imagePreview; p != nil {
+			p.fit()
+			return
+		}
 		g.markdownView.scale = 1
 		g.markdownView.rebuild()
 		return

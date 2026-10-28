@@ -11,7 +11,8 @@ removed locally and remotely before this work.
   that window's sidebar and select the new document. Existing documents retain
   their edits, save destinations and view state.
 - Startup paths and desktop Open With requests use the same ordered loader.
-  A desktop request starts a new window when the active editor contains a
+  Command-line requests reuse the active window and wait for pending work.
+  macOS Finder requests start a new window when the active editor contains a
   document or has opening/work requests pending; an empty idle window is reused.
   Files in one batch share the receiving workspace, subject to the PDF rules.
   Requests within a window wait for its file/annotation work to finish.
@@ -124,7 +125,9 @@ are unchanged.
 
 macOS Finder Apple Events continue through the existing native bridge. Startup
 paths, including Windows/Linux Open With launches, first try forwarding to a
-running primary process. The receiver queues these requests on the UI thread.
+running primary process. The receiver queues these requests on the UI thread. Command-line requests reuse
+the active workspace, waiting for work in progress; PDF compatibility and append
+choices still apply. macOS Finder requests retain the separate-window policy.
 A plain launch without file arguments may still create another process.
 `--new-window` instead forwards an explicit new-window request, even without
 files. `--work-dir` carries an absolute per-window dialog directory, taking
@@ -150,6 +153,25 @@ default application do not. See [launch options](development.md#command-line-win
 for framework preferences and cache locations.
 `--check-ocr` still exits before desktop registration or forwarding.
 
+## Automatic session restore
+
+Closing a window automatically remembers its local file paths in sidebar order.
+Starting Proview without file arguments reopens that set through the normal
+opening queue. Explicit file arguments take priority and skip restoration.
+There are no session menu commands, names or confirmation dialogs.
+
+Each window writes its own file set: the last window to save on closing wins,
+including an empty window, which clears the remembered set. Canceling a close
+does not save a session. Preferences follow `--data-dir` profile isolation.
+Independent processes use the same last-writer-wins behavior.
+
+Sessions reference files on disk: they do not store unsaved edits, generated
+content, merged PDF state, Undo history, camera/reading position or window geometry.
+Save edits normally before relying on restoration. Entries without a local save
+path are excluded. Missing or unreadable files use the normal opening error flow;
+other queued files continue to open. PDF compatibility and append choices remain
+unchanged. Without a saved session, a no-file launch shows an empty window.
+
 ## Verification
 
 - `pkg/gui/documents_test.go`: document state/history isolation, PDF choices,
@@ -159,6 +181,11 @@ for framework preferences and cache locations.
   Unicode paths, missing files and closed-window delivery.
 - `internal/openfiles/openfiles_test.go`: second-launch forwarding, absolute
   paths, endpoint restart and rejection of unauthenticated/relative requests.
+- `pkg/gui/sessions_test.go`: automatic no-file restore, explicit-file precedence,
+  last-window-wins persistence, empty-session clearing, exclusion of unsaved generated
+  files and queued CLI reuse of occupied windows.
+- `cmd/gui/detach_test.go`: child continuation after launcher exit, disconnected
+  output and preserved working directory.
 - Run `go test ./...` and `go vet ./...`.
 
 Native Finder/Explorer/desktop behavior and visual interaction still need manual
@@ -179,7 +206,8 @@ fitted to the viewport.
 When startup or a forwarded desktop request supplies file paths for a fresh
 window, its first Show waits for the opening worker and geometry preparation.
 It is centered once before that Show. Opening into an already visible editor
-never recenters it. Empty launches still show immediately; opening failures show
+never recenters it. Launches without files restore the previous session when available; otherwise
+the empty window shows immediately; opening failures show
 the empty window and error dialog. File loading remains asynchronous, with the
 Opening dialog used only in already visible editors.
 

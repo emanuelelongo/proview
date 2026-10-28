@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -194,7 +195,18 @@ func (v *markdownView) updateDiagramLayout(update func()) {
 	v.pendingReadingOffset = nil
 }
 
-func (d *markdownDiagram) Tapped(*fyne.PointEvent) { d.view.dismissOutline() }
+func (d *markdownDiagram) Tapped(*fyne.PointEvent) {
+	d.view.dismissOutline()
+	if d.image.Visible() {
+		d.view.showImagePreview(d.result.Image)
+	}
+}
+func (d *markdownDiagram) Cursor() desktop.Cursor {
+	if d.image.Visible() && d.result.Image != nil {
+		return desktop.PointerCursor
+	}
+	return desktop.DefaultCursor
+}
 
 func (d *markdownDiagram) TappedSecondary(event *fyne.PointEvent) {
 	if d.result.Image == nil || !d.image.Visible() || d.view.editor.closed || d.view.editor.markdownView != d.view {

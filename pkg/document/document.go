@@ -63,7 +63,7 @@ type Source struct {
 	original          []byte
 	pages             []pageData
 	pdf               *fitz.Document
-	textLayouts       map[int]TextLayout
+	textLayouts       textLayoutCache
 	rasterClock       uint64
 	rasterBytes       int64
 }

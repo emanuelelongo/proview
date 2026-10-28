@@ -162,3 +162,70 @@ go tool pprof -top /tmp/proview-md-selection.test /tmp/proview-md-selection.cpu
 go tool pprof -alloc_space -top /tmp/proview-md-selection.test /tmp/proview-md-selection.heap
 go tool pprof -inuse_space -top /tmp/proview-md-selection.test /tmp/proview-md-selection.heap
 ```
+
+## Markdown image loading (2026-10-28)
+
+Local images decode through a bounded buffered file reader instead of retaining
+an additional copy of the compressed file. Header inspection precedes decoding;
+the remaining 64 MiB document budget is checked before allocating the raster.
+Accounting conservatively reserves eight bytes per pixel to include 16-bit PNGs,
+so image-heavy documents can reach the limit earlier than under the former
+four-byte estimate. Repeated failed destinations are attempted only once per
+load. Resource confinement, the 16 MiB file limit and eight-million-pixel limit
+remain in effect. This budget excludes decoder scratch space and UI resources.
+
+Two Linux/AMD64 i7-13700H runs of `BenchmarkLoadMarkdownImage`, loading one
+1024 × 1024 opaque PNG with deterministic random pixels through `Load`, measured:
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Load time | 10.97–11.20 ms | 8.82–8.93 ms |
+| Allocated bytes per load | 11.32 MB | 4.28 MB |
+| Allocations per load | 283 | 253 |
+
+Fixture generation is outside the timed region. These are isolated warm-file
+loading measurements, not process RSS, peak memory or desktop frame timings.
+
+```sh
+go test ./internal/markdown -run '^$' -bench BenchmarkLoadMarkdownImage -benchmem -count=2
+```
+
+## PDF glyphs, workspace ownership and raster transforms (2026-10-28)
+
+- Native PDF glyph layouts previously accumulated for every visited page in
+  `Source.textLayouts`, independently of the bounded GUI search cache. They now
+  use a source-local LRU limited to 128 pages and a conservative 16 MiB (including
+  glyph slice capacity). Oversized layouts are returned without caching. Eviction
+  preserves source bytes, selection geometry and caller-owned copies; revisiting
+  an evicted page extracts its geometry again. This is not a global memory cap.
+- Removing documents and editor windows now clears the unused slice tail.
+  Otherwise closing the last entry could retain its document, history, thumbnails
+  or canvas through the backing array while other entries remained open.
+- Raster rotation/mirroring uses typed pixel access instead of allocating boxed
+  colors per pixel. It serves camera orientation, rotated PDF previews, QR rasters
+  and overlay transforms. Unsupported image implementations retain the generic
+  path. Regression tests compare exact pixels against generic conversion across
+  all turns/mirrors, transparent colors, 16-bit pixels and offset image bounds.
+
+Isolated 90-degree rotation measurements on Linux/AMD64 i7-13700H, three
+iterations per case, with zero-initialized 2048 × 1536 source images:
+
+| Raster | Before | After | Allocated bytes before → after |
+| --- | ---: | ---: | ---: |
+| RGBA | 67.2 ms | 28.0 ms | 25.2 → 12.6 MB |
+| NRGBA | 64.4 ms | 23.1 ms | 25.2 → 12.6 MB |
+| JPEG YCbCr 4:2:0 | 101.6 ms | 37.9 ms | 37.7 → 12.6 MB |
+
+Allocations fell from 3.1–6.3 million to two per operation. The remaining
+allocation is essentially the output raster. Timings depend on source pixels,
+format and system load; these are not end-to-end opening or scrolling timings.
+
+```sh
+go test ./pkg/images -run '^$' -bench BenchmarkTransformLargeImage -benchmem -benchtime=3x
+go test -race ./pkg/document -run 'TestSourceTextCache|TestTextGeometry|TestPreviewRendererConcurrent'
+```
+
+Tests also cover byte/page eviction limits, recent-page retention, regeneration
+after eviction, caller mutation isolation and cleared workspace/window references.
+The STL loader and existing PDF raster residency were inspected without changes;
+this pass did not establish a new measured bottleneck in those paths.

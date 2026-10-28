@@ -370,3 +370,23 @@ func TestGeneratedImageFromPDFRetainsWindowSeparation(t *testing.T) {
 	editor.closeWindow()
 	g.closeWindow()
 }
+
+func TestRemovingWorkspaceDocumentReleasesBackingReference(t *testing.T) {
+	first, last := &editorDocument{}, &editorDocument{}
+	entries := []*editorDocument{first, last}
+	g := &Gui{documents: entries, activeDocument: last}
+	g.removeActiveDocument()
+	if len(g.documents) != 1 || g.documents[0] != first || entries[1] != nil {
+		t.Fatal("closed document retained in workspace backing array")
+	}
+}
+
+func TestUnregisterEditorReleasesBackingReference(t *testing.T) {
+	first, last := &Gui{}, &Gui{}
+	windows := []*Gui{first, last}
+	last.editors = &editorGroup{windows: windows, active: last}
+	last.unregisterEditor()
+	if len(last.editors.windows) != 1 || windows[1] != nil || last.editors.active != nil {
+		t.Fatal("closed editor retained in window backing array")
+	}
+}

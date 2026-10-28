@@ -13,14 +13,16 @@ import (
 
 type launchOptions struct {
 	openfiles.Request
-	checkOCR bool
-	dataDir  string
+	checkOCR   bool
+	foreground bool
+	dataDir    string
 }
 
 func parseLaunchOptions(args []string, output io.Writer) (launchOptions, error) {
 	var options launchOptions
 	flags := flag.NewFlagSet("proview", flag.ContinueOnError)
 	flags.SetOutput(output)
+	flags.BoolVar(&options.foreground, "foreground", false, "Keep the application attached to the terminal for diagnostics")
 	flags.BoolVar(&options.NewWindow, "new-window", false, "Open a new editor window, including in an already running application")
 	flags.StringVar(&options.WorkDir, "work-dir", "", "Start this window's open and Save As dialogs in this directory")
 	flags.StringVar(&options.dataDir, "data-dir", "", "Use a separate application data directory and preferences profile")
@@ -33,7 +35,7 @@ func parseLaunchOptions(args []string, output io.Writer) (launchOptions, error) 
 		return options, err
 	}
 	options.Paths = flags.Args()
-	if options.checkOCR && (options.NewWindow || options.WorkDir != "" || options.dataDir != "" || len(options.Paths) != 0) {
+	if options.checkOCR && (options.foreground || options.NewWindow || options.WorkDir != "" || options.dataDir != "" || len(options.Paths) != 0) {
 		return options, fmt.Errorf("--check-ocr must be used on its own")
 	}
 	if options.WorkDir != "" {

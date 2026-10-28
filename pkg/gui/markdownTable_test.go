@@ -115,8 +115,8 @@ func TestMarkdownWideTableScrollRoutingAndSelectionGeometry(t *testing.T) {
 	if l.table.minimumSize.Width <= v.content.Size().Width {
 		t.Fatal("long identifier did not overflow")
 	}
-	link := l.table.rows[1][1].text.Segments[0].(*widget.HyperlinkSegment)
-	if link.Alignment != fyne.TextAlignTrailing {
+	link := l.table.rows[1][1].text.Segments[0].(*widget.TextSegment)
+	if link.Style.Alignment != fyne.TextAlignTrailing {
 		t.Fatal("link lost column alignment")
 	}
 	var surface *markdownHorizontalScrollSurface

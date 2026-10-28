@@ -24,6 +24,9 @@ The choice is saved in application preferences, applies to all open Markdown
 windows and is restored after restarting. System is the default. The preference
 affects the reading page, text, code and Mermaid previews independently of the
 application chrome and surrounding workspace; thumbnails and printed output keep their light layout.
+Syntax token colors are checked against the code background; low-contrast colors
+fall back to the reading foreground, including error tokens whose Chroma style
+assumes a colored background that the native text renderer does not draw.
 Changing theme retains reading zoom and scroll position and clears
 text selection. Inactive workspace documents use the saved choice when revisited.
 
@@ -64,6 +67,12 @@ Switching documents restores the appropriate outline and reading position.
 ## Supported content
 
 - Headings, paragraphs, nested bold/italic, strikethrough and inline code.
+- Complete YAML front matter at the start of a document (`---` through `---` or
+  `...`) is excluded from the reading/print tree, while remaining in the copied
+  source. Unclosed blocks and separators elsewhere retain ordinary Markdown behavior.
+- Docusaurus-style `:::note`, `:::tip`, `:::info`, `:::warning`, `:::danger` and
+  `:::caution` containers become labeled callouts with normal Markdown children.
+  Optional titles, nested callouts, lists, links and code blocks are supported.
 - Ordered/unordered nested lists, task lists, quotations and separators.
 - GFM tables with column alignment and inline formatting. Short tables keep
   their natural width; columns share widths across all rows and allocate more
@@ -73,18 +82,47 @@ Switching documents restores the appropriate outline and reading position.
   over a table continues scrolling the document. Links preserve column alignment.
 - Fenced code with explicit language highlighting, using Chroma and palettes
   for the current light/dark theme. Unknown languages remain plain code.
-  Code overflow scrolls horizontally inside its block. Vertical wheel/trackpad
+  Code overflow scrolls horizontally inside its block, with flat edges and no
+  scroll-edge shading. Vertical wheel/trackpad
   movement over code continues scrolling the document.
 - Mermaid diagrams rendered natively as images, with an always-visible compact
   code-copy button. Successful previews do not show a source section.
 - Relative local raster images; missing/remote images show their alternative text.
+- Static HTML image tags, standalone or inside simple `p`/`div` wrappers, with
+  `alt`, numeric pixel `width` and left/center/right paragraph alignment. Basic
+  `strong`/`b`, `em`/`i` and `br` tags in these paragraphs are supported. HTML is
+  converted into the same immutable Markdown tree for reading, printing and
+  thumbnails. Source copying remains unchanged. HTML image paths starting with
+  one slash (such as `/assets/logo.png?raw=true`) resolve beneath the document
+  directory, rather than the filesystem root. Images remain local and subject
+  to the existing path, symlink, decoding and memory limits.
 - Clicked HTTP/HTTPS/mailto links, relative document links and heading anchors.
+  Link labels wrap with the paragraph, including long unbroken URLs, and retain
+  clickable byte ranges and text selection across wrapped lines.
+
+Click a loaded image (including HTML images) or a rendered Mermaid diagram to
+show a temporary enlarged overlay using its original decoded pixels. It has no
+native window frame, title bar or buttons. The viewport fills the available window
+with a 24-unit dismissible margin on each side, without a fixed maximum size.
+Click outside the image or press
+Escape to dismiss it; losing focus also dismisses it. The dismissing click is
+consumed, so it cannot follow a link or activate a tool underneath.
+
+Use Command/Control + mouse wheel to zoom around the pointer and drag to pan;
+ordinary scrolling remains available. `+`/`-`, `0` (Fit) and `1` (100%) also work
+from the keyboard, with or without the platform modifier. Fit follows window
+resizing, with the new scale set before child layout. Manual zoom preserves the
+viewed center during resize, subject to image-edge clamping; repeated identical
+sizes do no work. Reading zoom, position, files and session entries stay unchanged;
+switching/closing the source document closes the overlay. Links, loaded images
+and rendered diagrams show a hand cursor on hover; ordinary text keeps its
+selection cursor.
 
 Mermaid uses the pinned sketch renderer described below. If a diagram is invalid,
 unsupported or exceeds its limits, a message is shown and its original source
 is displayed automatically. Following Markdown remains visible. Formulas display their
-source text. HTML tags and blocks display literally; no scripts, styles or HTML
-are executed.
+source text. Unsupported HTML tags and blocks display literally; scripts, styles
+and embedded content are never executed. Remote images are not fetched.
 
 Drag to select rendered text across paragraphs, headings, table cells and code
 blocks. Formatting and syntax colors remain visible. Edit → Copy /
@@ -225,6 +263,9 @@ full equivalence to official Mermaid.
   Overflow tests cover independent scroll axes, link alignment and selection
   coordinates after horizontal scrolling. Software-rendered table previews in
   both themes were visually inspected.
+- Formatting regressions cover hidden front matter and preserved source offsets,
+  nested admonitions with literal code fences, print/thumbnail content, and
+  clickable wrapped links within narrow light/dark reading columns.
 - Theme tests cover persisted preferences, checkmarks across windows, newly
   opened windows, preserved reading state and Mermaid palette changes.
 - Fyne software-rendered frames were visually inspected for prose, tables,

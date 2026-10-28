@@ -2,6 +2,7 @@
 package markdown
 
 import (
+	"bufio"
 	"bytes"
 	"emanuelelongo/proview/internal/mermaid"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 const MaxSourceBytes = 2 << 20
@@ -60,12 +62,16 @@ func Load(name, path string, r io.Reader) (*Document, error) {
 		return nil, errors.New("Markdown must contain UTF-8 text")
 	}
 	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
-	md := goldmark.New(goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID()))
-	d := &Document{Name: name, Source: source, Root: md.Parser().Parse(text.NewReader(source)), Images: map[string]image.Image{}, Tokens: map[ast.Node][]chroma.Token{}, Diagrams: mermaid.NewRenderer()}
+	md := goldmark.New(goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID(), parser.WithBlockParsers(util.Prioritized(&admonitionParser{}, 50))))
+	reader := text.NewReader(source)
+	reader.Advance(frontMatterEnd(source))
+	d := &Document{Name: name, Source: source, Root: md.Parser().Parse(reader), Images: map[string]image.Image{}, Tokens: map[ast.Node][]chroma.Token{}, Diagrams: mermaid.NewRenderer()}
+	expandHTML(d.Root, source)
 	if path != "" {
 		d.directory, _ = filepath.EvalSymlinks(filepath.Dir(path))
 	}
 	imageBytes := int64(0)
+	attemptedImages := make(map[string]bool)
 	_ = ast.Walk(d.Root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -73,10 +79,11 @@ func Load(name, path string, r io.Reader) (*Document, error) {
 		switch n := n.(type) {
 		case *ast.Image:
 			dest := string(n.Destination)
-			if _, ok := d.Images[dest]; !ok && imageBytes < 64<<20 {
-				if img := d.loadImage(dest); img != nil {
+			if !attemptedImages[dest] && imageBytes < 64<<20 {
+				attemptedImages[dest] = true
+				if img := d.loadImage(dest, (64<<20)-imageBytes); img != nil {
 					d.Images[dest] = img
-					imageBytes += int64(img.Bounds().Dx()) * int64(img.Bounds().Dy()) * 4
+					imageBytes += int64(img.Bounds().Dx()) * int64(img.Bounds().Dy()) * 8
 				}
 			}
 		case *ast.FencedCodeBlock:
@@ -137,7 +144,9 @@ func (d *Document) LocalPath(destination string) (string, error) {
 	}
 	return path, nil
 }
-func (d *Document) loadImage(destination string) image.Image {
+
+// Budget conservatively allows eight bytes per pixel, including 16-bit PNGs.
+func (d *Document) loadImage(destination string, budget int64) image.Image {
 	path, err := d.LocalPath(destination)
 	if err != nil {
 		return nil
@@ -151,15 +160,16 @@ func (d *Document) loadImage(destination string) image.Image {
 	if err != nil || !info.Mode().IsRegular() || info.Size() > 16<<20 {
 		return nil
 	}
-	data, err := io.ReadAll(io.LimitReader(f, 16<<20+1))
-	if err != nil || len(data) > 16<<20 {
+	reader := bufio.NewReader(io.LimitReader(f, 16<<20))
+	config, _, err := image.DecodeConfig(reader)
+	if err != nil || config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 8_000_000 || int64(config.Width)*int64(config.Height) > budget/8 {
 		return nil
 	}
-	config, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 8_000_000 {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil
 	}
-	img, _, err := image.Decode(bytes.NewReader(data))
+	reader.Reset(io.LimitReader(f, 16<<20))
+	img, _, err := image.Decode(reader)
 	if err != nil {
 		return nil
 	}

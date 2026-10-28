@@ -370,7 +370,7 @@ func (g *Gui) removeActiveDocument() {
 			if entry.thumbnailCancel != nil {
 				entry.thumbnailCancel()
 			}
-			g.documents = append(g.documents[:i], g.documents[i+1:]...)
+			g.documents = slices.Delete(g.documents, i, i+1)
 			break
 		}
 	}
@@ -470,7 +470,7 @@ func (g *Gui) unregisterEditor() {
 	}
 	for index, editor := range g.editors.windows {
 		if editor == g {
-			g.editors.windows = append(g.editors.windows[:index], g.editors.windows[index+1:]...)
+			g.editors.windows = slices.Delete(g.editors.windows, index, index+1)
 			break
 		}
 	}

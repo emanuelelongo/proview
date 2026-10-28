@@ -40,6 +40,15 @@ func main() {
 		return
 	}
 
+	if !options.foreground && shouldDetach() && os.Getenv("PROVIEW_DETACHED_CHILD") != "1" {
+		if err := launchDetached(os.Args[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, "proview:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	_ = os.Unsetenv("PROVIEW_DETACHED_CHILD")
+
 	appprofile.Root = options.dataDir
 
 	closeLogs, logErr := applog.Initialize()
@@ -78,7 +87,7 @@ func main() {
 	editor := gui.NewGui()
 	go func() {
 		for request := range requests {
-			editor.OpenFilesWithOptions(request.Paths, gui.OpenOptions{NewWindow: request.NewWindow, WorkDir: request.WorkDir})
+			editor.OpenFilesWithOptions(request.Paths, gui.OpenOptions{NewWindow: request.NewWindow, WorkDir: request.WorkDir, ReuseWindow: true})
 		}
 	}()
 	editor.RunWithOptions(options.Paths, gui.OpenOptions{NewWindow: options.NewWindow, WorkDir: options.WorkDir})

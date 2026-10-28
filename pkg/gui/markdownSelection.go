@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"image"
 	"image/color"
 	"math"
 	"sort"
@@ -26,19 +27,45 @@ type markdownTextSelection struct {
 	dragging    bool
 }
 
+type markdownTextLink struct {
+	start, end int
+	onTapped   func()
+}
+
 type markdownSelectableText struct {
 	widget.RichText
-	view         *markdownView
-	index        int
-	text         string
-	renderer     *markdownSelectionRenderer
-	segmentTheme *container.ThemeOverride
-	pagePosition fyne.Position
-	positioned   bool
+	view          *markdownView
+	index         int
+	text          string
+	renderer      *markdownSelectionRenderer
+	segmentTheme  *container.ThemeOverride
+	mousePosition fyne.Position
+	hasImages     bool
+	links         []markdownTextLink
+	pagePosition  fyne.Position
+	positioned    bool
 }
 
 func (v *markdownView) selectable(segments ...widget.RichTextSegment) *markdownSelectableText {
 	b := &markdownSelectableText{view: v, index: len(v.textBlocks)}
+	// Native HyperlinkSegments do not participate in RichText line wrapping.
+	// Use ordinary styled text and retain the clickable byte ranges instead.
+	segments = append([]widget.RichTextSegment(nil), segments...)
+	offset := 0
+	for i, segment := range segments {
+		if image, ok := segment.(*markdownImageSegment); ok {
+			image.text = &b.RichText
+			b.hasImages = true
+		}
+		if link, ok := segment.(*widget.HyperlinkSegment); ok {
+			style := widget.RichTextStyleInline
+			style.Alignment = link.Alignment
+			style.ColorName = theme.ColorNameHyperlink
+			segments[i] = &widget.TextSegment{Text: link.Text, Style: style}
+			b.links = append(b.links, markdownTextLink{start: offset, end: offset + len(link.Text), onTapped: link.OnTapped})
+		}
+		offset += len(segment.Textual())
+	}
 	b.Segments = segments
 	b.Scroll = fyne.ScrollNone
 	b.Wrapping = fyne.TextWrapWord
@@ -65,10 +92,15 @@ func (b *markdownSelectableText) Resize(size fyne.Size) {
 	b.RichText.Refresh()
 }
 
-func (b *markdownSelectableText) Cursor() desktop.Cursor         { return desktop.TextCursor }
-func (b *markdownSelectableText) MouseIn(*desktop.MouseEvent)    {}
-func (b *markdownSelectableText) MouseMoved(*desktop.MouseEvent) {}
-func (b *markdownSelectableText) MouseOut()                      {}
+func (b *markdownSelectableText) Cursor() desktop.Cursor {
+	if b.linkAt(b.mousePosition) != nil || b.imageAt(b.mousePosition) != nil {
+		return desktop.PointerCursor
+	}
+	return desktop.TextCursor
+}
+func (b *markdownSelectableText) MouseIn(e *desktop.MouseEvent)    { b.mousePosition = e.Position }
+func (b *markdownSelectableText) MouseMoved(e *desktop.MouseEvent) { b.mousePosition = e.Position }
+func (b *markdownSelectableText) MouseOut()                        { b.mousePosition = fyne.NewPos(-1, -1) }
 func (b *markdownSelectableText) MouseDown(e *desktop.MouseEvent) {
 	if e.Button != desktop.MouseButtonPrimary {
 		return
@@ -127,7 +159,59 @@ func (b *markdownSelectableText) DragEnd() {
 		b.view.selection.dragging = false
 	}
 }
-func (b *markdownSelectableText) Tapped(*fyne.PointEvent) { b.view.dismissOutline() }
+func (b *markdownSelectableText) Tapped(e *fyne.PointEvent) {
+	b.view.dismissOutline()
+	if picture := b.imageAt(e.Position); picture != nil {
+		b.view.showImagePreview(picture)
+		return
+	}
+	if action := b.linkAt(e.Position); action != nil {
+		action()
+	}
+}
+
+func (b *markdownSelectableText) imageAt(position fyne.Position) image.Image {
+	if b.renderer == nil || !b.hasImages {
+		return nil
+	}
+	for _, object := range b.renderer.WidgetRenderer.Objects() {
+		if picture, ok := object.(*canvas.Image); ok && picture.Image != nil {
+			origin, size := picture.Position(), picture.Size()
+			bounds := picture.Image.Bounds().Size()
+			aspect := float32(bounds.X) / float32(bounds.Y)
+			fitted := fyne.NewSize(min(size.Width, size.Height*aspect), min(size.Height, size.Width/aspect))
+			origin = origin.Add(fyne.NewPos((size.Width-fitted.Width)/2, (size.Height-fitted.Height)/2))
+			size = fitted
+			if position.X >= origin.X && position.X < origin.X+size.Width && position.Y >= origin.Y && position.Y < origin.Y+size.Height {
+				return picture.Image
+			}
+		}
+	}
+	return nil
+}
+
+func (b *markdownSelectableText) linkAt(position fyne.Position) func() {
+	if len(b.links) == 0 {
+		return nil
+	}
+	for _, fragment := range b.fragments() {
+		if position.X < fragment.position.X || position.X >= fragment.position.X+fragment.size.Width || position.Y < fragment.position.Y || position.Y >= fragment.position.Y+fragment.size.Height {
+			continue
+		}
+		point := b.point(position)
+		// Hit testing uses caret positions; the trailing half of the last glyph
+		// still belongs to the link even if the nearest caret is its end.
+		if point.offset == fragment.start+len(fragment.text) {
+			point.offset--
+		}
+		for _, link := range b.links {
+			if point.offset >= link.start && point.offset < link.end {
+				return link.onTapped
+			}
+		}
+	}
+	return nil
+}
 func (b *markdownSelectableText) TappedSecondary(e *fyne.PointEvent) {
 	text := b.view.selectedText()
 	if text == "" {

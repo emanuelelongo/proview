@@ -376,4 +376,4 @@ tasks:
     desc: Build and run the application with bundled OCR
     cmds:
       - task: build
-      - ./build/proview{{if eq OS "windows"}}.exe{{end}} {{.CLI_ARGS}}
+      - ./build/proview{{if eq OS "windows"}}.exe{{end}} --foreground {{.CLI_ARGS}}

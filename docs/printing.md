@@ -52,7 +52,8 @@ the system dialog and fitted there. Markdown does not have a reading page index;
 native page ranges, where available, refer to the generated print pages.
 
 The layout includes headings, emphasis, inline code, links, nested lists, task
-checkboxes, quotes, rules, syntax-colored code, local images and Mermaid diagrams.
+checkboxes, quotes, rules, labeled admonitions, syntax-colored code, local images
+and Mermaid diagrams. Leading YAML front matter is hidden, as in the reader.
 Long prose and code lines wrap within the margins. Code blocks that fit on one
 page stay together; longer blocks continue at line boundaries. Images and
 diagrams stay together and scale down to fit a page. Mermaid is rendered offline
@@ -67,7 +68,9 @@ below the table, with alt-text references in their source cells.
 Use the bundled Go Sans and Go Mono font families, including bold/italic faces.
 Glyph coverage follows these fonts; supplementary Unicode characters use a
 replacement glyph because the PDF font subsetter supports BMP characters.
-HTML and formulas remain literal source, as in the reader. Only preloaded local
+Supported static HTML image/paragraph wrappers share the reader’s parsed tree,
+including local images, alignment and requested image width. Unsupported HTML and
+formulas remain literal source, as in the reader. Only preloaded local
 images are used; printing never follows remote image URLs. Repeated images share
 one PDF resource. Print layout is bounded to 1,000 pages, 16 Mermaid previews,
 48 MiB of encoded images and 64 MiB of output PDF.

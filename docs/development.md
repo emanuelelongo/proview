@@ -45,6 +45,21 @@ proview --new-window --work-dir /path/to/fixtures
 proview --new-window --work-dir /path/to/fixtures document.pdf image.png
 ```
 
+Normal launches return immediately and run independently of the terminal, with
+standard streams disconnected. Diagnostic logs remain in the application log folder.
+Use `proview --foreground [files...]` to stay attached and see terminal diagnostics;
+`task run` uses this option automatically. `--help` and `--check-ocr` still run
+synchronously. Startup errors after detaching are recorded in the logs.
+
+With no file arguments, startup restores the previous session's file set. Each
+window saves its set on closing; the last writer wins, including an empty set.
+Explicit file arguments skip session restore. Document edits must be saved normally.
+
+When a process is already running, `proview file.md` adds the file to its active
+window where compatible. Requests wait for ongoing work; the PDF opening rules
+still apply. `--new-window` forces a separate window. macOS Finder requests keep
+their separate-window behavior.
+
 `--new-window` opens one fresh editor window, including when Proview is already
 running and when no files are supplied. Additional file arguments use the normal
 workspace rules inside that window. Without a running application, the initial

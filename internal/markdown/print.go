@@ -121,11 +121,12 @@ type printTextStyle struct {
 func printBodyStyle() printTextStyle { return printTextStyle{size: 10.5, color: [3]int{30, 30, 30}} }
 
 type printSpan struct {
-	text  string
-	style printTextStyle
-	image image.Image
-	alt   string
-	check *bool
+	text       string
+	style      printTextStyle
+	image      image.Image
+	imageWidth float64
+	alt        string
+	check      *bool
 }
 
 type printLine []printSpan
@@ -384,6 +385,9 @@ func (p *markdownPrinter) drawLine(line printLine, x, width, top, height float64
 }
 
 func (p *markdownPrinter) flowLines(lines []printLine, x, width, height float64) error {
+	return p.flowLinesAligned(lines, x, width, height, east.AlignLeft)
+}
+func (p *markdownPrinter) flowLinesAligned(lines []printLine, x, width, height float64, align east.Alignment) error {
 	for start := 0; start < len(lines); {
 		if err := p.room(height * float64(min(2, len(lines)-start))); err != nil {
 			return err
@@ -397,7 +401,7 @@ func (p *markdownPrinter) flowLines(lines []printLine, x, width, height float64)
 		}
 		for _, line := range lines[start : start+count] {
 			p.decorate(p.y, height)
-			p.drawLine(line, x, width, p.y, height, east.AlignLeft)
+			p.drawLine(line, x, width, p.y, height, align)
 			p.y += height
 		}
 		start += count
@@ -456,7 +460,7 @@ func (p *markdownPrinter) inline(parent ast.Node, style printTextStyle) []printS
 		case *ast.Image:
 			alt := string(n.Text(p.doc.Source))
 			if picture := p.doc.Images[string(n.Destination)]; picture != nil {
-				spans = append(spans, printSpan{style: style, image: picture, alt: alt})
+				spans = append(spans, printSpan{style: style, image: picture, imageWidth: float64(ImageWidth(n)) * .75, alt: alt})
 			} else {
 				spans = append(spans, printSpan{text: "[Image: " + alt + "]", style: style})
 			}
@@ -489,10 +493,22 @@ func printLink(destination string) bool {
 }
 
 func (p *markdownPrinter) prose(n ast.Node, style printTextStyle, x, width, height float64) error {
-	return p.flowSpans(p.inline(n, style), x, width, height)
+	alignment := east.AlignLeft
+	if align, ok := n.AttributeString("align"); ok {
+		switch align {
+		case "center":
+			alignment = east.AlignCenter
+		case "right":
+			alignment = east.AlignRight
+		}
+	}
+	return p.flowSpansAligned(p.inline(n, style), x, width, height, alignment)
 }
 
 func (p *markdownPrinter) flowSpans(spans []printSpan, x, width, height float64) error {
+	return p.flowSpansAligned(spans, x, width, height, east.AlignLeft)
+}
+func (p *markdownPrinter) flowSpansAligned(spans []printSpan, x, width, height float64, align east.Alignment) error {
 	var text []printSpan
 	flush := func() error {
 		if len(text) == 0 {
@@ -503,7 +519,7 @@ func (p *markdownPrinter) flowSpans(spans []printSpan, x, width, height float64)
 		if err != nil {
 			return err
 		}
-		return p.flowLines(lines, x, width, height)
+		return p.flowLinesAligned(lines, x, width, height, align)
 	}
 	for _, span := range spans {
 		if span.image == nil {
@@ -513,7 +529,11 @@ func (p *markdownPrinter) flowSpans(spans []printSpan, x, width, height float64)
 		if err := flush(); err != nil {
 			return err
 		}
-		if err := p.picture(span.image, x, width); err != nil {
+		naturalWidth := float64(span.image.Bounds().Dx()) * .75
+		if span.imageWidth > 0 {
+			naturalWidth = span.imageWidth
+		}
+		if err := p.pictureWidth(span.image, x, width, naturalWidth); err != nil {
 			return err
 		}
 	}
@@ -632,6 +652,19 @@ func (p *markdownPrinter) blocks(parent ast.Node, x, width float64) error {
 				p.marker = previous
 			}
 			p.gap(3)
+		case *Admonition:
+			st := printBodyStyle()
+			st.bold = true
+			title := ast.NewParagraph()
+			title.AppendChild(title, ast.NewString([]byte(n.Label)))
+			if err := p.prose(title, st, x+14, width-14, printLineHeight); err != nil {
+				return err
+			}
+			p.bars = append(p.bars, x+3)
+			if err := p.blocks(n, x+14, width-14); err != nil {
+				return err
+			}
+			p.bars = p.bars[:len(p.bars)-1]
 		case *ast.Blockquote:
 			p.bars = append(p.bars, x+3)
 			if err := p.blocks(n, x+14, width-14); err != nil {

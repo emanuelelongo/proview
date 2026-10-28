@@ -10,8 +10,9 @@ import (
 // OpenOptions applies only to the receiving editor window. A work directory
 // controls dialogs; it is not a process working directory or a sandbox.
 type OpenOptions struct {
-	NewWindow bool
-	WorkDir   string
+	NewWindow   bool
+	ReuseWindow bool
+	WorkDir     string
 }
 
 func (g *Gui) openStartupFiles(paths []string) {
@@ -39,7 +40,10 @@ func (g *Gui) OpenFilesWithOptions(paths []string, options OpenOptions) {
 
 func (g *Gui) openLaunchRequest(paths []string, options OpenOptions) {
 	editor := g.desktopEditor()
-	if options.NewWindow || editor.closed || (len(paths) > 0 && (editor.hasOpenContent() || editor.working || editor.openingFiles || len(editor.pendingFiles) > 0)) {
+	if options.ReuseWindow {
+		paths = g.launchPaths(paths)
+	}
+	if options.NewWindow || editor.closed || (!options.ReuseWindow && len(paths) > 0 && (editor.hasOpenContent() || editor.working || editor.openingFiles || len(editor.pendingFiles) > 0)) {
 		editor = editor.newEditor()
 		// Desktop file requests get a fresh workspace when the active editor
 		// is occupied. In-window pickers and drops bypass this entry point.

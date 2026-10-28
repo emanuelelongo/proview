@@ -143,6 +143,13 @@ for details.
   <img src="docs/screenshots/create-pdf.png" alt="Creating a PDF from selected pages: choosing a uniform sheet size or individual page sizes." width="400">
 </a>
 
+### Resume your files
+
+Launch `proview` without file arguments to reopen the previous session.
+Each window remembers its file set on closing; the last window closed wins.
+Sessions remember file paths, so save document edits separately. Launching with
+file arguments opens those files instead.
+
 ### Read Markdown
 
 Read Markdown with formatted text, tables, local images, syntax-highlighted code

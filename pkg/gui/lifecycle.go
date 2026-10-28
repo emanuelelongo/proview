@@ -34,6 +34,10 @@ func (g *Gui) requestClose() {
 }
 
 func (g *Gui) requestCloseDocument() {
+	if g.markdownView != nil && g.markdownView.imagePreview != nil {
+		g.markdownView.imagePreview.close()
+		return
+	}
 	if g.waitAnnotationChanges(g.requestCloseDocument) {
 		return
 	}
@@ -131,6 +135,9 @@ func (g *Gui) closeDocument() {
 }
 
 func (g *Gui) closeWindow() {
+	if !g.closed {
+		g.saveSession()
+	}
 	if g.printJob != nil {
 		state := g.printJob
 		state.cancel()
