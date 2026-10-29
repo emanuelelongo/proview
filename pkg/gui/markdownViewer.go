@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/alecthomas/chroma/v2"
@@ -28,6 +29,9 @@ import (
 )
 
 type markdownView struct {
+	readingMode            string
+	detailsOpen            map[*markdown.Details]bool
+	sourceMode             bool
 	animatedImages         []*markdownImageSegment
 	gifGroups              map[*gifplay.Animation]*markdownGIFGroup
 	imagePreview           *markdownImagePreview
@@ -55,17 +59,23 @@ type markdownView struct {
 	activeHeading          int
 	textBlocks             []*markdownSelectableText
 	selection              *markdownTextSelection
+	searchMatch            *markdownTextSelection
 }
 
 func (g *Gui) showingMarkdown() bool { return g.markdownView != nil }
 func (g *Gui) clearMarkdown() {
 	if g.markdownView != nil {
+		g.markdownView.clearSelection()
 		g.stopGIFPlayback()
 		if g.markdownView.imagePreview != nil {
 			g.markdownView.imagePreview.close()
 		}
 		if g.markdownView.cancelDiagrams != nil {
 			g.markdownView.cancelDiagrams()
+			for _, diagram := range g.markdownView.diagrams {
+				diagram.running, diagram.hasRequest = false, false
+				diagram.generation++
+			}
 		}
 		g.markdownView = nil
 		g.restoreToolPanel()
@@ -109,14 +119,37 @@ func (g *Gui) showMarkdown(d *markdown.Document) {
 	if g.activeDocument != nil && g.activeDocument.markdown == d && g.activeDocument.markdownScale > 0 {
 		scale = g.activeDocument.markdownScale
 	}
-	v := &markdownView{doc: d, scale: scale, editor: g}
+	var v *markdownView
+	if g.activeDocument != nil && g.activeDocument.markdown == d {
+		v = g.activeDocument.markdownView
+	}
+	reused := v != nil
+	if !reused {
+		v = &markdownView{doc: d, scale: scale, editor: g}
+		if g.activeDocument != nil && g.activeDocument.markdown == d {
+			v.sourceMode = g.activeDocument.markdownSource
+			v.detailsOpen = g.activeDocument.markdownDetails
+		}
+	}
 	g.markdownView = v
-	v.rebuild()
-	g.markdownPanel.Add(newMarkdownViewport(v))
+	if !reused || v.readingMode != g.markdownThemeMode() {
+		v.rebuild()
+	} else {
+		v.diagramContext, v.cancelDiagrams = context.WithCancel(context.Background())
+		v.buildOutline()
+	}
+	if v.viewport == nil {
+		newMarkdownViewport(v)
+	}
+	g.markdownPanel.Add(v.viewport)
+	for _, diagram := range v.diagrams {
+		diagram.request()
+	}
 	g.markdownPanel.Show()
 	g.updateHistoryActions()
 }
 func (v *markdownView) rebuild() {
+	v.readingMode = v.editor.markdownThemeMode()
 	if v.imagePreview != nil {
 		v.imagePreview.close()
 	}
@@ -124,6 +157,7 @@ func (v *markdownView) rebuild() {
 	v.animatedImages = nil
 	v.gifGroups = make(map[*gifplay.Animation]*markdownGIFGroup)
 	v.selection = nil
+	v.searchMatch = nil
 	v.textBlocks = nil
 	v.headings = nil
 	v.outline = nil
@@ -139,7 +173,12 @@ func (v *markdownView) rebuild() {
 	}
 	v.anchors = map[string]fyne.CanvasObject{}
 	v.themeReady = false
-	v.content = container.NewVBox(v.blocks(v.doc.Root)...)
+	if v.sourceMode {
+		text := v.selectable(&widget.TextSegment{Text: string(v.doc.Source), Style: widget.RichTextStyleCodeInline})
+		v.content = container.NewVBox(v.styleText(&text.RichText, text))
+	} else {
+		v.content = container.NewVBox(v.blocks(v.doc.Root)...)
+	}
 	// Keep a readable line length while allowing narrow windows to reflow.
 	v.body = container.New(&markdownPageLayout{view: v}, newMarkdownPageSurface(v), v.content)
 	themed := container.NewThemeOverride(v.body, v.readingTheme())
@@ -161,6 +200,9 @@ func (v *markdownView) rebuild() {
 	v.buildOutline()
 	v.restoreReadingOffset(offset)
 	v.editor.ensureGIFPlayback()
+	if s := v.editor.search; s != nil && s.bar.Visible() {
+		v.editor.startSearchAt(max(0, s.current))
+	}
 }
 func (v *markdownView) zoom(delta int) {
 	scale := float32(math.Max(.25, math.Min(2, float64(v.scale)+float64(delta)*.125)))
@@ -262,30 +304,32 @@ func (v *markdownView) updateTextViewport() {
 	if v.scroll == nil || v.content == nil || v.scroll.Size().Height <= 0 {
 		return
 	}
-	var walk func(fyne.CanvasObject, fyne.Position)
-	walk = func(object fyne.CanvasObject, position fyne.Position) {
+	var walk func(fyne.CanvasObject, fyne.Position, *container.Scroll, float32)
+	walk = func(object fyne.CanvasObject, position fyne.Position, horizontal *container.Scroll, horizontalOrigin float32) {
 		position = position.Add(object.Position())
 		switch o := object.(type) {
 		case *fyne.Container:
 			for _, child := range o.Objects {
-				walk(child, position)
+				walk(child, position, horizontal, horizontalOrigin)
 			}
 		case *container.Scroll:
 			// OnScrolled runs before Fyne moves Content to the new offset.
-			walk(o.Content, position.Subtract(o.Offset).Subtract(o.Content.Position()))
+			walk(o.Content, position.Subtract(o.Offset).Subtract(o.Content.Position()), o, position.X)
 		case *widget.Card:
 			if o.Content != nil {
-				walk(o.Content, position)
+				walk(o.Content, position, horizontal, horizontalOrigin)
 			}
 		case *markdownText:
 			o.pageY, o.positioned = position.Y, true
 			if block, ok := o.object.(*markdownSelectableText); ok {
 				block.pagePosition = position.Add(block.Position())
 				block.positioned = true
+				block.horizontal = horizontal
+				block.horizontalX = block.pagePosition.X - horizontalOrigin
 			}
 		}
 	}
-	walk(v.content, fyne.Position{})
+	walk(v.content, fyne.Position{}, nil, 0)
 	v.updateOutlinePosition()
 }
 
@@ -694,13 +738,10 @@ func (v *markdownView) blocks(parent ast.Node) []fyne.CanvasObject {
 				rows = append(rows, container.NewBorder(nil, nil, label, nil, container.NewVBox(v.blocks(item)...)))
 			}
 			object = container.NewVBox(rows...)
+		case *markdown.Details:
+			object = v.details(n)
 		case *markdown.Admonition:
-			title := v.selectable(&widget.TextSegment{Text: n.Label, Style: widget.RichTextStyleStrong})
-			label := v.styleText(&title.RichText, title)
-			bar := canvas.NewRectangle(theme.Color(theme.ColorNameWarning))
-			bar.SetMinSize(fyne.NewSize(3, 0))
-			children := append([]fyne.CanvasObject{label}, v.blocks(n)...)
-			object = container.NewBorder(nil, nil, bar, nil, container.NewPadded(container.NewVBox(children...)))
+			object = v.callout(n)
 		case *ast.Blockquote:
 			bar := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
 			bar.SetMinSize(fyne.NewSize(3, 0))
@@ -772,21 +813,24 @@ func (v *markdownView) code(n ast.Node, language string) fyne.CanvasObject {
 	}
 	text := v.selectable(segments...)
 	text.Wrapping = fyne.TextWrapOff
-	return v.codePanel(v.styleText(&text.RichText, text), source, language)
+	return v.codePanel(v.styleText(&text.RichText, text), source)
 }
-func (v *markdownView) plainCode(source, language string) fyne.CanvasObject {
+func (v *markdownView) plainCode(source, _ string) fyne.CanvasObject {
 	text := v.selectable(&widget.TextSegment{Text: source, Style: widget.RichTextStyleCodeInline})
 	text.Wrapping = fyne.TextWrapOff
-	return v.codePanel(v.styleText(&text.RichText, text), source, language)
+	return v.codePanel(v.styleText(&text.RichText, text), source)
 }
-func (v *markdownView) codePanel(text fyne.CanvasObject, source, language string) fyne.CanvasObject {
-	copy := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() { v.editor.app.Clipboard().SetContent(source) })
+func (v *markdownView) codePanel(text fyne.CanvasObject, source string) fyne.CanvasObject {
+	copy := newIconButton(theme.NewColoredResource(theme.ContentCopyIcon(), theme.ColorNameHyperlink), "Copy code", func() { v.editor.app.Clipboard().SetContent(source) })
 	copy.Importance = widget.LowImportance
-	header := container.NewBorder(nil, nil, widget.NewLabel(language), copy)
 	// Horizontal overflow stays within the code block, never the whole page.
 	code := container.NewHScroll(container.NewPadded(text))
 	surface := newMarkdownHorizontalScrollSurface(v, code)
-	return widget.NewCard("", "", container.NewBorder(header, nil, nil, nil, container.NewStack(code, surface)))
+	background := &markdownCalloutBackground{view: v, kind: "code"}
+	background.ExtendBaseWidget(background)
+	controls := container.NewVBox(copy, layout.NewSpacer())
+	body := container.New(layout.NewCustomPaddedLayout(12, 12, 12, 12), container.NewBorder(nil, nil, nil, controls, container.NewStack(code, surface)))
+	return container.NewStack(background, body)
 }
 
 func (v *markdownView) openLink(destination string) {
@@ -928,6 +972,9 @@ func (t *markdownText) ensureRefreshed() {
 	if t.view != nil && !t.view.themeReady {
 		return
 	}
+	if block, ok := t.object.(*markdownSelectableText); ok {
+		block.ensureReadingTheme()
+	}
 	fg, bg, sz := t.themeState()
 	if t.refreshed && t.lastFG == fg && t.lastBG == bg && t.lastSize == sz {
 		return
@@ -966,6 +1013,9 @@ func (t *markdownText) Resize(size fyne.Size) {
 func (t *markdownText) Refresh() {
 	if t.view != nil && !t.view.themeReady {
 		return
+	}
+	if block, ok := t.object.(*markdownSelectableText); ok {
+		block.ensureReadingTheme()
 	}
 	fg, bg, sz := t.themeState()
 	if t.refreshed && t.lastFG == fg && t.lastBG == bg && t.lastSize == sz {

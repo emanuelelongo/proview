@@ -76,3 +76,23 @@ func TestPreviewPDFHidesFrontMatterAndRendersAdmonition(t *testing.T) {
 		t.Fatalf("source delimiters leaked into preview: %q", text)
 	}
 }
+
+func TestPreviewPDFIncludesClosedDetailsContent(t *testing.T) {
+	doc, err := Load("details.md", "", strings.NewReader("<details>\n<summary>More information</summary>\n\nHidden **content** for printing.\n\n</details>\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := doc.PreviewPDF(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := fitz.NewFromMemory(preview.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Close()
+	text, err := renderer.Text(0)
+	if err != nil || !strings.Contains(text, "More information") || !strings.Contains(text, "printing") {
+		t.Fatalf("missing disclosure output: %q, %v", text, err)
+	}
+}

@@ -16,8 +16,9 @@ import (
 // size and do not change the window's minimum size or the document viewport.
 type statusTextSurface struct {
 	widget.BaseWidget
-	editor *Gui
-	text   *canvas.Text
+	editor  *Gui
+	text    *canvas.Text
+	tooltip *tooltipSurface
 }
 
 func newStatusTextSurface(g *Gui) *statusTextSurface {
@@ -45,6 +46,35 @@ func (s *statusTextSurface) Tapped(*fyne.PointEvent) {
 }
 func (s *statusTextSurface) TappedSecondary(event *fyne.PointEvent) {
 	s.editor.showSelectionCopyMenu(event.AbsolutePosition)
+}
+
+func (s *statusTextSurface) MouseIn(*desktop.MouseEvent) {
+	g := s.editor
+	if g.closed || !g.debugEnabled || g.selectionStatusActive {
+		return
+	}
+	c := g.window.Canvas()
+	if c.Overlays().Top() != nil {
+		return
+	}
+	surface, ok := c.Content().(*tooltipSurface)
+	if !ok {
+		return
+	}
+	pos := g.app.Driver().AbsolutePositionForObject(s)
+	root := g.app.Driver().AbsolutePositionForObject(surface)
+	s.tooltip = surface
+	surface.show(s, debugInfoTooltip, fyne.NewPos(pos.X-root.X, pos.Y-root.Y))
+	// Place the bubble above the bottom bar.
+	surface.position.Y -= surface.bubble.Size().Height + 4
+	surface.positionBubble(surface.Size())
+}
+func (s *statusTextSurface) MouseMoved(*desktop.MouseEvent) {}
+func (s *statusTextSurface) MouseOut() {
+	if s.tooltip != nil {
+		s.tooltip.hide(s)
+		s.tooltip = nil
+	}
 }
 
 func selectedURL(text string) *url.URL {

@@ -45,6 +45,19 @@ removed locally and remotely before this work.
   PDF/non-PDF separation. Other generated images are independent, unsaved entries
   in the requesting workspace. Closing one never edits or closes its source.
 
+## Reordering documents
+
+Drag file thumbnails to reorder the workspace sidebar. Dragging a selected file
+moves all selected files together in their existing relative order; dragging an
+unselected file moves only that file. A faded preview and insertion line identify
+the move, and holding the pointer near the viewport edges scrolls the list.
+Escape, dropping outside the document list, or a sidebar rebuild cancels the drag.
+The displayed document, file contents, edits and Undo history remain unchanged.
+The resulting sidebar order also determines selected-item output order and is
+saved in the window's existing session file list on close. Restoring the session
+reopens saved local files in that order; generated unsaved content remains outside
+the session. PDF page thumbnail dragging continues to reorder PDF pages with Undo.
+
 ## Selecting documents for output
 
 Command-click on macOS / Control-click elsewhere toggles individual document

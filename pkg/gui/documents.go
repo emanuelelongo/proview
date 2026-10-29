@@ -26,6 +26,9 @@ type editorDocument struct {
 	thumbnailFailed bool
 	markdown        *markdown.Document
 	markdownScale   float32
+	markdownSource  bool
+	markdownDetails map[*markdown.Details]bool
+	markdownView    *markdownView
 	doc             *document.Document
 	mesh            *model3d.Mesh
 	camera          model3d.Camera
@@ -59,7 +62,7 @@ func (g *Gui) captureDocument() {
 		entry.thumbnail = g.image.Image
 	}
 	entry.doc = g.document
-	if !g.showingMarkdown() {
+	if !g.showingMarkdown() && !g.showingModel() {
 		entry.target = g.saveTarget
 	}
 	entry.redactedTargets = g.redactedTargets
@@ -71,7 +74,10 @@ func (g *Gui) captureDocument() {
 	entry.markdown = nil
 	if g.showingMarkdown() {
 		entry.markdown = g.markdownView.doc
+		entry.markdownView = g.markdownView
 		entry.markdownScale = g.markdownView.scale
+		entry.markdownSource = g.markdownView.sourceMode
+		entry.markdownDetails = g.markdownView.detailsOpen
 		entry.offset = g.markdownView.scroll.Offset
 		if g.markdownView.pendingReadingOffset != nil {
 			entry.offset = *g.markdownView.pendingReadingOffset
@@ -163,6 +169,8 @@ func (g *Gui) refreshDocumentSidebar() {
 	if g.documentList == nil {
 		return
 	}
+	g.cancelDocumentDrag()
+	g.documentThumbs = nil
 	g.normalizeDocumentSelection()
 	if g.activeDocument != nil && g.document != nil && g.document.Format() != document.FormatPDF {
 		g.activeDocument.thumbnail = g.image.Image
@@ -199,6 +207,7 @@ func (g *Gui) refreshDocumentSidebar() {
 				tap.onSelect = func(modifiers fyne.KeyModifier) { g.selectDocumentThumbnail(entry, modifiers) }
 				tap.onSecondary = func(event *fyne.PointEvent) { g.documentContextMenu(entry, event) }
 				card := container.NewStack(preview, border, tap)
+				g.configureDocumentDrag(entry, card, tap, preview)
 				g.documentList.Add(card)
 				continue
 			}
@@ -224,7 +233,9 @@ func (g *Gui) refreshDocumentSidebar() {
 			tap := newThumbnailTap(nil)
 			tap.onSelect = func(modifiers fyne.KeyModifier) { g.selectDocumentThumbnail(entry, modifiers) }
 			tap.onSecondary = func(event *fyne.PointEvent) { g.documentContextMenu(entry, event) }
-			g.documentList.Add(container.NewStack(button, tap))
+			card := container.NewStack(button, tap)
+			g.configureDocumentDrag(entry, card, tap, nil)
+			g.documentList.Add(card)
 		}
 	}
 	if g.document != nil && g.document.Format() == document.FormatPDF {
@@ -368,6 +379,7 @@ func (g *Gui) removeActiveDocument() {
 	delete(g.documentSelection, g.activeDocument)
 	for i, entry := range g.documents {
 		if entry == g.activeDocument {
+			entry.markdownView = nil
 			if entry.thumbnailCancel != nil {
 				entry.thumbnailCancel()
 			}
@@ -386,6 +398,7 @@ func (g *Gui) restoreRemainingDocument() {
 }
 func (g *Gui) closeRetainedDocuments() {
 	for _, entry := range g.documents {
+		entry.markdownView = nil
 		if entry.thumbnailCancel != nil {
 			entry.thumbnailCancel()
 		}

@@ -41,3 +41,19 @@ bindings and a dedicated highlight in `signatureLayer`. Tests cover Unicode,
 phrases, result caps, all-page traversal, native-vs-OCR fallback, cache reuse,
 cancellation, wraparound, Escape and unchanged history. GUI tests are headless;
 desktop keyboard/focus and real OCR quality remain manual verification.
+
+## Markdown
+
+Markdown uses the same Find bar, menu commands, shortcuts and match cap. It
+searches the retained rendered text blocks with `textselect.Layout.Find`, without
+OCR or a document snapshot. Matches retain block/UTF-8 byte ranges, including
+phrases across blocks, Unicode normalization and strikethrough decorations.
+A separate highlight shares the selection renderer's retained geometry and
+culling; Find never replaces the user's text selection. Navigation scrolls both
+the page and any horizontal code/table viewport. Rebuilds retain the current
+match index; document switches cancel pending work and close Find.
+
+Implementation: `pkg/gui/markdownSearch.go`, `markdownSelection.go` and the shared
+search lifecycle. GUI tests cover formatted Unicode phrases, tables/code,
+strikethrough offsets, vertical/horizontal navigation, independent selections,
+zoom rebuilds and double/triple-click selection. See [Markdown viewer](markdown-viewer.md).

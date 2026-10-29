@@ -78,6 +78,7 @@ func BuildMenu(g *Gui) {
 	resetZoomItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.Key0, Modifier: shortcutModifier}
 	viewMenu := fyne.NewMenu("View", zoomInItem, zoomOutItem, resetZoomItem)
 	g.markdownThemeItem = g.newMarkdownThemeMenu()
+	g.markdownSourceItem = fyne.NewMenuItem("Show Markdown Source", g.toggleMarkdownSource)
 	g.modelMenu = viewMenu
 	g.modelMenuItems = []*fyne.MenuItem{fyne.NewMenuItemSeparator()}
 	for i, name := range modelViews {
@@ -113,6 +114,8 @@ func BuildMenu(g *Gui) {
 	showTipsItem := fyne.NewMenuItem("Show Tips", func() { g.setTipsEnabled(!g.tipsEnabled) })
 	showTipsItem.Checked = g.tipsEnabled
 	g.tipsItem = showTipsItem
+	g.debugItem = fyne.NewMenuItem("Show debug info", func() { g.setDebugEnabled(!g.debugEnabled) })
+	g.debugItem.Checked = g.debugEnabled
 	thirdPartyLicensesItem := fyne.NewMenuItem("Third-Party Licenses", func() {
 		text := widget.NewLabel(thirdPartyLicensesText())
 		text.Selectable = true
@@ -121,7 +124,7 @@ func BuildMenu(g *Gui) {
 		scroll.SetMinSize(g.signatureViewport())
 		dialog.NewCustom("Third-Party Licenses", "Close", scroll, g.window).Show()
 	})
-	helpMenu := fyne.NewMenu("Help", showTipsItem, fyne.NewMenuItem("Open logs folder", g.openLogsFolder), fyne.NewMenuItemSeparator(), thirdPartyLicensesItem,
+	helpMenu := fyne.NewMenu("Help", showTipsItem, g.debugItem, fyne.NewMenuItem("Open logs folder", g.openLogsFolder), fyne.NewMenuItemSeparator(), thirdPartyLicensesItem,
 		fyne.NewMenuItemSeparator(), fyne.NewMenuItem("About", g.showAbout))
 	g.tipsMenu = helpMenu
 	g.window.SetMainMenu(fyne.NewMainMenu(fileMenu, editMenu, viewMenu, toolsMenu, helpMenu))

@@ -190,6 +190,9 @@ func (g *Gui) stopTipSequence() {
 }
 
 func (g *Gui) setTipsEnabled(enabled bool) {
+	if enabled && g.debugEnabled {
+		g.setDebugEnabled(false)
+	}
 	g.tipsEnabled = enabled
 	g.app.Preferences().SetBool(tipsPreferenceKey, enabled)
 	if g.tipsItem != nil {
@@ -234,6 +237,9 @@ func (g *Gui) clearTextSelectionStatus() {
 	resume := g.resumeTipsAfterSelection
 	g.resumeTipsAfterSelection = false
 	g.hideTip()
+	if g.debugEnabled {
+		g.updateDebugInfo()
+	}
 	if resume && g.tipsEnabled && !g.closed {
 		generation := g.tipGeneration
 		g.scheduleTip(tipGap, generation, func() { g.showNextTip(generation, true) })
@@ -244,6 +250,9 @@ func (g *Gui) refreshTipText() {
 	g.tipText.Resize(g.tipText.MinSize())
 	g.tipText.Refresh()
 	if g.tipSurface != nil {
+		if !g.debugEnabled || g.selectionStatusActive {
+			g.tipSurface.MouseOut()
+		}
 		g.tipSurface.Resize(g.tipText.MinSize())
 		g.tipSurface.Refresh()
 	}

@@ -9,7 +9,7 @@ func refreshMenuState(menu *fyne.Menu) {
 }
 
 func prepareModelMenu(g *Gui) {
-	g.modelMenu.Items = append(g.modelMenu.Items, g.markdownThemeItem)
+	g.modelMenu.Items = append(g.modelMenu.Items, g.markdownThemeItem, g.markdownSourceItem)
 }
 func updateModelMenu(g *Gui) {
 	if g.modelMenu == nil {
@@ -19,5 +19,5 @@ func updateModelMenu(g *Gui) {
 	if g.showingModel() {
 		g.modelMenu.Items = append(g.modelMenu.Items, g.modelMenuItems...)
 	}
-	g.modelMenu.Items = append(g.modelMenu.Items, g.markdownThemeItem)
+	g.modelMenu.Items = append(g.modelMenu.Items, g.markdownThemeItem, g.markdownSourceItem)
 }

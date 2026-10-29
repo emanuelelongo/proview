@@ -17,7 +17,7 @@ type tooltipSurface struct {
 	bubble     *fyne.Container
 	label      *widget.Label
 	background *canvas.Rectangle
-	owner      *iconButton
+	owner      fyne.CanvasObject
 	position   fyne.Position
 }
 
@@ -31,7 +31,7 @@ func newTooltipSurface(content fyne.CanvasObject) *tooltipSurface {
 	s.ExtendBaseWidget(s)
 	return s
 }
-func (s *tooltipSurface) show(owner *iconButton, text string, pos fyne.Position) {
+func (s *tooltipSurface) show(owner fyne.CanvasObject, text string, pos fyne.Position) {
 	s.owner = owner
 	s.position = pos
 	s.label.SetText(text)
@@ -39,7 +39,7 @@ func (s *tooltipSurface) show(owner *iconButton, text string, pos fyne.Position)
 	s.positionBubble(s.Size())
 	s.bubble.Show()
 }
-func (s *tooltipSurface) hide(owner *iconButton) {
+func (s *tooltipSurface) hide(owner fyne.CanvasObject) {
 	if s.owner != owner {
 		return
 	}

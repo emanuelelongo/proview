@@ -59,7 +59,7 @@ func TestHTMLImagesAndParagraphsShareMarkdownTree(t *testing.T) {
 }
 
 func TestHTMLUnsupportedMarkupRemainsLiteralAndImagesStayLocal(t *testing.T) {
-	for _, source := range []string{"<script>alert('no')</script>\n", "<details>Hidden content</details>\n", "<p><iframe src=\"remote\"></iframe>Keep this text</p>\n"} {
+	for _, source := range []string{"<script>alert('no')</script>\n", "<section>Unsupported content</section>\n", "<p><iframe src=\"remote\"></iframe>Keep this text</p>\n"} {
 		doc, err := Load("read.md", "", strings.NewReader(source))
 		if err != nil {
 			t.Fatal(err)

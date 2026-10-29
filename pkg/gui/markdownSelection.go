@@ -6,6 +6,9 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -40,16 +43,22 @@ type markdownLinkSegment struct {
 
 type markdownSelectableText struct {
 	widget.RichText
-	view          *markdownView
-	index         int
-	text          string
-	renderer      *markdownSelectionRenderer
-	segmentTheme  *container.ThemeOverride
-	mousePosition fyne.Position
-	hasImages     bool
-	links         []markdownTextLink
-	pagePosition  fyne.Position
-	positioned    bool
+	view              *markdownView
+	index             int
+	text              string
+	renderer          *markdownSelectionRenderer
+	creatingRenderer  bool
+	segmentTheme      *container.ThemeOverride
+	mousePosition     fyne.Position
+	hasImages         bool
+	links             []markdownTextLink
+	pagePosition      fyne.Position
+	positioned        bool
+	doubleTappedAt    time.Time
+	doubleTapPosition fyne.Position
+	tripleTapped      bool
+	horizontal        *container.Scroll
+	horizontalX       float32
 }
 
 func (v *markdownView) selectable(segments ...widget.RichTextSegment) *markdownSelectableText {
@@ -90,8 +99,38 @@ func (v *markdownView) selectable(segments ...widget.RichTextSegment) *markdownS
 	return b
 }
 
+// Idle renderer eviction also removes Fyne's widget theme override. Restore the
+// embedded RichText scope only when it is missing, before regenerating glyphs.
+func (b *markdownSelectableText) ensureReadingTheme() {
+	if b.segmentTheme == nil {
+		return
+	}
+	actual := theme.CurrentForWidget(&b.RichText)
+	expected := b.view.readingTheme()
+	variant := fyne.CurrentApp().Settings().ThemeVariant()
+	if actual.Color(theme.ColorNameForeground, variant) != expected.Color(theme.ColorNameForeground, variant) ||
+		actual.Color(theme.ColorNameBackground, variant) != expected.Color(theme.ColorNameBackground, variant) ||
+		actual.Size(theme.SizeNameText) != expected.Size(theme.SizeNameText) {
+		b.segmentTheme.Refresh()
+	}
+}
+
+func (b *markdownSelectableText) Refresh() {
+	b.ensureReadingTheme()
+	b.RichText.Refresh()
+}
+
 func (b *markdownSelectableText) CreateRenderer() fyne.WidgetRenderer {
+	// Restoring the embedded theme refreshes RichText. During construction,
+	// that refresh may ask Fyne for this renderer before it has been cached.
+	if b.creatingRenderer {
+		return b.renderer
+	}
 	b.renderer = &markdownSelectionRenderer{WidgetRenderer: b.RichText.CreateRenderer(), block: b}
+	b.renderer.shareFonts()
+	b.creatingRenderer = true
+	defer func() { b.creatingRenderer = false }()
+	b.ensureReadingTheme()
 	return b.renderer
 }
 
@@ -99,6 +138,7 @@ func (b *markdownSelectableText) Resize(size fyne.Size) {
 	if b.Size() == size {
 		return
 	}
+	b.ensureReadingTheme()
 	b.BaseWidget.Resize(size)
 	b.RichText.Refresh()
 }
@@ -116,6 +156,18 @@ func (b *markdownSelectableText) MouseDown(e *desktop.MouseEvent) {
 	if e.Button != desktop.MouseButtonPrimary {
 		return
 	}
+	if b.view.editor != nil && b.view.editor.window != nil {
+		b.view.editor.window.Canvas().Focus(nil)
+	}
+	b.tripleTapped = false
+	if !b.doubleTappedAt.IsZero() && time.Since(b.doubleTappedAt) <= fyne.CurrentApp().Driver().DoubleTapDelay() &&
+		math.Abs(float64(e.Position.X-b.doubleTapPosition.X)) <= 6 && math.Abs(float64(e.Position.Y-b.doubleTapPosition.Y)) <= 6 {
+		b.doubleTappedAt = time.Time{}
+		b.tripleTapped = true
+		b.selectRenderedLine(e.Position)
+		return
+	}
+	b.doubleTappedAt = time.Time{}
 	p := b.point(e.Position)
 	b.view.selection = &markdownTextSelection{anchor: p, end: p, dragging: true}
 	b.view.refreshSelection()
@@ -172,12 +224,91 @@ func (b *markdownSelectableText) DragEnd() {
 }
 func (b *markdownSelectableText) Tapped(e *fyne.PointEvent) {
 	b.view.dismissOutline()
+	if b.tripleTapped {
+		return
+	}
 	if picture := b.imageAt(e.Position); picture != nil {
 		b.view.showImagePreview(picture)
 		return
 	}
 	if action := b.linkAt(e.Position); action != nil {
 		action()
+	}
+}
+
+// Double clicks select a Unicode word across adjacent formatting segments.
+func (b *markdownSelectableText) DoubleTapped(e *fyne.PointEvent) {
+	b.view.dismissOutline()
+	if b.imageAt(e.Position) != nil || b.text == "" {
+		return
+	}
+	b.doubleTappedAt, b.doubleTapPosition = time.Now(), e.Position
+	offset := b.point(e.Position).offset
+	// Hit testing returns the nearest caret; keep the trailing half of a glyph
+	// in its own word rather than selecting the following space or punctuation.
+	for _, f := range b.fragments() {
+		if offset > f.start && offset <= f.start+len(f.text) && e.Position.Y >= f.position.Y && e.Position.Y < f.position.Y+f.size.Height && e.Position.X < f.position.X+f.width(f.text[:offset-f.start]) {
+			_, size := utf8.DecodeLastRuneInString(b.text[:offset])
+			offset -= size
+			break
+		}
+	}
+	if offset == len(b.text) {
+		_, size := utf8.DecodeLastRuneInString(b.text)
+		offset -= size
+	}
+	kind := func(r rune) int {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsMark(r) || r == '_' {
+			return 0
+		}
+		if unicode.IsSpace(r) {
+			return 1
+		}
+		return 2
+	}
+	r, size := utf8.DecodeRuneInString(b.text[offset:])
+	start, end, class := offset, offset+size, kind(r)
+	for start > 0 {
+		r, size = utf8.DecodeLastRuneInString(b.text[:start])
+		if kind(r) != class {
+			break
+		}
+		start -= size
+	}
+	for end < len(b.text) {
+		r, size = utf8.DecodeRuneInString(b.text[end:])
+		if kind(r) != class {
+			break
+		}
+		end += size
+	}
+	b.selectRange(start, end)
+}
+
+func (b *markdownSelectableText) selectRange(start, end int) {
+	b.view.selection = &markdownTextSelection{anchor: markdownTextPoint{block: b.index, offset: start}, end: markdownTextPoint{block: b.index, offset: end}}
+	b.view.refreshSelection()
+}
+
+func (b *markdownSelectableText) selectRenderedLine(position fyne.Position) {
+	point := b.point(position)
+	fragments := b.fragments()
+	for _, f := range fragments {
+		if point.offset < f.start || point.offset > f.start+len(f.text) {
+			continue
+		}
+		if position.Y < f.position.Y || position.Y >= f.position.Y+f.size.Height {
+			continue
+		}
+		start, end := f.start, f.start+len(f.text)
+		center := f.position.Y + f.size.Height/2
+		for _, other := range fragments {
+			if center >= other.position.Y && center < other.position.Y+other.size.Height {
+				start, end = min(start, other.start), max(end, other.start+len(other.text))
+			}
+		}
+		b.selectRange(start, end)
+		return
 	}
 }
 
@@ -265,7 +396,8 @@ func (v *markdownView) refreshSelection() {
 	var changed fyne.CanvasObject
 	for _, b := range v.textBlocks {
 		start, end := b.selectionRange()
-		if b.renderer != nil && (b.renderer.selectionStart != start || b.renderer.selectionEnd != end) {
+		searchStart, searchEnd := b.rangeFor(b.view.searchMatch)
+		if b.renderer != nil && (b.renderer.selectionStart != start || b.renderer.selectionEnd != end || b.renderer.searchStart != searchStart || b.renderer.searchEnd != searchEnd) {
 			b.renderer.updateSelection()
 			changed = b
 		}
@@ -384,6 +516,7 @@ type markdownSelectionRenderer struct {
 	highlights, objects          []fyne.CanvasObject
 	pool                         []*canvas.Rectangle
 	selectionStart, selectionEnd int
+	searchStart, searchEnd       int
 	fragments                    []markdownTextFragment
 	fragmentsReady               bool
 	minimum                      fyne.Size
@@ -398,15 +531,19 @@ func (r *markdownSelectionRenderer) Layout(size fyne.Size) {
 	if r.laidOut && r.layoutSize == size {
 		return
 	}
+	r.block.ensureReadingTheme()
 	r.fragmentsReady, r.minimumReady = false, false
 	r.WidgetRenderer.Layout(size)
+	r.shareFonts()
 	r.layoutSize, r.laidOut = size, true
 	r.updateSelection()
 }
 func (r *markdownSelectionRenderer) Refresh() {
+	r.block.ensureReadingTheme()
 	r.laidOut = false
 	r.fragmentsReady, r.minimumReady = false, false
 	r.WidgetRenderer.Refresh()
+	r.shareFonts()
 	r.updateSelection()
 }
 func (r *markdownSelectionRenderer) MinSize() fyne.Size {
@@ -445,7 +582,17 @@ func (r *markdownSelectionRenderer) Objects() []fyne.CanvasObject {
 	return r.objects
 }
 func (block *markdownSelectableText) selectionRange() (start, end int) {
-	a, b, ok := block.view.selectionBounds()
+	return block.rangeFor(block.view.selection)
+}
+func (block *markdownSelectableText) rangeFor(selection *markdownTextSelection) (start, end int) {
+	if selection == nil {
+		return 0, 0
+	}
+	a, b := selection.anchor, selection.end
+	if a.block > b.block || a.block == b.block && a.offset > b.offset {
+		a, b = b, a
+	}
+	ok := a != b
 	index := block.index
 	if !ok || index < a.block || index > b.block {
 		return 0, 0
@@ -463,6 +610,13 @@ func (r *markdownSelectionRenderer) updateSelection() {
 	r.highlights = r.highlights[:0]
 	start, end := r.block.selectionRange()
 	r.selectionStart, r.selectionEnd = start, end
+	r.searchStart, r.searchEnd = r.block.rangeFor(r.block.view.searchMatch)
+	r.appendHighlight(r.searchStart, r.searchEnd, color.NRGBA{R: 255, G: 170, B: 0, A: 110})
+	c := theme.ColorForWidget(theme.ColorNameSelection, r.block)
+	red, green, blue, _ := c.RGBA()
+	r.appendHighlight(start, end, color.NRGBA{R: uint8(red >> 8), G: uint8(green >> 8), B: uint8(blue >> 8), A: 85})
+}
+func (r *markdownSelectionRenderer) appendHighlight(start, end int, fill color.Color) {
 	if start == end {
 		return
 	}
@@ -474,13 +628,11 @@ func (r *markdownSelectionRenderer) updateSelection() {
 		x := f.width(f.text[:lo])
 		width := f.width(f.text[:hi]) - x
 		// A translucent foreground works with RichText's inline-code backgrounds.
-		c := theme.ColorForWidget(theme.ColorNameSelection, r.block)
-		red, green, blue, _ := c.RGBA()
 		if len(r.highlights) == len(r.pool) {
 			r.pool = append(r.pool, canvas.NewRectangle(color.Transparent))
 		}
 		rect := r.pool[len(r.highlights)]
-		rect.FillColor = color.NRGBA{R: uint8(red >> 8), G: uint8(green >> 8), B: uint8(blue >> 8), A: 85}
+		rect.FillColor = fill
 		rect.Move(f.position.Add(fyne.NewPos(x, 0)))
 		rect.Resize(fyne.NewSize(width, f.size.Height))
 		r.highlights = append(r.highlights, rect)

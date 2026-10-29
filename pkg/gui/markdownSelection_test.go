@@ -94,3 +94,35 @@ func TestMarkdownSelectionHitTestingKeepsUTF8AndCodeWhitespace(t *testing.T) {
 		t.Fatalf("code whitespace changed: %q", got)
 	}
 }
+
+func TestMarkdownDoubleAndTripleClick(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	window := app.NewWindow("Clicks")
+	v := &markdownView{editor: &Gui{app: app, window: window}, scale: 1, themeReady: true}
+	v.editor.markdownView = v
+	b := v.selectable(&widget.TextSegment{Text: "Caf", Style: widget.RichTextStyleInline}, &widget.TextSegment{Text: "fè pronto, more words that wrap onto another rendered line.", Style: widget.RichTextStyleStrong})
+	window.SetContent(v.styleText(&b.RichText, b))
+	window.Resize(fyne.NewSize(190, 200))
+	window.Show()
+	window.Canvas().Capture()
+	f := b.fragments()[0]
+	pos := f.position.Add(fyne.NewPos(f.width("C"), f.size.Height/2))
+	event := &fyne.PointEvent{Position: pos}
+	b.DoubleTapped(event)
+	if got := v.selectedText(); got != "Caffè" {
+		t.Fatalf("word = %q", got)
+	}
+	b.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary, PointEvent: *event})
+	b.MouseUp(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary, PointEvent: *event})
+	b.Tapped(event)
+	line := v.selectedText()
+	if !strings.HasPrefix(line, "Caffè pronto,") || line == b.text {
+		t.Fatalf("rendered line = %q", line)
+	}
+	// A fresh click must start an ordinary drag again.
+	b.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary, PointEvent: *event})
+	if v.selectedText() != "" || !v.selection.dragging {
+		t.Fatal("ordinary click retained triple-click selection")
+	}
+}

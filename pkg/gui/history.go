@@ -140,6 +140,9 @@ func (g *Gui) updateHistoryActions() {
 	}
 	for _, item := range g.menuDocumentItems {
 		item.Disabled = !hasDocument
+		if item.Label == "Find" || item.Label == "Find Next" || item.Label == "Find Previous" {
+			item.Disabled = !hasDocument && !g.showingMarkdown()
+		}
 		if item.Label == "Print…" || item.Label == "Create PDF from Selection" {
 			item.Disabled = !g.selectionCanOutput()
 		}
@@ -161,6 +164,10 @@ func (g *Gui) updateHistoryActions() {
 				}
 			}
 		}
+	}
+	if g.markdownSourceItem != nil {
+		g.markdownSourceItem.Disabled = !g.showingMarkdown()
+		g.markdownSourceItem.Checked = g.showingMarkdown() && g.markdownView.sourceMode
 	}
 	updateModelMenu(g)
 	g.updateTitle()

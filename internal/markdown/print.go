@@ -652,6 +652,17 @@ func (p *markdownPrinter) blocks(parent ast.Node, x, width float64) error {
 				p.marker = previous
 			}
 			p.gap(3)
+		case *Details:
+			title := ast.NewParagraph()
+			title.AppendChild(title, ast.NewString([]byte(n.Summary)))
+			style := printBodyStyle()
+			style.bold = true
+			if err := p.prose(title, style, x, width, printLineHeight); err != nil {
+				return err
+			}
+			if err := p.blocks(n, x+14, width-14); err != nil {
+				return err
+			}
 		case *Admonition:
 			st := printBodyStyle()
 			st.bold = true

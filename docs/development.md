@@ -297,6 +297,20 @@ container. Windows PDF tests are cross-compiled but not executed; run the ZIP
 on Windows before treating that target as runtime-verified. Cross builds do not
 replace native CI testing on the destination operating systems.
 
+## Linux taskbar identity
+
+Linux startup sets GLFW's `RESOURCE_NAME` to `Proview` before creating windows.
+This fixes the X11/XWayland `WM_CLASS` instance independently of the initial
+file title and matches `StartupWMClass=Proview` in the installed desktop entry.
+Without it, opening a file before showing the window gives it a document-specific
+identity, so the desktop may display a generic taskbar icon despite the correct
+launcher icon. This applies to the default X11 build, including Wayland sessions
+using XWayland; a native Wayland build needs separate app-ID integration.
+
+After updating with `task install:linux`, close all running Proview windows and
+relaunch. Verify with `xprop WM_CLASS`: the first value should be `Proview`, even
+when launching with a document or switching documents later.
+
 ## Native builds
 
 **Help → About** shows the app name, version, repository, full commit SHA and
@@ -489,6 +503,15 @@ and project documentation use English.
   first editor window starts the sequence automatically. **Help → Show Tips**
   saves its enabled preference; re-enabling restarts after the five-second delay.
   Selected-text status temporarily pauses the sequence.
+  **Help → Show debug info** saves a mutually exclusive preference and updates
+  the same slot every five seconds with estimated Go CPU capacity usage, Go-managed
+  RAM (runtime memory minus released heap pages), and the goroutine count. These
+  values have their labels in a hover tooltip. CPU retains its last estimate when
+  the runtime counters have not advanced; its initial estimate uses process totals.
+  These standard-library runtime metrics exclude native-library memory and are not OS
+  process CPU/RSS measurements. Selected text takes precedence until deselection.
+  Right-click the file information to copy its filename or absolute local path;
+  the full-path action is disabled for unsaved content.
 - **Text** stays active after placement. The entry is cleared immediately after a
   text object is created, preventing a later page click from duplicating it. The
   font, style and color settings remain available for the next object.

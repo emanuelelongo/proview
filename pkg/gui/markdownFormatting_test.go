@@ -36,7 +36,7 @@ func TestMarkdownFrontMatterCalloutsAndWrappedLinks(t *testing.T) {
 				if strings.Contains(block.text, "hidden-metadata") || strings.Contains(block.text, ":::") {
 					t.Fatal("source delimiters or metadata leaked into text")
 				}
-				if block.text == "Warning" {
+				if block.text == "WARNING" {
 					foundWarning = true
 				}
 				for _, object := range block.renderer.WidgetRenderer.Objects() {

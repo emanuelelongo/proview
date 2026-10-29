@@ -160,6 +160,7 @@ func (g *Gui) closeWindow() {
 	}
 	g.closeRetainedDocuments()
 	g.closed = true
+	g.stopDebugInfo()
 	g.unregisterEditor()
 	g.hideObjectOrderMenu()
 	g.clearModel()

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"image"
 	"image/png"
 	"math"
 	"os"
@@ -140,12 +141,21 @@ func TestMarkdownImagePreviewZoomAndLifetime(t *testing.T) {
 	if v.imagePreview != nil || len(driver.AllWindows()) != baseline {
 		t.Fatal("Escape did not close preview")
 	}
+	if p.picture.Image != nil || p.animation != nil || p.previousFocus != nil || p.view != nil {
+		t.Fatal("closed preview retains image or document state")
+	}
+	if p.picture.ScaleMode != canvas.ImageScaleFastest {
+		t.Fatal("preview uses software resampling")
+	}
 	if g.activeDocument != entry || v.scale != readingScale || v.scroll.Offset != offset || len(g.documents) != 1 {
 		t.Fatal("preview changed the reading workspace")
 	}
 	block.Tapped(&fyne.PointEvent{Position: position})
 	if v.imagePreview == nil {
 		t.Fatal("preview could not reopen")
+	}
+	if v.imagePreview != p {
+		t.Fatal("reopening created another canvas image/texture identity")
 	}
 	g.window.Canvas().Capture()
 	fyneTest.TapCanvas(g.window.Canvas(), fyne.NewPos(1, 1))
@@ -210,5 +220,33 @@ func TestMarkdownLinkCursorTracksWrappedText(t *testing.T) {
 	block.MouseOut()
 	if links < 2 || ordinary < 1 || block.Cursor() != desktop.TextCursor {
 		t.Fatal("cursor did not track link boundaries")
+	}
+}
+
+func TestMarkdownImagePreviewReusesCanvasAcrossDocuments(t *testing.T) {
+	g, _ := newDropTestGui(t)
+	defer g.clearMarkdown()
+	g.window.Resize(fyne.NewSize(800, 600))
+	g.window.Show()
+	for i := 0; i < 3; i++ {
+		doc, err := markdown.Load("preview.md", "", strings.NewReader("Preview"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		g.addMarkdown(doc, nil)
+		image := image.NewNRGBA(image.Rect(0, 0, 20+i, 20+i))
+		cached := g.markdownPreviewCache
+		g.markdownView.showImagePreview(image)
+		preview := g.markdownView.imagePreview
+		if cached != nil && preview != cached {
+			t.Fatal("document switch allocated another image preview")
+		}
+		if preview.picture.Image != image || preview.view != g.markdownView {
+			t.Fatal("preview has obsolete image/document")
+		}
+		preview.close()
+		if preview.picture.Image != nil || preview.view != nil {
+			t.Fatal("preview retained closed image/document")
+		}
 	}
 }

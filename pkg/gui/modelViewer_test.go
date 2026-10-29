@@ -149,7 +149,7 @@ func TestModelViewKeysAndConditionalMenu(t *testing.T) {
 		t.Fatal("model key active without STL")
 	}
 	g.showModel(testSTLMesh(t))
-	if len(g.modelMenu.Items) != 13 {
+	if len(g.modelMenu.Items) != 14 {
 		t.Fatal("STL views missing from View")
 	}
 	expected := [][2]float64{{math.Pi / 4, math.Pi / 6}, {0, math.Pi / 2}, {0, -math.Pi / 2}, {0, 0}, {math.Pi, 0}, {-math.Pi / 2, 0}, {math.Pi / 2, 0}}

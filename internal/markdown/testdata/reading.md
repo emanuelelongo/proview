@@ -80,5 +80,5 @@ A formula stays as source: $E = mc^2$.
 
 <details>
 <summary>HTML source</summary>
-HTML is shown literally, without executing scripts or interpreting tags.
+This disclosure expands to show Markdown content without executing scripts.
 </details>

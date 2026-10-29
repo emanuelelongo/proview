@@ -12,7 +12,8 @@ import (
 // Admonition is a Docusaurus-style container with ordinary Markdown children.
 type Admonition struct {
 	ast.BaseBlock
-	Label string
+	Label    string
+	Category string
 }
 
 var kindAdmonition = ast.NewNodeKind("Admonition")
@@ -46,7 +47,7 @@ func (*admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.Con
 		label = strings.ToUpper(kind[:1]) + kind[1:]
 	}
 	reader.Advance(len(bytes.TrimRight(line, "\n")))
-	return &Admonition{Label: label}, parser.HasChildren
+	return &Admonition{Label: label, Category: kind}, parser.HasChildren
 }
 func (*admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser.Context) parser.State {
 	line, _ := reader.PeekLine()

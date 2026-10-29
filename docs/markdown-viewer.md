@@ -17,7 +17,10 @@ window. Scroll, zoom, theme and viewport size do not affect it. Switching keeps
 the worker alive; closing the entry cancels it and rejects late results.
 PDF/non-PDF opening keeps the existing
 separate-window policy. Switching documents retains reading size and scroll
-position. Closing Markdown restores the previous retained document.
+position, reusing the same text/layout view rather than rebuilding it. Inactive
+views stop animation/render workers; returning restarts them, with a rebuild
+only when the reading theme changed. Text runs share application font resources
+when their glyph coverage permits, retaining native fallback for other scripts. Closing Markdown restores the previous retained document.
 
 **View → Markdown Theme → System / Light / Dark** selects the reading theme.
 The choice is saved in application preferences, applies to all open Markdown
@@ -29,6 +32,16 @@ fall back to the reading foreground, including error tokens whose Chroma style
 assumes a colored background that the native text renderer does not draw.
 Changing theme retains reading zoom and scroll position and clears
 text selection. Inactive workspace documents use the saved choice when revisited.
+
+**View → Show Markdown Source** toggles a read-only, monospaced view of the
+complete source, including front matter and Markdown syntax. Text wraps to the
+reading column; selection, copying, Find, zoom and the reading theme remain
+available. Contents is disabled in source mode. Toggling closes Find, clears text
+selection and returns to the top. The mode is retained only by the current open
+workspace document, including when switching to another document. Closing and
+reopening it, opening another file or restarting always defaults to rendered
+Markdown; no preference or session setting stores the mode. Printing continues
+to use the rendered document.
 
 Markdown is read-only. Crop, annotation, transformation, signature and save
 commands are disabled. Source files are never rewritten. Zoom In/Out adjusts
@@ -73,6 +86,12 @@ Switching documents restores the appropriate outline and reading position.
 - Docusaurus-style `:::note`, `:::tip`, `:::info`, `:::warning`, `:::danger` and
   `:::caution` containers become labeled callouts with normal Markdown children.
   Optional titles, nested callouts, lists, links and code blocks are supported.
+  Callouts have a rounded tinted background, a colored left border and an icon
+  beside the uppercase title: green/bulb for tips, amber/warning triangle for
+  warnings and cautions, red for danger, and blue/info for notes and information.
+  Backgrounds follow the reading theme; custom titles retain the original
+  callout category. The selectable Markdown content and link behavior remain
+  available inside the panel.
 - Ordered/unordered nested lists, task lists, quotations and separators.
 - GFM tables with column alignment and inline formatting. Short tables keep
   their natural width; columns share widths across all rows and allocate more
@@ -80,7 +99,10 @@ Switching documents restores the appropriate outline and reading position.
   Tables with too many columns or unbroken identifiers wider than the reading
   column scroll horizontally inside their own viewport. Vertical wheel movement
   over a table continues scrolling the document. Links preserve column alignment.
-- Fenced code with explicit language highlighting, using Chroma and palettes
+- Fenced code in a rounded, contrasting theme-aware background, with a copy
+  button in a reserved right-hand column and no displayed language label. The
+  text viewport and horizontal scrollbar stop before that column. The declared language still selects
+  syntax highlighting, using Chroma and palettes
   for the current light/dark theme. Unknown languages remain plain code.
   Code overflow scrolls horizontally inside its block, with flat edges and no
   scroll-edge shading. Vertical wheel/trackpad
@@ -104,13 +126,27 @@ Switching documents restores the appropriate outline and reading position.
   one slash (such as `/assets/logo.png?raw=true`) resolve beneath the document
   directory, rather than the filesystem root. Images remain local and subject
   to the existing path, symlink, decoding and memory limits.
+- HTML `<details>` / `<summary>` disclosures. Click the chevron or summary to
+  expand/collapse. Disclosures use a rounded cyan-tinted panel with a thin
+  border and, when expanded, a divider between the summary and body; colors
+  follow the reading theme. The `open` attribute sets the initial state; omitted summaries
+  use **Details**. Summary markup is reduced to readable text; multiline bodies
+  retain ordinary Markdown, including nested disclosures, lists, code, links,
+  local images and callouts. Compact single-line HTML disclosures support the
+  same static HTML subset as other HTML blocks. Open state is local to the open
+  workspace document and survives switching, zoom and theme changes. Reopening
+  starts from the source's `open` attributes. Collapsed bodies are excluded from
+  selection, Find and Contents until expanded. Toggling clears selection and
+  recomputes Find. Printing and thumbnails include all disclosure contents.
 - Clicked HTTP/HTTPS/mailto links, relative document links and heading anchors.
   Link labels wrap with the paragraph, including long unbroken URLs, and retain
   clickable byte ranges and text selection across wrapped lines.
 
 Click a loaded image (including HTML images) or a rendered Mermaid diagram to
 show a temporary enlarged overlay using its original decoded pixels. It has no
-native window frame, title bar or buttons. The viewport fills the available window
+native window frame, title bar or buttons. The editor reuses one preview image
+object and scales it on the GPU where available; closing clears the source and
+document references rather than retaining another image for each click. The viewport fills the available window
 with a 24-unit dismissible margin on each side, without a fixed maximum size.
 Click outside the image or press
 Escape to dismiss it; losing focus also dismisses it. The dismissing click is
@@ -133,13 +169,28 @@ source text. Unsupported HTML tags and blocks display literally; scripts, styles
 and embedded content are never executed. Remote images are not fetched.
 
 Drag to select rendered text across paragraphs, headings, table cells and code
-blocks. Formatting and syntax colors remain visible. Edit → Copy /
+blocks. Double-click selects a Unicode word, including across inline formatting;
+a third click at the same position selects the rendered line within that text
+block or table cell. Clicking text returns keyboard focus from Find to the page. Formatting and syntax colors remain visible. Edit → Copy /
 Command/Ctrl+C copies the selection, preserving code whitespace; without a
 selection or focused text field it copies the full Markdown source. Right-click
 text and choose **Copy text** to copy the selection, or the whole block when
 nothing is selected. Code blocks retain their complete-source copy button.
 Escape, zoom and document switching clear the text selection.
 Links remain clickable and diagrams keep their image context menu.
+
+**Edit → Find** / Command/Ctrl+F searches rendered text, including headings,
+paragraphs, link labels, table cells, code and strikethrough text. Matching is
+case-insensitive with Unicode NFC and whitespace normalization; phrases can span
+adjacent text blocks. Hidden front matter, Markdown syntax and text inside images
+or rendered diagrams are excluded. There is no OCR or source-file modification.
+Enter/F3/Command-or-Ctrl+G advances; Shift reverses direction. Results wrap and the
+current match is highlighted independently of text selection. Navigation reveals
+matches below the viewport and inside horizontally scrolled code/tables.
+Escape closes Find without discarding the user's text selection. Zoom/theme
+rebuilds recompute results and retain the current match index. Search runs after
+180 ms of idle typing in a cancellable worker, rejects obsolete results after
+query changes or closing/switching documents, and caps results at 10,000.
 
 Right-click a rendered diagram and choose **Copy image** to copy its PNG at the
 rendered resolution. Markdown Crop has been removed, including capture jobs,
@@ -158,6 +209,15 @@ selection rectangles are culled too, including within a single long paragraph or
 syntax-highlighted code block. Card contents retain page coordinates just like
 prose and tables, so offscreen code remains selectable and programmatic navigation
 reveals its destination. This is rendering culling, not a document memory cap.
+
+Fyne can evict idle text renderers together with their local theme overrides.
+When recreating a renderer directly for painting, as well as before refreshing
+or reflowing retained text, the viewer checks its embedded
+RichText theme and restores the reading scope if its colors or font size have
+fallen back to the application theme. Renderer construction also handles the
+refresh triggered by restoring that scope before it is cached. This avoids white text on a light reading
+page after idle time/navigation in a dark application. Theme restoration runs
+only when the scope differs, without refreshing the complete document on scroll.
 
 Selection hit testing reuses fragment geometry until layout/theme refresh and
 measures byte offsets only in the nearest fragment. A drag resolves the viewport

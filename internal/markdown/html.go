@@ -121,6 +121,47 @@ func htmlBlocks(nodes []*html.Node, align string, depth int) ([]ast.Node, bool) 
 		if node.Type == html.TextNode && strings.TrimSpace(node.Data) == "" && (!paragraph.HasChildren() || node.NextSibling == nil) {
 			continue
 		}
+		if node.Type == html.ElementNode && node.Data == "details" {
+			flush()
+			disclosure := &Details{Summary: "Details"}
+			for _, attr := range node.Attr {
+				if attr.Key == "open" {
+					disclosure.Open = true
+				}
+			}
+			var body []*html.Node
+			summaryFound := false
+			for child := node.FirstChild; child != nil; child = child.NextSibling {
+				if child.Type == html.ElementNode && child.Data == "summary" && !summaryFound {
+					summaryFound = true
+					var title strings.Builder
+					var collect func(*html.Node)
+					collect = func(n *html.Node) {
+						if n.Type == html.TextNode {
+							title.WriteString(n.Data)
+						}
+						for c := n.FirstChild; c != nil; c = c.NextSibling {
+							collect(c)
+						}
+					}
+					collect(child)
+					if label := strings.Join(strings.Fields(title.String()), " "); label != "" {
+						disclosure.Summary = label
+					}
+				} else {
+					body = append(body, child)
+				}
+			}
+			converted, ok := htmlBlocks(body, align, depth+1)
+			if !ok {
+				return nil, false
+			}
+			for _, child := range converted {
+				disclosure.AppendChild(disclosure, child)
+			}
+			blocks = append(blocks, disclosure)
+			continue
+		}
 		if node.Type == html.ElementNode && (node.Data == "p" || node.Data == "div") {
 			flush()
 			alignment := htmlAttribute(node, "align")

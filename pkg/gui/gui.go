@@ -10,6 +10,8 @@ import (
 	"emanuelelongo/proview/pkg/signatures"
 	"image"
 	"log"
+	"os"
+	"runtime"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -22,6 +24,10 @@ import (
 )
 
 type Gui struct {
+	markdownPreviewCache              *markdownImagePreview
+	documentThumbs                    []documentThumbnail
+	documentDrag                      *documentDragState
+	documentPress                     *editorDocument
 	gifPlayback                       *gifPlayback
 	printJob                          *printState
 	printBackend                      printBackend
@@ -92,6 +98,7 @@ type Gui struct {
 	pdfCrops                          map[int]*cropOverlay
 	app                               fyne.App
 	window                            fyne.Window
+	markdownSourceItem                *fyne.MenuItem
 	markdownThemeItem                 *fyne.MenuItem
 	markdownThemeItems                []*fyne.MenuItem
 	windowWorkArea                    func() fyne.Size
@@ -191,6 +198,11 @@ type Gui struct {
 	tipSurface                        *statusTextSurface
 	fileInfo                          *canvas.Text
 	fileSizeBytes                     int64
+	debugEnabled                      bool
+	debugItem                         *fyne.MenuItem
+	debugTimer                        *time.Timer
+	debugGeneration                   uint64
+	debugCPU                          debugCPUSample
 	tipsEnabled                       bool
 	tipsItem                          *fyne.MenuItem
 	tipsMenu                          *fyne.Menu
@@ -203,6 +215,15 @@ type Gui struct {
 }
 
 func NewGui() *Gui {
+	if runtime.GOOS == "linux" {
+		// GLFW otherwise derives WM_CLASS from the initial document title.
+		// Keep its instance name aligned with the launcher's StartupWMClass,
+		// including on Wayland desktops running this X11 build via XWayland.
+		if err := os.Setenv("RESOURCE_NAME", "Proview"); err != nil {
+			log.Printf("Could not set Linux window identity: %v", err)
+		}
+	}
+
 	if err := registerDefaultFileAssociations(); err != nil {
 		log.Printf("Could not register file associations: %v", err)
 	}
@@ -213,6 +234,10 @@ func NewGui() *Gui {
 
 func newGui(application fyne.App) *Gui {
 	g := &Gui{zoom: 1, fitZoom: 1, app: application, tipsEnabled: application.Preferences().BoolWithFallback(tipsPreferenceKey, true)}
+	g.debugEnabled = application.Preferences().Bool(debugPreferenceKey)
+	if g.debugEnabled {
+		g.tipsEnabled = false
+	}
 	g.editors = &editorGroup{windows: []*Gui{g}, active: g}
 	g.app.SetIcon(fyne.NewStaticResource("app-icon.png", assets.AppIcon))
 	if _, ok := g.app.Settings().Theme().(largerIconTheme); !ok {
@@ -320,7 +345,7 @@ func newGui(application fyne.App) *Gui {
 	g.fileInfo = canvas.NewText("", theme.Color(theme.ColorNameForeground))
 	g.fileInfo.TextSize = g.tipText.TextSize
 	g.fileInfo.Alignment = fyne.TextAlignTrailing
-	infoViewport := container.NewScroll(container.New(tipTextLayout{}, g.fileInfo))
+	infoViewport := container.NewScroll(container.NewStack(newFileInfoSurface(g)))
 	infoViewport.Direction = container.ScrollNone
 	g.tipBar = container.NewStack(tipBackground, container.New(statusBarLayout{}, tipViewport, infoViewport))
 
@@ -336,6 +361,9 @@ func newGui(application fyne.App) *Gui {
 	g.window.SetCloseIntercept(g.requestClose)
 	g.window.SetOnDropped(g.openDroppedFiles)
 	g.installKeyHandler()
+	if g.debugEnabled {
+		g.startDebugInfo()
+	}
 
 	return g
 }

@@ -229,3 +229,61 @@ Tests also cover byte/page eviction limits, recent-page retention, regeneration
 after eviction, caller mutation isolation and cleared workspace/window references.
 The STL loader and existing PDF raster residency were inspected without changes;
 this pass did not establish a new measured bottleneck in those paths.
+
+## Markdown workspace font reuse (2026-10-29)
+
+A software-driver probe opened the reported swarm migration, operator migration
+README and gateway migration Markdown files, captured each opening viewport,
+then made three full cycles through their workspace entries. Heap profiles used
+`runtime/pprof`; `runtime.MemStats.HeapAlloc` was sampled after GC at each phase.
+The private files were read locally; neither their contents nor absolute paths
+are test fixtures. Embedded decoded images accounted for approximately 83 MiB.
+
+The dominant growth was parsed font data: Fyne keys ordinary font faces by theme
+scope, so newly constructed Markdown scopes created additional copies. Switching
+also rebuilt each entire reading view. Retained Go heap after opening all three
+was 203 MiB, then 272, 342 and 411 MiB after successive cycles. Sharing explicit
+font resources for text runs covered by the selected font reduced duplication;
+retaining each workspace entry's reading view then bounded repeated switching.
+The equivalent combined run measured 157 MiB after opening and approximately
+158 MiB after each of the three cycles. These are Go heap figures, not native
+process RSS or a universal memory limit; transient decoding, graphics resources,
+font fallback and Fyne caches remain additional costs.
+
+Rendered text uses shared font resources only when that font covers the entire
+run. Unsupported scripts/emoji retain Fyne's native fallback. Views suspend GIF
+playback and cancel Mermaid work while inactive; resuming restores the outline,
+clears old selection and requests diagrams in a fresh context. An inactive view
+rebuilds if the saved reading theme changed. Closing an entry clears its retained
+view reference. No forced GC, process memory limit or private Fyne cache API is
+used in the application.
+
+Regression tests cover shared font identities/coverage fallback, repeated
+workspace switches reusing the same blocks, inactive-theme invalidation and the
+existing selection/layout/renderer-eviction paths. The GUI suite also checks PDF
+page/thumbnail residency. PDF/image source caches already have their separate
+bounds; this investigation did not measure equivalent native RSS workloads for
+those formats and does not establish a global cap for them.
+
+## Enlarged Markdown image previews (2026-10-29)
+
+A separate software-driver probe used a shared 3000 × 2000 NRGBA image and ten
+open / fit / 100% / 200% / close cycles, capturing the window after each scale.
+After GC, retained Go heap increased by approximately 0.06 MiB before and 0.01 MiB
+after the change. It did not reproduce a persistent Go-heap leak. Cumulative
+allocation churn fell from approximately 7,929 MiB to 3,276 MiB, including the
+software driver's capture/resampling buffers. These totals are not peak RAM or
+native desktop/GPU measurements.
+
+The overlay now uses `ImageScaleFastest`, like the main image viewer, allowing
+GPU scaling without the additional software downsampling buffer. Each editor
+reuses one preview/`canvas.Image` identity across repeated openings and document
+switches, instead of leaving a separate native texture-cache entry for every
+click. Closing clears its source image, animation, document and focus references
+and refreshes the image before removing the overlay. Source pixels remain owned
+by the Markdown document; no duplicate decoding is performed. Native texture
+residency still follows Fyne's cache lifecycle and was not profiled in this
+software-driver test.
+
+Regression tests cover image identity reuse, cross-document replacement, cleared
+references on close, zoom/pan/fit/focus handling and animated image playback.

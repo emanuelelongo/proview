@@ -146,7 +146,10 @@ func (v *markdownView) buildOutline() {
 }
 
 func (v *markdownView) applyOutlineVisibility() {
-	expanded := v.editor.markdownOutlineExpanded
+	expanded := v.editor.markdownOutlineExpanded && !v.sourceMode
+	if v.sourceMode {
+		v.outlineToggle.Disable()
+	}
 	v.outlineToggle.SetActive(expanded)
 	if expanded {
 		v.outlineToggle.button.tooltip = "Hide contents"

@@ -21,8 +21,9 @@ import (
 const searchResultLimit = 10000
 
 type searchHit struct {
-	page  int
-	quads []textselect.Quad
+	markdown *markdownTextSelection
+	page     int
+	quads    []textselect.Quad
 }
 type documentSearch struct {
 	bar                      *fyne.Container
@@ -32,6 +33,7 @@ type documentSearch struct {
 	cancel                   context.CancelFunc
 	serial                   uint64
 	doc                      *document.Document
+	markdown                 *markdownView
 	revision                 uint64
 	key                      string
 	textCache                *searchTextCache
@@ -75,10 +77,12 @@ func (g *Gui) newSearchBar() *fyne.Container {
 	return s.bar
 }
 func (g *Gui) openSearch() {
-	if g.document == nil || g.showingModel() {
+	if (g.document == nil && !g.showingMarkdown()) || g.showingModel() {
 		return
 	}
-	g.setAnnotationTool(toolSelect)
+	if !g.showingMarkdown() {
+		g.setAnnotationTool(toolSelect)
+	}
 	g.search.bar.Show()
 	if g.search.host != nil {
 		g.search.host.Refresh()
@@ -101,6 +105,7 @@ func (g *Gui) closeSearch() {
 	s.hits = nil
 	s.textCache = nil
 	s.doc = nil
+	s.markdown = nil
 	s.key = ""
 	s.current = -1
 	s.bar.Hide()
@@ -113,6 +118,9 @@ func (g *Gui) closeSearch() {
 	}
 }
 func (g *Gui) searchKey() string {
+	if g.showingMarkdown() {
+		return fmt.Sprintf("markdown:%p", g.markdownView)
+	}
 	if g.document == nil {
 		return ""
 	}
@@ -120,8 +128,16 @@ func (g *Gui) searchKey() string {
 }
 func (g *Gui) syncSearch() {
 	if s := g.search; s != nil && s.bar.Visible() {
-		if g.document == nil || g.showingModel() {
+		if (g.document == nil && !g.showingMarkdown()) || g.showingModel() {
 			g.closeSearch()
+			return
+		}
+		if g.showingMarkdown() {
+			if s.markdown != g.markdownView {
+				g.startSearch()
+			} else {
+				g.refreshSearchHighlight()
+			}
 			return
 		}
 		rev := g.document.SourceRevision()
@@ -133,7 +149,9 @@ func (g *Gui) syncSearch() {
 		}
 	}
 }
-func (g *Gui) startSearch() {
+func (g *Gui) startSearch() { g.startSearchAt(0) }
+
+func (g *Gui) startSearchAt(initialMatch int) {
 	s := g.search
 	if s == nil || !s.bar.Visible() {
 		return
@@ -146,6 +164,7 @@ func (g *Gui) startSearch() {
 		s.textCache = &searchTextCache{}
 	}
 	s.doc = g.document
+	s.markdown = g.markdownView
 	if g.document != nil {
 		s.revision = g.document.SourceRevision()
 	} else {
@@ -159,13 +178,17 @@ func (g *Gui) startSearch() {
 	s.limited = false
 	g.refreshSearchHighlight()
 	query := strings.TrimSpace(s.entry.Text)
-	s.running = query != "" && g.document != nil
+	s.running = query != "" && (g.document != nil || g.showingMarkdown())
 	g.updateSearchStatus()
 	if !s.running {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
+	if g.showingMarkdown() {
+		g.startMarkdownSearch(ctx, cancel, query, initialMatch)
+		return
+	}
 	serial, doc, key := s.serial, g.document, s.key
 	snapshot := doc.RenderingSnapshot()
 	var engine ocr.Engine
@@ -275,7 +298,10 @@ func (g *Gui) updateSearchStatus() {
 	value := ""
 	if strings.TrimSpace(s.entry.Text) != "" {
 		value = fmt.Sprintf("%d / %d", s.current+1, len(s.hits))
-		if s.running {
+		if s.running && s.markdown != nil {
+			value += " · searching"
+		}
+		if s.running && s.doc != nil {
 			value += fmt.Sprintf(" · searching %d/%d", s.scanned, s.doc.PageCount())
 		}
 		if s.failed > 0 {
@@ -309,6 +335,12 @@ func (g *Gui) showSearchHit(index int) {
 	}
 	s.current = index
 	hit := s.hits[index]
+	if g.showingMarkdown() {
+		g.showMarkdownSearchHit(hit)
+		g.refreshSearchHighlight()
+		g.updateSearchStatus()
+		return
+	}
 	if g.document.Format() == document.FormatPDF {
 		g.activatePDFPage(hit.page)
 		if hit.page < len(g.pdfPageContainers) {
@@ -332,6 +364,14 @@ func (g *Gui) refreshSearchHighlight() {
 	s := g.search
 	if s == nil {
 		return
+	}
+	if g.showingMarkdown() {
+		v := g.markdownView
+		v.searchMatch = nil
+		if s.bar.Visible() && s.current >= 0 && s.current < len(s.hits) {
+			v.searchMatch = s.hits[s.current].markdown
+		}
+		v.refreshSelection()
 	}
 	var layer *signatureLayer
 	if s.bar.Visible() && s.current >= 0 && s.current < len(s.hits) && g.document != nil {

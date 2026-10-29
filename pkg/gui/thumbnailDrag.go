@@ -211,11 +211,12 @@ func (g *Gui) scheduleThumbnailScroll(state *thumbnailDragState) {
 	})
 }
 func (g *Gui) cancelThumbnailDrag() bool {
+	documentCancelled := g.cancelDocumentDrag()
 	pressed := g.thumbnailPress != nil
 	g.thumbnailPress = nil
 	state := g.thumbnailDrag
 	if state == nil {
-		return pressed
+		return pressed || documentCancelled
 	}
 	if state.timer != nil {
 		state.timer.Stop()

@@ -35,15 +35,37 @@ func (v *markdownView) showImagePreview(picture image.Image) {
 	if v.imagePreview != nil {
 		v.imagePreview.close()
 	}
-	p := &markdownImagePreview{view: v, previousFocus: v.editor.window.Canvas().Focused(), picture: canvas.NewImageFromImage(picture), scale: 1, fitted: true}
+	p := v.editor.markdownPreviewCache
+	if p == nil {
+		p = v.newImagePreview()
+		v.editor.markdownPreviewCache = p
+	}
+	p.view = v
+	p.closed, p.scale, p.fitted = false, 1, true
+	p.previousFocus = v.editor.window.Canvas().Focused()
+	p.picture.Image = picture
+	p.picture.Refresh()
+	p.animation = nil
 	for _, segment := range v.animatedImages {
 		if segment.image == picture {
 			p.animation = segment.player
 			break
 		}
 	}
+	v.imagePreview = p
+	target := v.editor.window.Canvas()
+	p.overlay.Resize(target.Size())
+	target.Overlays().Add(p.overlay)
+	target.Focus(p.overlay)
+	p.fit()
+}
+
+// Reuse the canvas image identity across openings so native texture caches
+// cannot accumulate a separate full-resolution texture for every click.
+func (v *markdownView) newImagePreview() *markdownImagePreview {
+	p := &markdownImagePreview{view: v, picture: canvas.NewImageFromImage(nil), scale: 1, fitted: true, closed: true}
 	p.picture.FillMode = canvas.ImageFillContain
-	p.picture.ScaleMode = canvas.ImageScaleSmooth
+	p.picture.ScaleMode = canvas.ImageScaleFastest
 	p.scroll = container.NewScroll(container.New(&markdownPreviewImageLayout{preview: p}, p.picture))
 	p.viewport = &markdownPreviewViewport{preview: p}
 	p.viewport.ExtendBaseWidget(p.viewport)
@@ -52,12 +74,7 @@ func (v *markdownView) showImagePreview(picture image.Image) {
 	p.viewport.content = container.NewStack(p.scroll, interaction)
 	p.overlay = &markdownPreviewOverlay{preview: p}
 	p.overlay.ExtendBaseWidget(p.overlay)
-	v.imagePreview = p
-	target := v.editor.window.Canvas()
-	p.overlay.Resize(target.Size())
-	target.Overlays().Add(p.overlay)
-	target.Focus(p.overlay)
-	p.fit()
+	return p
 }
 
 func (p *markdownImagePreview) close() {
@@ -70,10 +87,17 @@ func (p *markdownImagePreview) close() {
 	}
 	target := p.view.editor.window.Canvas()
 	wasFocused := target.Focused() == p.overlay
+	// Drop the source reference and invalidate the same canvas image, including
+	// when the overlay has already left the visible tree.
+	p.animation = nil
+	p.picture.Image = nil
+	p.picture.Refresh()
 	target.Overlays().Remove(p.overlay)
 	if wasFocused && (target.Focused() == nil || target.Focused() == p.overlay) {
 		target.Focus(p.previousFocus)
 	}
+	p.previousFocus = nil
+	p.view = nil
 }
 
 // The full-canvas surface consumes the dismissing click so it cannot activate
@@ -151,10 +175,16 @@ func (*markdownPreviewOverlayRenderer) Destroy() {}
 func (*markdownPreviewOverlayRenderer) Refresh() {}
 
 func (p *markdownImagePreview) imageSize() fyne.Size {
+	if p.picture.Image == nil {
+		return fyne.Size{}
+	}
 	bounds := p.picture.Image.Bounds().Size()
 	return fyne.NewSize(float32(bounds.X)*p.scale, float32(bounds.Y)*p.scale)
 }
 func (p *markdownImagePreview) fitScale() float32 {
+	if p.picture.Image == nil {
+		return 1
+	}
 	bounds := p.picture.Image.Bounds().Size()
 	size := p.viewport.Size()
 	return min(max(1, size.Width)/float32(bounds.X), max(1, size.Height)/float32(bounds.Y))
@@ -167,6 +197,9 @@ func (p *markdownImagePreview) zoom(direction int, anchor *fyne.Position) {
 	p.setScale(p.scale*float32(math.Pow(1.25, float64(direction))), anchor)
 }
 func (p *markdownImagePreview) setScale(scale float32, anchor *fyne.Position) {
+	if p.closed {
+		return
+	}
 	size := p.viewport.Size()
 	point := fyne.NewPos(size.Width/2, size.Height/2)
 	if anchor != nil {
@@ -209,7 +242,7 @@ func (v *markdownPreviewViewport) CreateRenderer() fyne.WidgetRenderer {
 func (v *markdownPreviewViewport) MinSize() fyne.Size { return fyne.NewSize(160, 120) }
 func (v *markdownPreviewViewport) Resize(size fyne.Size) {
 	oldSize := v.Size()
-	if size == oldSize || size.Width <= 0 || size.Height <= 0 {
+	if v.preview.closed || size == oldSize || size.Width <= 0 || size.Height <= 0 {
 		return
 	}
 	p := v.preview

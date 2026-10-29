@@ -105,7 +105,7 @@ func TestMarkdownRendersNativeBlocksAndResponsiveThemes(t *testing.T) {
 		}
 	}
 	scroll.ScrollToTop()
-	for _, want := range []string{"Markdown in Proview", "fmt.Println", "HTML is shown literally", "Unknown languages", "E = mc^2"} {
+	for _, want := range []string{"Markdown in Proview", "fmt.Println", "HTML source", "Unknown languages", "E = mc^2"} {
 		if !strings.Contains(texts, want) {
 			t.Fatalf("missing rendered content %q", want)
 		}
@@ -227,6 +227,24 @@ func TestMarkdownCodeScrollRoutesBothAxes(t *testing.T) {
 			}
 			if surface == nil {
 				t.Fatal("code scroll routing surface missing")
+			}
+			for _, width := range []float32{800, 500} {
+				g.window.Resize(fyne.NewSize(width, 600))
+				g.window.Canvas().Capture()
+				foundCopy := false
+				for _, object := range test.LaidOutObjects(g.markdownPanel) {
+					if button, ok := object.(*iconButton); ok && button.tooltip == "Copy code" {
+						foundCopy = true
+						textRight := app.Driver().AbsolutePositionForObject(surface).X + surface.Size().Width
+						buttonLeft := app.Driver().AbsolutePositionForObject(button).X
+						if textRight > buttonLeft {
+							t.Fatal("code viewport overlaps the copy button column")
+						}
+					}
+				}
+				if !foundCopy {
+					t.Fatal("code copy button missing")
+				}
 			}
 			position := app.Driver().AbsolutePositionForObject(surface).Add(fyne.NewPos(20, 20))
 			test.Scroll(g.window.Canvas(), position, 0, -40)
