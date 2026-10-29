@@ -178,10 +178,12 @@ activation completes before focus assertions. Accessibility was already granted;
 the initial permission diagnosis was misleading. Keyboard actions now contribute
 to clip timing so navigation and the final hold are retained.
 
-The 800 × 592 GIF (about 8 seconds) was recorded and visually reviewed across the
+The 640 × 474 GIF (about 8 seconds, 6 fps) was recorded and visually reviewed across the
 whole motion, including the light page, loaded icon/images, Contents navigation,
 the playing signing GIF and the final NOTE/import image. The owned window closed
 cleanly. The README and catalog use `docs/screenshots/markdown.gif`; the previous
-PNG remains available as an older capture. Fixture/catalog checks and 26 Python
+PNG remains available as an older capture. The reduced GIF size keeps the full
+repository screenshot set within the shared 128 MiB animation decode budget.
+Fixture/catalog checks and 27 Python
 recorder/cleanup tests pass. This is native documentation capture, not additional
 export or cross-platform validation.

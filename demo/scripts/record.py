@@ -160,6 +160,9 @@ def load_catalog(path=DEMO / "cases.json", readme=ROOT / "README.md"):
             raise ValueError("Invalid cleanup undo count")
         if not 2 <= case.get("seconds", 6) <= 60:
             raise ValueError("Capture duration must be 2..60 seconds")
+        if case.get("format") == "gif":
+            if case.get("gif_width", 800) not in {640, 800} or case.get("gif_fps", 12) not in {6, 12}:
+                raise ValueError("Unsupported GIF resolution or frame rate")
         if case.get("clip"):
             options = case["clip"]
             if case["format"] == "png" or set(options) - {"before", "after", "max_seconds"}:
@@ -215,7 +218,7 @@ def select_cases(catalog, requested):
     return [by_id[key] for key in dict.fromkeys(requested)]
 
 
-def encode_args(source, output, media_format, clip=None):
+def encode_args(source, output, media_format, clip=None, gif_width=800, gif_fps=12):
     args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
     if clip:
         args += ["-ss", str(clip["start"])]
@@ -223,7 +226,7 @@ def encode_args(source, output, media_format, clip=None):
     if clip:
         args += ["-t", str(clip["duration"])]
     if media_format == "gif":
-        args += ["-filter_complex", "fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a", "-loop", "0"]
+        args += ["-filter_complex", f"fps={gif_fps},scale={gif_width}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a", "-loop", "0"]
     elif media_format == "mp4":
         args += ["-vf", "scale=1000:-2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an"]
     else:
@@ -559,7 +562,7 @@ def record_case(binary, case, run_folder):
                 if capture.poll() is None:
                     capture.terminate()
                     capture.wait(timeout=5)
-        run(encode_args(raw, output, case["format"], clip), timeout=120)
+        run(encode_args(raw, output, case["format"], clip, case.get("gif_width", 800), case.get("gif_fps", 12)), timeout=120)
         metadata = json.loads(run(["ffprobe", "-v", "quiet", "-show_streams", "-show_format", "-of", "json", output], timeout=15).stdout)
         if case["format"] != "png":
             # Sample the whole clip even when it is shorter than two seconds.

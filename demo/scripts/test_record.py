@@ -56,6 +56,12 @@ class RecorderTests(unittest.TestCase):
         clip = record.clip_interval(session.input_times, 100, 10, {"before": .25, "after": 1, "max_seconds": 6})
         self.assertEqual(clip, {"start": .75, "duration": 4.25})
 
+    def test_small_gif_keeps_original_clip_timing(self):
+        clip = {"start": 2.025, "duration": 8.062}
+        args = record.encode_args(Path("raw.mov"), Path("result.gif"), "gif", clip, 640, 6)
+        self.assertEqual(args[args.index("-t") + 1], "8.062")
+        self.assertIn("fps=6,scale=640:-1", args[args.index("-filter_complex") + 1])
+
     def test_subprocess_diagnostics_reach_the_report_and_console(self):
         error = record.subprocess.CalledProcessError(1, ["osascript", "window.applescript"], stderr=b"System Events: keystroke failed (-1700)\n")
         self.assertIn("System Events: keystroke failed (-1700)", record.error_details(error))

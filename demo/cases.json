@@ -774,7 +774,9 @@
         "before": 0.4,
         "after": 1.5,
         "max_seconds": 10
-      }
+      },
+      "gif_width": 640,
+      "gif_fps": 6
     },
     {
       "id": "stl-orbit",
