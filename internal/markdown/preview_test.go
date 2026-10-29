@@ -96,3 +96,34 @@ func TestPreviewPDFIncludesClosedDetailsContent(t *testing.T) {
 		t.Fatalf("missing disclosure output: %q, %v", text, err)
 	}
 }
+
+func TestGitHubAlertsPrintAndPreview(t *testing.T) {
+	source := "> [!IMPORTANT]\n> Keep **all content** and [instructions](guide.md).\n>\n> - Save configuration\n\nAfterwards\n"
+	doc, err := Load("github.md", "", strings.NewReader(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, preview := range []bool{false, true} {
+		output, err := doc.layoutPDF(context.Background(), preview)
+		if err != nil {
+			t.Fatal(err)
+		}
+		renderer, err := fitz.NewFromMemory(output.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text, err := renderer.Text(0)
+		renderer.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"Important", "all content", "instructions", "Save configuration", "Afterwards"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("preview=%v: missing %q in %q", preview, want, text)
+			}
+		}
+		if strings.Contains(text, "[!IMPORTANT]") {
+			t.Fatalf("source marker leaked into PDF: %q", text)
+		}
+	}
+}

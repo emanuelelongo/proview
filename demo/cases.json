@@ -712,29 +712,69 @@
     },
     {
       "id": "markdown-read",
-      "title": "Read Markdown with an outline, diagram, table and code",
-      "fixture": "reading.md",
-      "format": "png",
-      "target": "markdown.png",
+      "title": "Navigate the repository README in light mode",
+      "format": "gif",
+      "target": "markdown.gif",
       "automation": "scripted",
       "readme_section": "Read Markdown",
-      "readme_alt": "Markdown reading: a Mermaid diagram, table and highlighted code with the Contents panel open.",
+      "readme_alt": "Markdown in light mode: navigating the repository README with Contents, local images and a GitHub note.",
       "setup": [
+        {
+          "op": "menu",
+          "path": [
+            "View",
+            "Markdown Theme",
+            "Light"
+          ]
+        }
+      ],
+      "actions": [
         {
           "op": "click",
           "at": [
             0.975,
             0.13
           ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.4
+        },
+        {
+          "op": "click",
+          "at": [
+            0.82,
+            0.535
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        },
+        {
+          "op": "key",
+          "key": "escape"
+        },
+        {
+          "op": "key",
+          "key": "pagedown"
         }
       ],
-      "actions": [],
       "cleanup_undo": 0,
       "expected": [
-        "The Mermaid flowchart has finished rendering.",
-        "The table and syntax-highlighted code are visible with the floating Contents panel.",
-        "No text is being edited and no remote resource is loaded."
-      ]
+        "The original repository README is opened directly, without copying it.",
+        "The reading page is light and local images are loaded.",
+        "Contents navigates to Add handwritten signatures.",
+        "The final page shows the GitHub NOTE and signature import image.",
+        "No source is edited and only the owned demo window is closed."
+      ],
+      "repository_file": "README.md",
+      "seconds": 12,
+      "clip": {
+        "before": 0.4,
+        "after": 1.5,
+        "max_seconds": 10
+      }
     },
     {
       "id": "stl-orbit",

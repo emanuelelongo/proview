@@ -4,21 +4,27 @@ on run argv
     set marker to item 2 of argv
     set targetPID to (item 3 of argv) as integer
     tell application "System Events"
-        set matches to {}
-        if targetPID > 0 then
-            set candidates to (application processes whose unix id is targetPID)
-        else
-            set candidates to (application processes whose background only is false)
-        end if
-        repeat with proc in candidates
-            repeat with win in windows of proc
-                if name of win contains marker then set end of matches to {proc, win}
-            end repeat
+        -- Process names are ambiguous when several copies of Proview are open.
+        -- Retain numeric references instead of resolving a whose clause by name.
+        set processIndex to 0
+        repeat with candidateIndex from 1 to count of application processes
+            if unix id of application process candidateIndex is targetPID then
+                set processIndex to candidateIndex as integer
+                exit repeat
+            end if
         end repeat
-        if (count matches) is not 1 then error "Expected exactly one demo window; found " & (count matches)
-        set target to item 1 of matches
-        set proc to item 1 of target
-        set win to item 2 of target
+        if processIndex is 0 then error "Expected exactly one demo window; found 0"
+        set proc to a reference to application process processIndex
+        set windowIndex to 0
+        set matchCount to 0
+        repeat with candidateIndex from 1 to count of windows of proc
+            if name of window candidateIndex of proc contains marker then
+                set windowIndex to candidateIndex as integer
+                set matchCount to matchCount + 1
+            end if
+        end repeat
+        if matchCount is not 1 then error "Expected exactly one demo window; found " & matchCount
+        set win to a reference to window windowIndex of proc
         if operation is "place" then
             set position of win to {80, 60}
             set size of win to {1000, 740}
@@ -50,11 +56,15 @@ on run argv
             end if
         else if operation is "menu" then
             set menuName to item 4 of argv
+            click menu bar item menuName of menu bar 1 of application process processIndex
             set itemName to item 5 of argv
-            tell proc
-                click menu bar item menuName of menu bar 1
-                click menu item itemName of menu 1 of menu bar item menuName of menu bar 1
-            end tell
+            if (count argv) is 6 then
+                click menu item itemName of menu 1 of menu bar item menuName of menu bar 1 of application process processIndex
+                set childName to item 6 of argv
+                click menu item childName of menu 1 of menu item itemName of menu 1 of menu bar item menuName of menu bar 1 of application process processIndex
+            else
+                click menu item itemName of menu 1 of menu bar item menuName of menu bar 1 of application process processIndex
+            end if
         else if operation is "close" then
             click (first button of win whose subrole is "AXCloseButton")
             return "closed"

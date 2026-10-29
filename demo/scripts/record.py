@@ -93,8 +93,8 @@ def validate_action(action):
         raise ValueError("Text action needs a value")
     if op == "menu":
         path = action.get("path")
-        if not isinstance(path, list) or len(path) != 2 or not all(isinstance(label, str) and label for label in path):
-            raise ValueError("Menu action needs a menu and item label")
+        if not isinstance(path, list) or not 2 <= len(path) <= 3 or not all(isinstance(label, str) and label for label in path):
+            raise ValueError("Menu action needs a menu and item labels")
     for key in ("seconds", "duration"):
         if key in action and not 0 < action[key] <= 60:
             raise ValueError("Action time must be between 0 and 60 seconds")
@@ -143,8 +143,9 @@ def load_catalog(path=DEMO / "cases.json", readme=ROOT / "README.md"):
         ids.add(case_id)
         if case["format"] not in FORMATS:
             raise ValueError("Unsupported media format")
-        if not confined(DEMO / "fixtures", case["fixture"]).is_file():
-            raise ValueError("Missing fixture: " + case["fixture"])
+        source = confined(ROOT, case["repository_file"]) if case.get("repository_file") else confined(DEMO / "fixtures", case["fixture"])
+        if not source.is_file():
+            raise ValueError("Missing demo input: " + str(source))
         target = confined(ROOT / "docs/screenshots", case["target"])
         if target.suffix != "." + case["format"] or case["target"] in outputs:
             raise ValueError("Duplicate target or mismatched media extension")
@@ -295,7 +296,16 @@ class Session:
         self.input_times = []
 
     def window(self, operation, *args):
-        result = run(["osascript", DEMO / "scripts/window.applescript", operation, self.marker, str(self.pid or 0), *args], timeout=15)
+        try:
+            result = run(["osascript", DEMO / "scripts/window.applescript", operation, self.marker, str(self.pid or 0), *args], timeout=15)
+        except subprocess.CalledProcessError as error:
+            details = error_details(error)
+            if "(-25211)" in details or "(-1743)" in details:
+                raise RuntimeError(
+                    "macOS denied Accessibility or System Events Automation access for the invoking terminal/agent. "
+                    "Enable it in System Settings > Privacy & Security, then retry.\n" + details
+                ) from error
+            raise
         if operation == "close":
             return None
         values = [int(value) for value in result.stdout.decode().strip().split(",")]
@@ -305,6 +315,10 @@ class Session:
             raise RuntimeError("Demo process identity changed")
         self.pid = values[0]
         self.bounds = values[1:]
+        if operation == "place":
+            run(["osascript", "-l", "JavaScript", "-e",
+                 'ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(' + str(self.pid) + ').activateWithOptions(3);'], timeout=10)
+            time.sleep(.5)
         return self.bounds
 
     def input(self, args, timeout):
@@ -362,7 +376,11 @@ class Session:
         if op not in {"key", "wait", "choose-file"}:
             self.window("assert")
         if op == "key":
-            self.window("key", action["key"], ",".join(action.get("modifiers", [])))
+            self.input_times.append(time.monotonic())
+            try:
+                self.window("key", action["key"], ",".join(action.get("modifiers", [])))
+            finally:
+                self.input_times.append(time.monotonic())
         elif op == "menu":
             self.window("menu", *action["path"])
         elif op == "choose-file":
@@ -462,7 +480,7 @@ class Session:
 
 
 def launch_command(binary, case, work, source):
-    return [str(binary), "--new-window", "--work-dir", str(work), "--data-dir", str(work.parent / "profile"), str(source)], None
+    return [str(binary), "--foreground", "--new-window", "--work-dir", str(work), "--data-dir", str(work.parent / "profile" / str(os.getpid())), str(source)], None
 
 
 def record_case(binary, case, run_folder):
@@ -470,13 +488,18 @@ def record_case(binary, case, run_folder):
     work = folder / "work"
     work.mkdir(parents=True)
     marker = "demo-" + str(os.getpid()) + "-" + case["id"]
-    # Copy all inputs so native Open/merge/import dialogs start in a useful folder.
-    for source in (DEMO / "fixtures").iterdir():
-        if source.is_file():
-            shutil.copy2(source, work / source.name)
-    source = work / case["fixture"]
-    unique = work / (marker + source.suffix)
-    source.rename(unique)
+    if case.get("repository_file"):
+        # Open the real read-only Markdown so relative images resolve in place.
+        unique = confined(ROOT, case["repository_file"])
+        marker = unique.name
+    else:
+        # Copy editing inputs so native dialogs start in a disposable folder.
+        for source in (DEMO / "fixtures").iterdir():
+            if source.is_file():
+                shutil.copy2(source, work / source.name)
+        source = work / case["fixture"]
+        unique = work / (marker + source.suffix)
+        source.rename(unique)
     command, environment = launch_command(binary, case, work, unique)
     log = (folder / "launch.log").open("wb")
     try:
@@ -485,6 +508,7 @@ def record_case(binary, case, run_folder):
         log.close()
         raise
     session = Session(marker, folder)
+    session.pid = launcher.pid
     deadline = time.monotonic() + 25
     try:
         while True:
@@ -495,7 +519,8 @@ def record_case(binary, case, run_folder):
                 if time.monotonic() >= deadline:
                     raise RuntimeError("Demo window not found; check Accessibility/Automation permissions and launch.log")
                 time.sleep(.5)
-        time.sleep(.5)
+        time.sleep(1)
+        session.window("place")
         session.window("assert")
         session.actions([{"op": "key", "key": "0", "modifiers": ["command"]}])
         session.settle()

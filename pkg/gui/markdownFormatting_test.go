@@ -16,6 +16,7 @@ func TestMarkdownFrontMatterCalloutsAndWrappedLinks(t *testing.T) {
 	g.window.Resize(fyne.NewSize(700, 850))
 	g.window.Show()
 	source := "---\nid: hidden-metadata\ntitle: Internal metadata title\nslug: /long/internal/path\n---\n\n# Migration guide\n\n:::warning\nThe migration needs **downtime**. Read the [maintenance window and service impact documentation](guide.md) before continuing.\n\n- Save the configuration.\n- Check the new cluster.\n:::\n\n## " + strings.Repeat("long-path/", 16) + "\n\nA long link after preceding text: [" + strings.Repeat("reference", 30) + "](guide.md).\n"
+	source += "\n> [!IMPORTANT]\n> Keep **GitHub alert content** and [linked instructions](guide.md).\n"
 	doc, err := markdown.Load("formatting.md", "", strings.NewReader(source))
 	if err != nil {
 		t.Fatal(err)
@@ -31,13 +32,16 @@ func TestMarkdownFrontMatterCalloutsAndWrappedLinks(t *testing.T) {
 			if len(v.headings) != 2 || v.headings[0].title != "Migration guide" {
 				t.Fatal("metadata leaked into headings")
 			}
-			foundWarning, foundWrappedLink := false, false
+			foundWarning, foundImportant, foundWrappedLink := false, false, false
 			for _, block := range v.textBlocks {
-				if strings.Contains(block.text, "hidden-metadata") || strings.Contains(block.text, ":::") {
+				if strings.Contains(block.text, "hidden-metadata") || strings.Contains(block.text, ":::") || strings.Contains(block.text, "[!IMPORTANT]") {
 					t.Fatal("source delimiters or metadata leaked into text")
 				}
 				if block.text == "WARNING" {
 					foundWarning = true
+				}
+				if block.text == "IMPORTANT" {
+					foundImportant = true
 				}
 				for _, object := range block.renderer.WidgetRenderer.Objects() {
 					if text, ok := object.(*canvas.Text); ok && strings.TrimSpace(text.Text) != "" {
@@ -67,8 +71,8 @@ func TestMarkdownFrontMatterCalloutsAndWrappedLinks(t *testing.T) {
 					foundWrappedLink = true
 				}
 			}
-			if !foundWarning || !foundWrappedLink {
-				t.Fatal("missing warning or clickable multiline link")
+			if !foundWarning || !foundImportant || !foundWrappedLink {
+				t.Fatal("missing Docusaurus/GitHub callout or clickable multiline link")
 			}
 		}
 	}

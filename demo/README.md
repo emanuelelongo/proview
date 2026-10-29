@@ -56,12 +56,15 @@ An alternative executable can be selected with `--binary /absolute/path`.
 | `pdf-redact` | `redaction.gif` | Scripted |
 | `pdf-print` | `printing.png` | Scripted; page selection, canceled before printing |
 | `create-pdf` | `create-pdf.png` | Scripted; layout selection, canceled before creating a document |
-| `markdown-read` | `markdown.png` | Scripted; local Markdown, Mermaid and floating Contents |
+| `markdown-read` | `markdown.gif` | Scripted; repository README, light reading theme, Contents, local images and a GitHub note |
 | `stl-orbit` | `stl.gif` | Scripted; uses the supplied STL |
 
-Every case uses the standard executable with `--new-window`, `--work-dir` and
-`--data-dir`. Working documents and signature data live under the case's disposable
-workspace. The profile has separate application preferences and keychain identity;
+Every case uses the standard executable with `--foreground`, `--new-window`,
+`--work-dir` and `--data-dir`. Editable inputs and signature data live under the
+case's disposable workspace. The Markdown case opens the repository README
+directly so its relative images resolve in place. Each launch has a fresh profile
+and is identified by PID, including when other Proview instances are running.
+The profile has separate application preferences and keychain identity;
 it does not restore personal cloud connections. Fyne keeps profile preferences in
 its own platform configuration directory, and framework theme settings/OCR runtime
 caches remain shared; see [launch options](../docs/development.md#command-line-window-and-dialog-options).
@@ -80,7 +83,7 @@ word through the actual editor dialog.
 
 ## Editing definitions
 
-Each case specifies `id`, `fixture`, `format`, `target`, `readme_section`,
+Each case specifies `id`, `fixture` (or `repository_file`), `format`, `target`, `readme_section`,
 `readme_alt`, `automation`, `setup`, `actions`, `cleanup_undo` and `expected`.
 Optional `cleanup` actions dismiss dialogs through their Cancel buttons before
 the normal Escape/Undo/window-close sequence. Printing demos never submit a job.
@@ -92,7 +95,7 @@ behavior changes. Add new cases only when requested.
 
 `setup` runs before capture. Available actions are `key` (single character or
 escape/return/tab/pageup/pagedown, with modifiers), `click`, `drag`, `text` and
-`wait`, plus `menu` with a two-label `path` (menu and item) in the owned app,
+`wait`, plus `menu` with a label `path` (menu, optional submenu and item) in the owned app,
 `choose-color` for a visible hex-color swatch in the centered picker
 and `choose-file` for a fixture displayed in the owned native Import
 signature picker. It resolves only that GUI process's picker and selects the
@@ -108,7 +111,8 @@ is the raw recording safety budget. `clip`, for example
 input and rejects slow gestures instead of accelerating playback. The page-drag
 case produces a roughly 1.6-second GIF from a roughly 0.7-second gesture.
 
-## Tool references
-
-- [cliclick](https://github.com/BlueM/cliclick): input commands and macOS access.
-- [FFmpeg filters](https://www.ffmpeg.org/ffmpeg-filters.html): GIF palette encoding.
+The Markdown GIF opens the repository's `README.md` directly, without copying
+it, and selects **View → Markdown Theme → Light** before capture. It opens
+Contents, jumps to the signatures section, closes Contents and pages down to
+show the GitHub note and signature import image. Key events are included in the
+clip timing so the final navigation remains in the recording.

@@ -92,6 +92,13 @@ Switching documents restores the appropriate outline and reading position.
   Backgrounds follow the reading theme; custom titles retain the original
   callout category. The selectable Markdown content and link behavior remain
   available inside the panel.
+- GitHub alerts use the same callout rendering in reading, printing and thumbnails:
+  `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]` and `> [!CAUTION]`.
+  The uppercase marker must occupy the opening quote line by itself; the body
+  follows on quoted lines and retains normal Markdown formatting. Important
+  alerts use a purple panel; the other types use the corresponding existing
+  callout colors. Unknown markers and markers with inline titles remain ordinary
+  quotations. Source copying preserves the original syntax.
 - Ordered/unordered nested lists, task lists, quotations and separators.
 - GFM tables with column alignment and inline formatting. Short tables keep
   their natural width; columns share widths across all rows and allocate more
@@ -349,6 +356,9 @@ full equivalence to official Mermaid.
 - Formatting regressions cover hidden front matter and preserved source offsets,
   nested admonitions with literal code fences, print/thumbnail content, and
   clickable wrapped links within narrow light/dark reading columns.
+  GitHub alert regressions cover all five types, source offsets/highlighting,
+  quote boundaries, ordinary quote/code fallback, reading in both themes and
+  complete print/thumbnail output.
 - Theme tests cover persisted preferences, checkmarks across windows, newly
   opened windows, preserved reading state and Mermaid palette changes.
 - Fyne software-rendered frames were visually inspected for prose, tables,

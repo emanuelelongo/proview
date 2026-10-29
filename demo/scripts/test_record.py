@@ -12,8 +12,17 @@ spec.loader.exec_module(record)
 
 
 class RecorderTests(unittest.TestCase):
+    def test_window_permission_errors_keep_the_macos_reason(self):
+        session = record.Session("owned-window", Path("unused"))
+        for code in ("-25211", "-1743"):
+            error = record.subprocess.CalledProcessError(1, ["osascript"], stderr=("System Events: access denied (" + code + ")").encode())
+            with self.subTest(code=code), patch.object(record, "run", side_effect=error):
+                with self.assertRaisesRegex(RuntimeError, "macOS denied.*Accessibility") as raised:
+                    session.window("place")
+                self.assertIn(code, str(raised.exception))
+
     def test_menu_action_requires_labels_and_uses_the_owned_window(self):
-        for path in (None, [], ["File"], ["File", ""], "File", ["File", "Item", "Extra"]):
+        for path in (None, [], ["File"], ["File", ""], "File", ["View", "Markdown Theme", ""], ["View", "A", "B", "C"]):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 record.validate_action({"op": "menu", "path": path})
         action = {"op": "menu", "path": ["File", "Create PDF from Selection"]}
@@ -22,6 +31,12 @@ class RecorderTests(unittest.TestCase):
         with patch.object(session, "window") as window:
             session.action(action)
         self.assertEqual(window.call_args_list[-1].args, ("menu", "File", "Create PDF from Selection"))
+
+        action = {"op": "menu", "path": ["View", "Markdown Theme", "Light"]}
+        record.validate_action(action)
+        with patch.object(session, "window") as window:
+            session.action(action)
+        self.assertEqual(window.call_args_list[-1].args, ("menu", "View", "Markdown Theme", "Light"))
 
     def test_modified_click_releases_keys_after_input_failure(self):
         session = record.Session("owned-window", Path("unused"))
@@ -32,6 +47,14 @@ class RecorderTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "input failed"):
                 session.action(action)
         release.assert_called_once_with(["cliclick", "ku:shift"], timeout=5)
+
+    def test_navigation_keys_extend_the_recorded_clip(self):
+        session = record.Session("owned-window", Path("unused"))
+        session.input_times = [101, 101.2]
+        with patch.object(session, "window"), patch.object(record.time, "monotonic", side_effect=[103, 104]):
+            session.action({"op": "key", "key": "pagedown"})
+        clip = record.clip_interval(session.input_times, 100, 10, {"before": .25, "after": 1, "max_seconds": 6})
+        self.assertEqual(clip, {"start": .75, "duration": 4.25})
 
     def test_subprocess_diagnostics_reach_the_report_and_console(self):
         error = record.subprocess.CalledProcessError(1, ["osascript", "window.applescript"], stderr=b"System Events: keystroke failed (-1700)\n")
@@ -56,7 +79,8 @@ class RecorderTests(unittest.TestCase):
             session.window("place")
             session.window("key", "0", "command")
         self.assertEqual(command.call_args_list[0].args[0][4], "0")
-        self.assertEqual(command.call_args_list[1].args[0][4:], ["123", "0", "command"])
+        self.assertIn("runningApplicationWithProcessIdentifier(123)", command.call_args_list[1].args[0][-1])
+        self.assertEqual(command.call_args_list[2].args[0][4:], ["123", "0", "command"])
         changed = record.subprocess.CompletedProcess([], 0, stdout=b"456,80,60,1000,740\n")
         with patch.object(record, "run", return_value=changed):
             with self.assertRaisesRegex(RuntimeError, "identity changed"):
@@ -77,7 +101,7 @@ class RecorderTests(unittest.TestCase):
         work = Path("/repo/build/demo/sign-pdf/work")
         source = work / "sample.pdf"
         command, env = record.launch_command(Path("/repo/build/proview"), {}, work, source)
-        self.assertEqual(command, ["/repo/build/proview", "--new-window", "--work-dir", str(work), "--data-dir", str(work.parent / "profile"), str(source)])
+        self.assertEqual(command, ["/repo/build/proview", "--foreground", "--new-window", "--work-dir", str(work), "--data-dir", str(work.parent / "profile" / str(record.os.getpid())), str(source)])
         self.assertIsNone(env)
 
     def test_picker_refuses_paths_outside_fixture_copies(self):

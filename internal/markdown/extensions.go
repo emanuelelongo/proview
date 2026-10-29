@@ -9,7 +9,7 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// Admonition is a Docusaurus-style container with ordinary Markdown children.
+// Admonition is a Docusaurus container or GitHub alert with ordinary Markdown children.
 type Admonition struct {
 	ast.BaseBlock
 	Label    string
@@ -78,6 +78,42 @@ func descendantOf(child, parent ast.Node) bool {
 		}
 	}
 	return false
+}
+
+// GitHub alerts retain Goldmark's blockquote continuation and source offsets.
+// Only a complete marker on the opening line replaces an ordinary quote.
+type githubAlertParser struct {
+	parser.BlockParser
+}
+
+func (p *githubAlertParser) Open(parent ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
+	line, _ := reader.PeekLine()
+	value := strings.TrimSpace(string(line))
+	if !strings.HasPrefix(value, ">") {
+		return nil, parser.NoChildren
+	}
+	marker := strings.TrimSpace(value[1:])
+	var category, label string
+	switch marker {
+	case "[!NOTE]":
+		category, label = "note", "Note"
+	case "[!TIP]":
+		category, label = "tip", "Tip"
+	case "[!IMPORTANT]":
+		category, label = "important", "Important"
+	case "[!WARNING]":
+		category, label = "warning", "Warning"
+	case "[!CAUTION]":
+		category, label = "caution", "Caution"
+	default:
+		return nil, parser.NoChildren
+	}
+	if node, _ := p.BlockParser.Open(parent, reader, pc); node == nil {
+		return nil, parser.NoChildren
+	}
+	remaining, _ := reader.PeekLine()
+	reader.Advance(len(bytes.TrimRight(remaining, "\n")))
+	return &Admonition{Label: label, Category: category}, parser.HasChildren
 }
 
 // Front matter stays in Source for copying, but is excluded from the rendered

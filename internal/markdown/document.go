@@ -64,7 +64,11 @@ func Load(name, path string, r io.Reader) (*Document, error) {
 		return nil, errors.New("Markdown must contain UTF-8 text")
 	}
 	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
-	md := goldmark.New(goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID(), parser.WithBlockParsers(util.Prioritized(&admonitionParser{}, 50), util.Prioritized(&detailsParser{}, 50))))
+	md := goldmark.New(goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID(), parser.WithBlockParsers(
+		util.Prioritized(&admonitionParser{}, 50),
+		util.Prioritized(&detailsParser{}, 50),
+		util.Prioritized(&githubAlertParser{BlockParser: parser.NewBlockquoteParser()}, 50),
+	)))
 	reader := text.NewReader(source)
 	reader.Advance(frontMatterEnd(source))
 	d := &Document{Name: name, Source: source, Root: md.Parser().Parse(reader), Images: map[string]image.Image{}, Tokens: map[ast.Node][]chroma.Token{}, Diagrams: mermaid.NewRenderer()}

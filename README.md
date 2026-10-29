@@ -97,7 +97,10 @@ You can draw your signature with a mouse or a stylus, or import it from a photo 
 For imported signatures, the background is removed automatically and the signature is vectorized, so you can scale it without losing sharpness.
 You can save signatures to the cloud (S3-compatible storage or Google Drive) and use them across different computers.
 
-Google Drive sync uses the published Proview OAuth app. Cloud sync is optional and uploads your saved signature library. Documents opened for editing stay on your computer. See the [cloud sync guide](docs/signature-cloud-sync.md) for setup and storage details.
+> [!NOTE]
+> Cloud sync is optional and uploads your saved signature library. Documents opened for editing stay on your computer.
+
+Google Drive sync uses the published Proview OAuth app. See the [cloud sync guide](docs/signature-cloud-sync.md) for setup and storage details.
 
 <a href="docs/screenshots/import-signature.png" target="_blank" rel="noopener noreferrer">
   <img src="docs/screenshots/import-signature.png" alt="Importing a signature: fictional signature artwork beside its transparent vector preview, with the sensitivity control visible." width="400">
@@ -155,14 +158,19 @@ file arguments opens those files instead.
 ### Read Markdown
 
 Read Markdown with formatted text, tables, local images, syntax-highlighted code
-and Mermaid diagrams. Select and copy text, adjust the reading size, choose a
-light or dark page, and use Contents to jump between headings. Everything renders
+and Mermaid diagrams. GitHub alerts and Docusaurus callouts highlight useful
+notes; expandable sections keep extra details close at hand. Select and copy
+text, adjust the reading size, choose a light or dark page, and use Contents to
+jump between headings. Animated local GIFs play inside the page. Everything renders
 offline; source files stay unchanged. See [Markdown viewer](docs/markdown-viewer.md)
 for supported syntax.
 
-<a href="docs/screenshots/markdown.png" target="_blank" rel="noopener noreferrer">
-  <img src="docs/screenshots/markdown.png" alt="Markdown reading: a Mermaid diagram, table and highlighted code with the Contents panel open." width="400">
+<a href="docs/screenshots/markdown.gif" target="_blank" rel="noopener noreferrer">
+  <img src="docs/screenshots/markdown.gif" alt="Markdown in light mode: navigating the repository README with Contents, local images and a GitHub note." width="400">
 </a>
+
+> [!TIP]
+> Click a section's title to expand it, or click an image or Mermaid diagram for a larger, zoomable preview. Use **Ctrl/Command+P** to print the complete document, including collapsed sections.
 
 ### View 3D models
 
@@ -184,6 +192,9 @@ Builds are available from the repository's [Releases](../../releases).
 
 ### Build and contribute
 
+<details>
+<summary>Build from source and run the checks</summary>
+
 Proview is written in Go with Fyne, using MuPDF and pdfcpu for PDF work and Tesseract for OCR. Build dependencies include Go 1.26+, Python 3.10+ with safe tar extraction support, Task and the native libraries for your platform.
 
 ```sh
@@ -191,6 +202,8 @@ task run     # Run the app
 task check   # Run tests and static checks
 task build   # Build for the current platform
 ```
+
+</details>
 
 See [Development and packaging](docs/development.md) for setup, native and cross builds, release workflows and local data locations. Project conventions are in [agent.md](agent.md); the [documentation map](docs/README.md) links feature status, plans and evaluation records. Third-party notices are available in the app under **Help → Third-Party Licenses**; icon provenance is documented in [assets/README.md](assets/README.md).
 

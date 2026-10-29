@@ -89,6 +89,8 @@ func calloutColors(kind string) (color.Color, color.Color, color.Color) {
 		return color.NRGBA{R: 231, G: 246, B: 249, A: 255}, color.NRGBA{R: 25, G: 60, B: 71, A: 255}, color.NRGBA{R: 65, G: 174, B: 199, A: 255}
 	case "tip":
 		return color.NRGBA{R: 230, G: 246, B: 230, A: 255}, color.NRGBA{R: 0, G: 48, B: 0, A: 255}, color.NRGBA{R: 0, G: 155, B: 0, A: 255}
+	case "important":
+		return color.NRGBA{R: 244, G: 235, B: 255, A: 255}, color.NRGBA{R: 49, G: 28, B: 70, A: 255}, color.NRGBA{R: 145, G: 75, B: 205, A: 255}
 	case "warning", "caution":
 		return color.NRGBA{R: 255, G: 245, B: 204, A: 255}, color.NRGBA{R: 77, G: 57, B: 0, A: 255}, color.NRGBA{R: 230, G: 172, B: 0, A: 255}
 	case "danger":

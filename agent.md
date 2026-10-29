@@ -728,7 +728,8 @@ the selection before the modal chooser and release queued openings on Cancel.
 
 Read [docs/markdown-viewer.md](docs/markdown-viewer.md) for scope and verification.
 Markdown hides complete leading YAML front matter without changing source offsets,
-and supports Docusaurus-style admonitions in the shared reading/printing AST.
+and supports Docusaurus-style admonitions and GitHub alerts in the shared
+reading/printing AST.
 Render links as wrapping styled text with retained click ranges: Fyne's native
 HyperlinkSegment does not wrap within RichText and can overflow the paper.
 Markdown uses Goldmark, Chroma and native Fyne widgets; do not restore the

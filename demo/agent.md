@@ -161,3 +161,27 @@ marking, both canceled output dialogs, rendered Markdown/Contents and STL orbit.
 Owned windows closed after cancellation or Undo; no fixture was saved over.
 Fixture/catalog/README checks and 24 Python recorder/cleanup tests pass. These
 are native UI documentation captures, not destination-platform or export tests.
+
+## Markdown GIF refresh on 2026-10-29
+
+`markdown-read` now records the repository's original `README.md` directly,
+without copying it or its resources. It selects View → Markdown Theme → Light,
+opens Contents, jumps to Add handwritten signatures, closes Contents and pages
+down to the GitHub note and signature import image. Motivation remains ordinary
+text; only Build is expandable.
+
+The recorder supports `repository_file` as an alternative to a fixture and native
+menu paths with one optional submenu. Each foreground launch uses its own fresh
+profile and is tracked by PID. Numeric process/window references avoid ambiguous
+process-name resolution when several Proview instances are running. AppKit
+activation completes before focus assertions. Accessibility was already granted;
+the initial permission diagnosis was misleading. Keyboard actions now contribute
+to clip timing so navigation and the final hold are retained.
+
+The 800 × 592 GIF (about 8 seconds) was recorded and visually reviewed across the
+whole motion, including the light page, loaded icon/images, Contents navigation,
+the playing signing GIF and the final NOTE/import image. The owned window closed
+cleanly. The README and catalog use `docs/screenshots/markdown.gif`; the previous
+PNG remains available as an older capture. Fixture/catalog checks and 26 Python
+recorder/cleanup tests pass. This is native documentation capture, not additional
+export or cross-platform validation.
