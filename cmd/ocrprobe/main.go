@@ -115,7 +115,7 @@ func run(dir string) error {
 		if err := os.WriteFile(filepath.Join(dir, s.name+".expected.txt"), []byte(s.expected), 0644); err != nil {
 			return err
 		}
-		source, err := document.Load(s.name, bytes.NewReader(s.data))
+		source, err := document.LoadBytes(s.name, s.name, s.data)
 		if err != nil {
 			return err
 		}

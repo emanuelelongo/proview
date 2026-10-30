@@ -75,7 +75,10 @@ type Source struct {
 	pages             []pageData
 	pdf               *fitz.Document
 	textLayouts       textLayoutCache
-	rasterClock       uint64
+	rasterClock       atomic.Uint64
+	trimMu            sync.Mutex
+	trimQueue         []func()
+	trimRunning       bool
 	rasterBytes       atomic.Int64
 	animationBytes    atomic.Int64
 	rasterRegistered  bool
@@ -86,21 +89,30 @@ func Load(name string, reader io.Reader) (*Source, error) {
 }
 
 func LoadFrom(name, location string, reader io.Reader) (*Source, error) {
-	return loadSource(name, location, reader, true)
-}
-func loadSource(name, location string, reader io.Reader, importAnnotations bool) (*Source, error) {
 	if reader == nil {
 		return nil, errors.New("document: nil reader")
 	}
-
-	format, err := formatFromName(name)
-	if err != nil {
+	if _, err := formatFromName(name); err != nil {
 		return nil, err
 	}
-
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("document: read %q: %w", name, err)
+	}
+	return loadSource(name, location, data, true)
+}
+
+// LoadBytes takes ownership of data: callers that already hold the file in
+// memory avoid the second full copy io.ReadAll would make. data must not be
+// modified afterwards.
+func LoadBytes(name, location string, data []byte) (*Source, error) {
+	return loadSource(name, location, data, true)
+}
+
+func loadSource(name, location string, data []byte, importAnnotations bool) (*Source, error) {
+	format, err := formatFromName(name)
+	if err != nil {
+		return nil, err
 	}
 
 	var pages []pageData
@@ -148,14 +160,20 @@ func loadSource(name, location string, reader io.Reader, importAnnotations bool)
 			source.hasPDFAnnotations = hasAnnots
 			source.importedOverlays = overlays
 			if len(overlays) > 0 {
-				source.annotationBase, e = loadSource(name, location, bytes.NewReader(clean), false)
+				source.annotationBase, e = loadSource(name, location, clean, false)
 				if e != nil {
 					pdf.Close()
 					return nil, e
 				}
-				// The base source owns its own PDF context and raster budget share.
 				// Retained unsupported annotations still need their standard appearances.
 				source.annotationBase.hasPDFAnnotations = hasAnnots
+				// Pages render from the base; the outer source keeps only its
+				// bytes and reopens lazily if ever asked to render, so it neither
+				// holds a second MuPDF context nor halves the shared raster budget.
+				_ = pdf.Close()
+				source.pdf = nil
+				runtime.SetFinalizer(source, (*Source).Close)
+				return source, nil
 			}
 		}
 		runtime.SetFinalizer(source, (*Source).Close)
@@ -250,6 +268,15 @@ func (s *Source) Preview(page int) (image.Image, error) {
 				return nil, fmt.Errorf("render image page %d: %w", page+1, err)
 			}
 			preview = pages[0].preview
+			// Match the first frame shown by the animation player, which
+			// composites frames; the static decoder can differ for GIFs.
+			if s.format == FormatGIF {
+				if anim := s.ensureAnimation(); anim != nil {
+					if frame := anim.NewPlayer().Image(); frame != nil {
+						preview = frame
+					}
+				}
+			}
 			s.rasterBytes.Add(rasterBytes(preview))
 		}
 		s.pages[page].preview = preview
@@ -301,6 +328,10 @@ func (s *Source) openPDF() error {
 	}
 	var err error
 	s.pdf, err = fitz.NewFromMemory(s.original)
+	if err == nil {
+		// A source reopened after Close participates in the shared budget again.
+		s.registerRasterSourceLocked()
+	}
 	return err
 }
 

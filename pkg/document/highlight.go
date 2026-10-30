@@ -21,6 +21,7 @@ func MultiplyHighlight(base, artwork image.Image, target image.Rectangle) image.
 	// Composed pages and live draft backdrops are NRGBA. Reading their pixels
 	// directly avoids allocating interface colors for every highlighted pixel.
 	pixels, _ := base.(*image.NRGBA)
+	rgba, _ := base.(*image.RGBA)
 	for y := 0; y < target.Dy(); y++ {
 		for x := 0; x < target.Dx(); x++ {
 			ink := mask.NRGBAAt(x, y)
@@ -30,6 +31,13 @@ func MultiplyHighlight(base, artwork image.Image, target image.Rectangle) image.
 			var under color.NRGBA
 			if pixels != nil {
 				under = pixels.NRGBAAt(target.Min.X+x, target.Min.Y+y)
+			} else if rgba != nil {
+				// Premultiplied pixels are already straight when opaque.
+				if p := rgba.RGBAAt(target.Min.X+x, target.Min.Y+y); p.A == 255 {
+					under = color.NRGBA{p.R, p.G, p.B, 255}
+				} else {
+					under = color.NRGBAModel.Convert(p).(color.NRGBA)
+				}
 			} else {
 				under = color.NRGBAModel.Convert(base.At(target.Min.X+x, target.Min.Y+y)).(color.NRGBA)
 			}

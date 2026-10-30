@@ -1,7 +1,6 @@
 package document
 
 import (
-	"bytes"
 	"emanuelelongo/proview/internal/pdfengine"
 	"emanuelelongo/proview/pkg/annotations"
 	img "emanuelelongo/proview/pkg/images"
@@ -78,7 +77,7 @@ func (d *Document) basePageDPI(page int, dpi float64) (image.Image, error) {
 	if dpi == pdfPreviewDPI {
 		return d.Preview(page)
 	}
-	preview, changed, e := d.formPreview(source, index, dpi)
+	preview, changed, e := d.formPreview(source, index, dpi, d.formsFingerprint(source))
 	if !changed && dpi == pdfThumbnailDPI {
 		preview, e = source.Thumbnail(index)
 	} else if !changed {
@@ -200,13 +199,17 @@ func (d *Document) SafeRenderPage(page int, dpi float64) (image.Image, error) {
 	if e != nil {
 		return nil, e
 	}
-	source, e := Load("redacted.pdf", bytes.NewReader(data))
+	source, e := LoadBytes("redacted.pdf", "redacted.pdf", data)
 	if e != nil {
 		return nil, e
 	}
 	defer source.Close()
 	source.mu.Lock()
 	defer source.mu.Unlock()
+	// Annotated sources render through their base and open this context lazily.
+	if e = source.openPDF(); e != nil {
+		return nil, e
+	}
 	return source.pdf.ImageDPI(page, dpi)
 }
 

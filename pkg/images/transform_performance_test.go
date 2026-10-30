@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"image/draw"
 	"testing"
 )
 
@@ -62,7 +63,14 @@ func TestTransformTypedPixelsMatchGeneric(t *testing.T) {
 					if transform == (Transform{}) {
 						continue
 					}
-					got := transform.Apply(src).(*image.NRGBA)
+					result := transform.Apply(src)
+					if _, ok := src.(*image.RGBA); ok {
+						if _, ok := result.(*image.RGBA); !ok {
+							t.Fatalf("RGBA input returned %T", result)
+						}
+					}
+					got := image.NewNRGBA(result.Bounds())
+					draw.Draw(got, got.Rect, result, result.Bounds().Min, draw.Src)
 					want := transform.Apply(genericImage{src}).(*image.NRGBA)
 					if got.Rect != want.Rect || !bytes.Equal(got.Pix, want.Pix) {
 						t.Fatalf("pixel mismatch for %T, %+v", src, transform)

@@ -694,8 +694,25 @@ func renderPDFPage(data []byte, page int, dpi float64) (image.Image, error) {
 	if e != nil {
 		return nil, e
 	}
-	out := image.NewRGBA(p.Bounds())
-	draw.Draw(out, out.Bounds(), image.White, image.Point{}, draw.Src)
-	draw.Draw(out, out.Bounds(), p, p.Bounds().Min, draw.Over)
-	return out, nil
+	rgba, ok := p.(*image.RGBA)
+	if !ok {
+		out := image.NewRGBA(p.Bounds())
+		draw.Draw(out, out.Bounds(), image.White, image.Point{}, draw.Src)
+		draw.Draw(out, out.Bounds(), p, p.Bounds().Min, draw.Over)
+		return out, nil
+	}
+	flattenOnWhite(rgba)
+	return rgba, nil
+}
+
+// flattenOnWhite composites premultiplied pixels over white in place, avoiding
+// a second full-page raster for every form render.
+func flattenOnWhite(p *image.RGBA) {
+	for i := 0; i+3 < len(p.Pix); i += 4 {
+		inverse := 255 - p.Pix[i+3]
+		p.Pix[i] += inverse
+		p.Pix[i+1] += inverse
+		p.Pix[i+2] += inverse
+		p.Pix[i+3] = 255
+	}
 }

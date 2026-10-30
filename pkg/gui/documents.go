@@ -52,7 +52,12 @@ func (g *Gui) retainsDocument(doc *document.Document) bool {
 	return false
 }
 
-const maxImageThumbnailDimension = 320
+// Sidebar thumbnails are drawn at most maxSidebarWidth points wide; keep enough
+// pixels for a 2x display while bounding very tall images.
+const (
+	maxThumbnailPixelWidth  = int(2 * maxSidebarWidth)
+	maxThumbnailPixelHeight = 2 * maxThumbnailPixelWidth
+)
 
 func downsampleImageThumbnail(src image.Image) image.Image {
 	if src == nil {
@@ -60,17 +65,12 @@ func downsampleImageThumbnail(src image.Image) image.Image {
 	}
 	bounds := src.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
-	if w <= maxImageThumbnailDimension && h <= maxImageThumbnailDimension {
+	if w <= 0 || h <= 0 || w <= maxThumbnailPixelWidth && h <= maxThumbnailPixelHeight {
 		return src
 	}
-	var nw, nh int
-	if w >= h {
-		nw = maxImageThumbnailDimension
-		nh = max(1, int(math.Round(float64(h)*float64(maxImageThumbnailDimension)/float64(w))))
-	} else {
-		nh = maxImageThumbnailDimension
-		nw = max(1, int(math.Round(float64(w)*float64(maxImageThumbnailDimension)/float64(h))))
-	}
+	scale := math.Min(float64(maxThumbnailPixelWidth)/float64(w), float64(maxThumbnailPixelHeight)/float64(h))
+	nw := max(1, int(math.Round(float64(w)*scale)))
+	nh := max(1, int(math.Round(float64(h)*scale)))
 	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
 	xdraw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, bounds, draw.Src, nil)
 	return dst
@@ -151,7 +151,7 @@ func (g *Gui) prepareDocumentSwitch() {
 	}
 	if g.activeDocument != nil && g.activeDocument.markdown != nil {
 		md := g.activeDocument.markdown
-		if md.HasDecodedImages() {
+		if md.HasReleasableResources() {
 			if g.activeDocument.markdownView != nil {
 				g.activeDocument.markdownView.suspend()
 			}

@@ -65,8 +65,27 @@ func rasterBytes(p image.Image) int64 {
 		return int64(len(p.Pix))
 	case *image.NRGBA:
 		return int64(len(p.Pix))
+	case *image.RGBA64:
+		return int64(len(p.Pix))
+	case *image.NRGBA64:
+		return int64(len(p.Pix))
+	case *image.Gray:
+		return int64(len(p.Pix))
+	case *image.Gray16:
+		return int64(len(p.Pix))
+	case *image.Alpha:
+		return int64(len(p.Pix))
+	case *image.CMYK:
+		return int64(len(p.Pix))
+	case *image.Paletted:
+		return int64(len(p.Pix)) + int64(len(p.Palette))*16
+	case *image.YCbCr:
+		// Decoded JPEGs keep subsampled chroma: often 1.5 bytes per pixel.
+		return int64(len(p.Y) + len(p.Cb) + len(p.Cr))
+	case *image.NYCbCrA:
+		return int64(len(p.Y) + len(p.Cb) + len(p.Cr) + len(p.A))
 	default:
-		return int64(p.Bounds().Dx()) * int64(p.Bounds().Dy()) * 8
+		return int64(p.Bounds().Dx()) * int64(p.Bounds().Dy()) * 4
 	}
 }
 
@@ -75,11 +94,11 @@ func (s *Source) touchRaster(page int, thumbnail bool) {
 	if s.format != FormatPDF {
 		return
 	}
-	s.rasterClock++
+	clock := s.rasterClock.Add(1)
 	if thumbnail {
-		s.pages[page].thumbnailUsed = s.rasterClock
+		s.pages[page].thumbnailUsed = clock
 	} else {
-		s.pages[page].previewUsed = s.rasterClock
+		s.pages[page].previewUsed = clock
 	}
 	s.trimRasters(sourceRasterLimit())
 }
@@ -112,21 +131,16 @@ func (s *Source) trimRasters(limit int64) {
 // TrimPreviews releases cached full-size page previews while retaining
 // thumbnails. Inactive image and GIF documents release their decoded raster and
 // animation; both are rebuilt lazily from the immutable encoded bytes.
+// It never waits for a native render: see trimLocked.
 func (s *Source) TrimPreviews() {
 	if s == nil {
 		return
 	}
-	s.mu.Lock()
-	for i := range s.pages {
-		if s.pages[i].preview != nil {
-			s.rasterBytes.Add(-rasterBytes(s.pages[i].preview))
-			s.pages[i].preview = nil
+	s.trimLocked(func(clock uint64) {
+		for i := range s.pages {
+			s.dropPreviewLocked(i, clock)
 		}
-	}
-	if s.rasterBytes.Load() < 0 {
-		s.rasterBytes.Store(0)
-	}
-	s.mu.Unlock()
+	})
 	s.trimAnimation()
 	if s.annotationBase != nil {
 		s.annotationBase.TrimPreviews()
@@ -138,15 +152,61 @@ func (s *Source) TrimPagePreview(page int) {
 	if s == nil || s.format != FormatPDF {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if page < 0 || page >= len(s.pages) {
+	s.trimLocked(func(clock uint64) {
+		if page >= 0 && page < len(s.pages) {
+			s.dropPreviewLocked(page, clock)
+		}
+	})
+}
+
+// trimLocked runs trim with source.mu held. Callers are UI paths (scroll and
+// document switch), and source.mu is held for a whole MuPDF render, so a busy
+// source queues the trim to one background worker instead of blocking. A
+// queued trim keeps previews used after it was requested.
+func (s *Source) trimLocked(trim func(clock uint64)) {
+	if s.mu.TryLock() {
+		trim(^uint64(0))
+		s.mu.Unlock()
 		return
 	}
-	if s.pages[page].preview != nil {
-		s.rasterBytes.Add(-rasterBytes(s.pages[page].preview))
-		s.pages[page].preview = nil
+	clock := s.rasterClock.Load()
+	s.trimMu.Lock()
+	s.trimQueue = append(s.trimQueue, func() { trim(clock) })
+	if s.trimRunning {
+		s.trimMu.Unlock()
+		return
 	}
+	s.trimRunning = true
+	s.trimMu.Unlock()
+	go s.runQueuedTrims()
+}
+
+func (s *Source) runQueuedTrims() {
+	for {
+		s.trimMu.Lock()
+		queue := s.trimQueue
+		s.trimQueue = nil
+		if len(queue) == 0 {
+			s.trimRunning = false
+			s.trimMu.Unlock()
+			return
+		}
+		s.trimMu.Unlock()
+		s.mu.Lock()
+		for _, trim := range queue {
+			trim()
+		}
+		s.mu.Unlock()
+	}
+}
+
+// dropPreviewLocked must be called with s.mu held.
+func (s *Source) dropPreviewLocked(page int, clock uint64) {
+	if s.pages[page].preview == nil || s.pages[page].previewUsed > clock {
+		return
+	}
+	s.rasterBytes.Add(-rasterBytes(s.pages[page].preview))
+	s.pages[page].preview = nil
 	if s.rasterBytes.Load() < 0 {
 		s.rasterBytes.Store(0)
 	}

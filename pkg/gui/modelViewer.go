@@ -206,6 +206,7 @@ func (g *Gui) showModel(mesh *model3d.Mesh) {
 		g.closeDocument()
 	} else {
 		g.clearModel()
+		g.detachDocumentView()
 	}
 	g.panModifierDown = false
 	g.modelViewport.stopped = false

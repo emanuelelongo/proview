@@ -112,6 +112,7 @@ func (g *Gui) showMarkdown(d *markdown.Document) {
 	g.clearMarkdown()
 	g.document = nil
 	g.saveTarget = nil
+	g.detachDocumentView()
 	g.imageScroll.Hide()
 	g.pdfScroll.Hide()
 	g.annotationControls.Hide()

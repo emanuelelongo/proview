@@ -16,6 +16,7 @@ import (
 	"emanuelelongo/proview/internal/applog"
 	"emanuelelongo/proview/internal/buildinfo"
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
@@ -34,7 +35,10 @@ type memoryWindowSummary struct {
 	MarkdownImageBytes     int64          `json:"markdown_image_bytes"`
 	MarkdownAnimationBytes int64          `json:"markdown_animation_bytes"`
 	PreviewCacheBytes      int64          `json:"preview_cache_bytes"`
-	PendingFiles           int            `json:"pending_files"`
+	// Estimated GPU/driver texture memory for displayed rasters (4 bytes per
+	// pixel). Fyne does not expose texture sizes, so this is an approximation.
+	DisplayedTextureBytes int64 `json:"displayed_texture_bytes_estimate"`
+	PendingFiles          int   `json:"pending_files"`
 }
 
 type memoryReportContext struct {
@@ -80,6 +84,7 @@ func (g *Gui) memoryReportContext() memoryReportContext {
 		if window.previewRenderer != nil {
 			entry.PreviewCacheBytes = window.previewRenderer.RetainedRasterBytes()
 		}
+		entry.DisplayedTextureBytes = window.displayedTextureBytes()
 		for _, document := range window.documents {
 			switch {
 			case document.markdown != nil:
@@ -111,6 +116,29 @@ func (g *Gui) memoryReportContext() memoryReportContext {
 		result.Windows = append(result.Windows, entry)
 	}
 	return result
+}
+
+func (g *Gui) displayedTextureBytes() int64 {
+	var total int64
+	add := func(picture *canvas.Image) {
+		if picture == nil || picture.Image == nil {
+			return
+		}
+		size := picture.Image.Bounds().Size()
+		total += int64(size.X) * int64(size.Y) * 4
+	}
+	for page := range g.pdfResident {
+		if page >= 0 && page < len(g.pdfPageImages) {
+			add(g.pdfPageImages[page])
+		}
+	}
+	for page := range g.pdfThumbResident {
+		if page >= 0 && page < len(g.pdfThumbImages) {
+			add(g.pdfThumbImages[page])
+		}
+	}
+	add(g.image)
+	return total
 }
 
 func captureMemoryRuntime() memoryRuntimeSnapshot {
@@ -153,7 +181,7 @@ func writeMemoryReport(writer io.Writer, context memoryReportContext) (err error
 	if err != nil {
 		return err
 	}
-	if _, err = io.WriteString(readme, "Proview memory report\n\nsummary.json includes process resident memory, Go runtime memory before/after an explicit GC, and per-window cache counts. Document names and contents are excluded. The heap profile covers sampled Go allocations that remain live after GC; native libraries, GPU resources, and subprocesses are not attributed. Process resident memory is not the sum of the other fields.\n\nInspect heap.pprof with: go tool pprof -top -inuse_space heap.pprof\nUse -alloc_space to inspect cumulative allocation activity. A single report shows current retention; compare reports from before and after the memory increase to locate growth.\n"); err != nil {
+	if _, err = io.WriteString(readme, "Proview memory report\n\nsummary.json includes process resident memory, Go runtime memory before/after an explicit GC, and per-window cache counts. Document names and contents are excluded. displayed_texture_bytes_estimate approximates GPU texture memory for displayed rasters at 4 bytes per pixel; Fyne does not report actual texture sizes. The heap profile covers sampled Go allocations that remain live after GC; native libraries, GPU resources, and subprocesses are not attributed. Process resident memory is not the sum of the other fields.\n\nInspect heap.pprof with: go tool pprof -top -inuse_space heap.pprof\nUse -alloc_space to inspect cumulative allocation activity. A single report shows current retention; compare reports from before and after the memory increase to locate growth.\n"); err != nil {
 		return err
 	}
 	heap, err := archive.Create("heap.pprof")

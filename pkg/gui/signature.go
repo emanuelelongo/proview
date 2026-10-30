@@ -311,7 +311,9 @@ func (g *Gui) loadPDFThumbnail(page int) {
 			if g.pdfThumbLoaded[page] {
 				return
 			}
-			g.pdfThumbImages[page].Image = downsampleImageThumbnail(preview)
+			// 72 DPI thumbnails already fit the sidebar and are shared with the
+			// source cache; a resampled copy would only add a second raster.
+			g.pdfThumbImages[page].Image = preview
 			g.pdfThumbImages[page].Refresh()
 			g.pdfThumbLoaded[page] = true
 			g.retainPDFThumbnailImage(page)

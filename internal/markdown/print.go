@@ -63,6 +63,7 @@ func (d *Document) layoutPDF(ctx context.Context, preview bool) (PrintedDocument
 	if err := ctx.Err(); err != nil {
 		return PrintedDocument{}, err
 	}
+	d = d.resourceSnapshot()
 	p := &markdownPrinter{ctx: ctx, doc: d, pdf: fpdf.New("P", "pt", "A4", ""), margin: printMargin, preview: preview, imageNames: make(map[image.Image]string), diagramRenderer: mermaid.NewRenderer()}
 	if preview {
 		p.pdf = fpdf.NewCustom(&fpdf.InitType{UnitStr: "pt", Size: fpdf.SizeType{Wd: 320, Ht: 240}})

@@ -271,6 +271,7 @@ func (d *Document) Close() {
 	d.Images = nil
 	d.Animations = nil
 	d.imagesTrimmed = false
+	d.Diagrams.Clear()
 }
 
 // Image returns the decoded local image for a Markdown destination.
@@ -335,9 +336,39 @@ func (d *Document) TrimImages() {
 	if d.closed {
 		return
 	}
+	// Diagram-only documents have nothing to decode again on activation.
+	if len(d.Images) > 0 || len(d.Animations) > 0 {
+		d.imagesTrimmed = true
+	}
 	d.Images = nil
 	d.Animations = nil
-	d.imagesTrimmed = true
+	d.Diagrams.Clear()
+}
+
+// resourceSnapshot returns d, or a transient copy with decoded still images
+// when d is trimmed. Output paths use it so an inactive document prints its
+// pictures without restoring them into the retained document.
+func (d *Document) resourceSnapshot() *Document {
+	if d == nil {
+		return nil
+	}
+	d.resourcesMu.RLock()
+	trimmed := d.imagesTrimmed && !d.closed
+	d.resourcesMu.RUnlock()
+	if !trimmed {
+		return d
+	}
+	snapshot := &Document{
+		Name:           d.Name,
+		Source:         d.Source,
+		Root:           d.Root,
+		Tokens:         d.Tokens,
+		directory:      d.directory,
+		imageLimit:     d.imageLimit,
+		animationLimit: 0,
+	}
+	snapshot.Images, _ = snapshot.decodeImages()
+	return snapshot
 }
 
 // RestoreImages decodes bounded local image resources after TrimImages.
@@ -433,6 +464,12 @@ func (d *Document) HasDecodedImages() bool {
 	d.resourcesMu.RLock()
 	defer d.resourcesMu.RUnlock()
 	return len(d.Images) > 0 || len(d.Animations) > 0
+}
+
+// HasReleasableResources reports decoded images, animations or cached diagram
+// rasters that TrimImages would release.
+func (d *Document) HasReleasableResources() bool {
+	return d.HasDecodedImages() || d != nil && d.Diagrams.CachedPixels() > 0
 }
 
 func (d *Document) Info() string {

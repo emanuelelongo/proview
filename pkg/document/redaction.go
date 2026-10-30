@@ -198,10 +198,15 @@ func (d *Document) paintRedactions(page int, input image.Image) image.Image {
 	for _, r := range d.RedactionsForPage(page) {
 		quads = append(quads, r.Quads...)
 	}
+	return paintRedactionQuads(input, quads)
+}
+
+// paintRedactionQuads returns RGBA so Fyne uploads it without another copy.
+func paintRedactionQuads(input image.Image, quads []TextQuad) image.Image {
 	if len(quads) == 0 {
 		return input
 	}
-	result := image.NewNRGBA(input.Bounds())
+	result := image.NewRGBA(input.Bounds())
 	draw.Draw(result, result.Bounds(), input, input.Bounds().Min, draw.Src)
 	mask := PaintRedactions(input.Bounds().Size(), quads)
 	draw.Draw(result, result.Bounds(), mask, image.Point{}, draw.Over)

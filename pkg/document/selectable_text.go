@@ -1,7 +1,6 @@
 package document
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -64,7 +63,7 @@ func (d *Document) SelectableText(ctx context.Context, page int, engine ocr.Engi
 		if err = ctx.Err(); err != nil {
 			return textselect.Layout{}, err
 		}
-		source, err := Load("ocr-sanitized.pdf", bytes.NewReader(data))
+		source, err := LoadBytes("ocr-sanitized.pdf", "ocr-sanitized.pdf", data)
 		if err != nil {
 			return textselect.Layout{}, err
 		}

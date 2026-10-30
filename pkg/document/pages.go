@@ -55,7 +55,7 @@ func (d *Document) BlankPageAfter(page int) (*Document, error) {
 	if err := api.Collect(ctx, bytes.NewReader(inserted.Bytes()), &blank, []string{"2"}, nil); err != nil {
 		return nil, err
 	}
-	s, err := LoadFrom("Blank page.pdf", "", bytes.NewReader(blank.Bytes()))
+	s, err := LoadBytes("Blank page.pdf", "", blank.Bytes())
 	if err != nil {
 		return nil, err
 	}

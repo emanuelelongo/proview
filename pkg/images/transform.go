@@ -33,24 +33,15 @@ func (t Transform) Apply(src image.Image) image.Image {
 	if t.Turns%2 != 0 {
 		ow, oh = h, w
 	}
+	if rgba, ok := src.(*image.RGBA); ok {
+		// Rendered PDF pages are RGBA; keeping that type lets Fyne upload the
+		// result directly instead of converting it into another full copy.
+		return t.applyRGBA(rgba, w, h, ow, oh)
+	}
 	out := image.NewNRGBA(image.Rect(0, 0, ow, oh))
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			u, v := x, y
-			if t.FlipX {
-				u = w - 1 - u
-			}
-			if t.FlipY {
-				v = h - 1 - v
-			}
-			switch t.Turns {
-			case 1:
-				u, v = h-1-v, u
-			case 2:
-				u, v = w-1-u, h-1-v
-			case 3:
-				u, v = v, w-1-u
-			}
+			u, v := t.target(x, y, w, h)
 			// Typed access avoids boxing a color for every pixel of large rasters.
 			sx, sy := b.Min.X+x, b.Min.Y+y
 			switch pixels := src.(type) {
@@ -65,6 +56,38 @@ func (t Transform) Apply(src image.Image) image.Image {
 			default:
 				out.Set(u, v, src.At(sx, sy))
 			}
+		}
+	}
+	return out
+}
+
+func (t Transform) target(x, y, w, h int) (int, int) {
+	u, v := x, y
+	if t.FlipX {
+		u = w - 1 - u
+	}
+	if t.FlipY {
+		v = h - 1 - v
+	}
+	switch t.Turns {
+	case 1:
+		u, v = h-1-v, u
+	case 2:
+		u, v = w-1-u, h-1-v
+	case 3:
+		u, v = v, w-1-u
+	}
+	return u, v
+}
+
+func (t Transform) applyRGBA(src *image.RGBA, w, h, ow, oh int) *image.RGBA {
+	out := image.NewRGBA(image.Rect(0, 0, ow, oh))
+	b := src.Bounds()
+	for y := 0; y < h; y++ {
+		row := src.PixOffset(b.Min.X, b.Min.Y+y)
+		for x := 0; x < w; x++ {
+			u, v := t.target(x, y, w, h)
+			copy(out.Pix[out.PixOffset(u, v):][:4], src.Pix[row+4*x:][:4])
 		}
 	}
 	return out

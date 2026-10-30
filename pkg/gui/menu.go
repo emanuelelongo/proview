@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"bytes"
 	"emanuelelongo/proview/internal/markdown"
 	"emanuelelongo/proview/internal/model3d"
 	"emanuelelongo/proview/pkg/document"
@@ -301,7 +300,7 @@ func loadDocumentReader(uri fyne.URIReadCloser) (*document.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	source, err := document.LoadFrom(name, location, bytes.NewReader(data))
+	source, err := document.LoadBytes(name, location, data)
 	if err != nil {
 		return nil, err
 	}

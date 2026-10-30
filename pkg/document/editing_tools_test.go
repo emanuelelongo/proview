@@ -175,7 +175,12 @@ func TestLensUsesRedactedComposedContentAndLeavesSourcePDFSearchable(t *testing.
 	if e != nil {
 		t.Fatal(e)
 	}
+	ps.mu.Lock()
+	if e = ps.openPDF(); e != nil {
+		t.Fatal(e)
+	}
 	text, e := ps.pdf.Text(0)
+	ps.mu.Unlock()
 	ps.Close()
 	if e != nil || !strings.Contains(text, "Secret") {
 		t.Fatal("lens removed original searchable text")

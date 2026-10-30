@@ -5,6 +5,7 @@ import (
 	"image"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestSourceRastersAreBoundedAndUseLRU(t *testing.T) {
@@ -122,5 +123,64 @@ func TestSourceTrimPreviews(t *testing.T) {
 	}
 	if source.pages[1].preview == nil {
 		t.Fatal("TrimPagePreview trimmed non-target page")
+	}
+}
+
+func TestReopenedPDFSourceRejoinsRasterBudget(t *testing.T) {
+	source, err := Load("pages.pdf", bytes.NewReader(minimalPDF(t, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	registered := rasterSourceCount.Load()
+	source.Close()
+	if rasterSourceCount.Load() != registered-1 {
+		t.Fatal("closed source stayed registered")
+	}
+	if _, err := source.Preview(0); err != nil {
+		t.Fatal(err)
+	}
+	if rasterSourceCount.Load() != registered || !source.rasterRegistered {
+		t.Fatal("reopened source did not rejoin the shared raster budget")
+	}
+}
+
+func TestTrimDoesNotWaitForBusySource(t *testing.T) {
+	source := &Source{format: FormatPDF, pages: make([]pageData, 2)}
+	for page := range source.pages {
+		source.pages[page].preview = image.NewRGBA(image.Rect(0, 0, 8, 8))
+		source.rasterBytes.Add(rasterBytes(source.pages[page].preview))
+	}
+	source.mu.Lock() // A native render in progress.
+	done := make(chan struct{})
+	go func() {
+		source.TrimPagePreview(0)
+		source.TrimPreviews()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("trim waited for the source render lock")
+	}
+	// Page 1 is used after the trims were queued and must survive them.
+	source.touchRaster(1, false)
+	source.mu.Unlock()
+	deadline := time.Now().Add(time.Second)
+	for {
+		source.mu.Lock()
+		trimmed := source.pages[0].preview == nil
+		kept := source.pages[1].preview != nil
+		source.mu.Unlock()
+		if trimmed {
+			if !kept {
+				t.Fatal("queued trim dropped a preview used after the request")
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("queued trim never ran")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
