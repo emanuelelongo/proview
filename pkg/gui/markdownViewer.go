@@ -215,6 +215,7 @@ func (v *markdownView) suspend() {
 		return
 	}
 	v.editor.stopGIFPlayback()
+	v.releaseImageSegments()
 	if v.imagePreview != nil {
 		v.imagePreview.close()
 	}
@@ -247,6 +248,29 @@ func (v *markdownView) suspend() {
 	v.selection = nil
 	v.searchMatch = nil
 	v.suspended = true
+}
+
+// Detached Fyne renderers can outlive the parsed document while their texture
+// cache expires. Clear the source pixels from every old image segment as soon
+// as the view no longer displays them.
+func (v *markdownView) releaseImageSegments() {
+	if v == nil {
+		return
+	}
+	for _, block := range v.textBlocks {
+		for _, segment := range block.Segments {
+			picture, ok := segment.(*markdownImageSegment)
+			if !ok {
+				continue
+			}
+			picture.image = nil
+			picture.player = nil
+			if picture.visual != nil {
+				picture.visual.Image = nil
+				picture.visual.Refresh()
+			}
+		}
+	}
 }
 func (v *markdownView) zoom(delta int) {
 	scale := float32(math.Max(.25, math.Min(2, float64(v.scale)+float64(delta)*.125)))
@@ -971,6 +995,10 @@ func (s *markdownImageSegment) Visual() fyne.CanvasObject {
 func (s *markdownImageSegment) Update(object fyne.CanvasObject) {
 	o := object.(*canvas.Image)
 	o.Image = s.image
+	if s.image == nil {
+		o.Refresh()
+		return
+	}
 	size := s.image.Bounds().Size()
 	limit := float32(300)
 	if s.width > 0 {

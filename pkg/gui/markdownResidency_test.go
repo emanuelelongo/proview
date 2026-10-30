@@ -41,6 +41,19 @@ func TestInactiveMarkdownImagesAreTrimmedAndRestored(t *testing.T) {
 	oldViewport := firstView.viewport
 	oldRenderer := oldViewport.CreateRenderer()
 	oldObjects := oldRenderer.Objects()
+	var oldPicture *markdownImageSegment
+	for _, block := range firstView.textBlocks {
+		for _, segment := range block.Segments {
+			if picture, ok := segment.(*markdownImageSegment); ok {
+				oldPicture = picture
+				break
+			}
+		}
+	}
+	if oldPicture == nil {
+		t.Fatal("Markdown image segment was not built")
+	}
+	oldPicture.Visual()
 	if firstDoc.Image("image.png") == nil || len(firstView.textBlocks) == 0 {
 		t.Fatal("Markdown image was not loaded into the active view")
 	}
@@ -55,6 +68,9 @@ func TestInactiveMarkdownImagesAreTrimmedAndRestored(t *testing.T) {
 	}
 	if !firstView.suspended || firstView.viewport != nil || firstView.outlinePanel != nil || firstView.textBlocks != nil || first.markdownView != firstView {
 		t.Fatal("inactive Markdown canvas tree was not released while retaining its entry")
+	}
+	if oldPicture.image != nil || oldPicture.visual.Image != nil {
+		t.Fatal("detached Markdown canvas retained decoded image pixels")
 	}
 	// Fyne can still traverse and lay out the detached viewport while freeing
 	// dirty textures during the next window resize.

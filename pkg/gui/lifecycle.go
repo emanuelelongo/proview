@@ -71,6 +71,7 @@ func (g *Gui) closeDocument() {
 	g.stopFormPulse()
 	if g.showingMarkdown() {
 		g.window.Canvas().Focus(nil)
+		g.markdownView.releaseImageSegments()
 		g.clearMarkdown()
 		g.imageScroll.Show()
 		g.updateHistoryActions()
@@ -182,6 +183,9 @@ func (g *Gui) closeWindow() {
 	g.unregisterEditor()
 	g.hideObjectOrderMenu()
 	g.clearModel()
+	if g.markdownView != nil {
+		g.markdownView.releaseImageSegments()
+	}
 	g.clearMarkdown()
 	g.stopOCR()
 	if g.signatureDialog != nil {

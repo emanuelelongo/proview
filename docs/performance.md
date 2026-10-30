@@ -343,8 +343,9 @@ Follow-up fixes to the retained-memory changes:
 - Detached Markdown viewports retain their own renderer children until Fyne
   finishes releasing textures. Suspending an image-bearing Markdown document
   no longer leaves a renderer dereferencing its cleared scroll state during the
-  resize caused by opening another file; the retained view also releases its
-  outline panel.
+  resize caused by opening another file. Suspended and closed views clear their
+  old image segments' pixel references immediately, even while Fyne retains
+  the canvas objects; the retained view also releases its outline panel.
 - An inactive image entry keeps its bounded sidebar thumbnail but drops the
   thumbnail's full-size identity reference, allowing `TrimInactive` to release
   the decoded source raster.
