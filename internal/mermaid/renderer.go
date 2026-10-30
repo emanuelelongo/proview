@@ -75,6 +75,28 @@ func NewRenderer() *Renderer {
 	}
 }
 
+// Clear drops cached diagram rasters. In-flight renders are left to their
+// callers; cancelled renders never publish into the cache.
+func (r *Renderer) Clear() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	clear(r.cache)
+	r.pixels = 0
+}
+
+// CachedPixels reports retained diagram raster pixels.
+func (r *Renderer) CachedPixels() int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.pixels
+}
+
 func normalise(options Options) Options {
 	options.Width = max(128, min(2048, options.Width/16*16))
 	if math.IsNaN(options.FontScale) || math.IsInf(options.FontScale, 0) || options.FontScale <= 0 {

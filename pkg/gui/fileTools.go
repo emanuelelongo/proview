@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"bytes"
 	"emanuelelongo/proview/pkg/document"
 	"fmt"
 	"image"
@@ -265,16 +264,19 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 		if g.working || len(inputs) == 0 {
 			return
 		}
-		selectedInputs := append([]pdfInput(nil), inputs...)
 		current := g.document
 		if appendPages && (current == nil || current.Format() != document.FormatPDF) {
 			dialog.ShowInformation("Append PDF", "Open a PDF first.", g.window)
 			return
 		}
+		// The prepared collection stays in the dialog until loading succeeds, so
+		// an invalid PDF can be removed and the rest retried.
+		selectedInputs := append([]pdfInput(nil), inputs...)
 		g.runFileWork("Loading PDFs", func() (*document.Document, error) {
 			sources := make([]*document.Source, 0, len(selectedInputs))
 			for _, input := range selectedInputs {
-				source, err := document.LoadFrom(input.name, input.location, bytes.NewReader(input.data))
+				// The dialog keeps input.data for retries; sharing it avoids a copy.
+				source, err := document.LoadBytes(input.name, input.location, input.data)
 				if err != nil {
 					for _, s := range sources {
 						s.Close()
@@ -307,6 +309,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 			_, err = combined.Preview(0)
 			return combined, err
 		}, func(loaded *document.Document) {
+			inputs = nil
 			chooser.Hide()
 			if appendPages {
 				if err := current.AppendDocumentPages(loaded); err != nil {
@@ -318,6 +321,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 				g.showDocument(loaded)
 				g.saveTarget = nil
 			}
+			requestMemoryRelease()
 		})
 	})
 	scroll := container.NewGridWrap(fyne.NewSize(520, 280), list)
@@ -397,6 +401,7 @@ func (g *Gui) rebuildPDFWithCompletion(active int, done func()) {
 		if done != nil {
 			done()
 		}
+		requestMemoryRelease()
 	})
 }
 

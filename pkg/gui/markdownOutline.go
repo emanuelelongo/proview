@@ -43,11 +43,14 @@ func (s *markdownReaderScroll) ScrollToBottom() {
 // reading layout. Markdown no longer owns a crop overlay or canvas capture.
 type markdownViewport struct {
 	widget.BaseWidget
-	view *markdownView
+	view         *markdownView
+	scroll       *container.Scroll
+	outlinePanel fyne.CanvasObject
+	headingCount int
 }
 
 func newMarkdownViewport(view *markdownView) *markdownViewport {
-	v := &markdownViewport{view: view}
+	v := &markdownViewport{view: view, scroll: view.scroll.Scroll, outlinePanel: view.outlinePanel, headingCount: len(view.headings)}
 	v.ExtendBaseWidget(v)
 	view.viewport = v
 	return v
@@ -61,32 +64,36 @@ type markdownViewportRenderer struct{ viewport *markdownViewport }
 func (*markdownViewportRenderer) Destroy()             {}
 func (r *markdownViewportRenderer) MinSize() fyne.Size { return r.viewport.MinSize() }
 func (r *markdownViewportRenderer) Objects() []fyne.CanvasObject {
-	if r.viewport.view.outlinePanel == nil {
-		return []fyne.CanvasObject{r.viewport.view.scroll.Scroll}
+	if r.viewport.outlinePanel == nil {
+		return []fyne.CanvasObject{r.viewport.scroll}
 	}
-	return []fyne.CanvasObject{r.viewport.view.scroll.Scroll, r.viewport.view.outlinePanel}
+	return []fyne.CanvasObject{r.viewport.scroll, r.viewport.outlinePanel}
 }
 func (r *markdownViewportRenderer) Refresh() { canvas.Refresh(r.viewport) }
 func (r *markdownViewportRenderer) Layout(size fyne.Size) {
-	r.viewport.view.scroll.Move(fyne.Position{})
-	r.viewport.view.scroll.Resize(size)
-	r.viewport.view.layoutOutline(size)
+	r.viewport.scroll.Move(fyne.Position{})
+	r.viewport.scroll.Resize(size)
+	layoutMarkdownOutline(r.viewport.outlinePanel, r.viewport.headingCount, size)
 }
 
 func (v *markdownView) layoutOutline(size fyne.Size) {
-	if v.outlinePanel == nil {
+	layoutMarkdownOutline(v.outlinePanel, len(v.headings), size)
+}
+
+func layoutMarkdownOutline(panel fyne.CanvasObject, headingCount int, size fyne.Size) {
+	if panel == nil {
 		return
 	}
 	const margin float32 = 12
 	width := min(markdownOutlineWidth, max(1, size.Width-2*margin))
 	height := min(float32(480), max(1, size.Height-2*margin))
-	if len(v.headings) > 0 {
-		height = min(height, 52+float32(len(v.headings))*40)
+	if headingCount > 0 {
+		height = min(height, 52+float32(headingCount)*40)
 	} else {
 		height = min(height, 100)
 	}
-	v.outlinePanel.Resize(fyne.NewSize(width, height))
-	v.outlinePanel.Move(fyne.NewPos(max(0, size.Width-width-margin), margin))
+	panel.Resize(fyne.NewSize(width, height))
+	panel.Move(fyne.NewPos(max(0, size.Width-width-margin), margin))
 }
 func (*markdownViewport) MinSize() fyne.Size { return fyne.NewSize(180, 0) }
 func (v *markdownViewport) Resize(size fyne.Size) {
@@ -133,6 +140,10 @@ func (v *markdownView) buildOutline() {
 	}
 	v.outlineContent = content
 	v.outlinePanel = container.New(&markdownOutlineOverlayLayout{}, newMarkdownOutlineSurface(), container.NewBorder(v.outlineTitle, nil, nil, nil, content))
+	if v.viewport != nil {
+		v.viewport.outlinePanel = v.outlinePanel
+		v.viewport.headingCount = len(v.headings)
+	}
 	v.applyOutlineVisibility()
 	rail := container.New(&markdownOutlineLayout{}, container.NewBorder(button, nil, widget.NewSeparator(), nil, canvas.NewRectangle(color.Transparent)))
 	g.toolPropertyPanel.Hide()

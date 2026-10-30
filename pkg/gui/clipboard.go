@@ -257,7 +257,7 @@ func (g *Gui) newFromClipboard() {
 		if int64(config.Width)*int64(config.Height) > 16_000_000 || len(data) > 16<<20 {
 			return nil, fmt.Errorf("Clipboard image exceeds 16 MB or 16 million pixels")
 		}
-		source, err := document.LoadFrom("Untitled.png", "", bytes.NewReader(data))
+		source, err := document.LoadBytes("Untitled.png", "", data)
 		if err != nil {
 			return nil, err
 		}

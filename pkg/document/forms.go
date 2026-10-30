@@ -326,22 +326,15 @@ func (d *Document) sourcePDF(source *Source) ([]byte, error) {
 	return pdfengine.FillFormValues(source.original, values)
 }
 
-func (d *Document) formPreview(source *Source, index int, dpi float64) (image.Image, bool, error) {
-	changed := false
-	for key := range d.formValues {
-		if key.source == source {
-			changed = true
-			break
-		}
-	}
-	if !changed {
+func (d *Document) formPreview(source *Source, index int, dpi float64, forms uint64) (image.Image, bool, error) {
+	if forms == 0 {
 		return nil, false, nil
 	}
 	fields, err := source.formFields()
 	if err != nil || len(fields) == 0 {
 		return nil, false, nil
 	}
-	data, err := d.sourcePDF(source)
+	data, err := d.derived.filledPDF(source, forms, func() ([]byte, error) { return d.sourcePDF(source) })
 	if err != nil {
 		return nil, true, err
 	}

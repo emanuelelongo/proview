@@ -28,6 +28,8 @@ typedef struct {
     pv_glyph *glyphs;
     size_t glyph_count;
     float width, height;
+    /* Raw raster dimensions for pv_render_forms (RGBA rows). */
+    int raster_width, raster_height, raster_components, raster_stride;
     char error[512];
 } pv_result;
 

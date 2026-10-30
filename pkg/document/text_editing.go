@@ -1,7 +1,6 @@
 package document
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 
@@ -83,7 +82,7 @@ func (d *Document) prepareTextEdit(page, start, count int, value string, dx, dy 
 	if err != nil {
 		return nil, err
 	}
-	source, err := Load("Edited text.pdf", bytes.NewReader(corrected))
+	source, err := LoadBytes("Edited text.pdf", "Edited text.pdf", corrected)
 	if err != nil {
 		return nil, err
 	}

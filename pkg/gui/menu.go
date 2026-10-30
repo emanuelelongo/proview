@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"bytes"
 	"emanuelelongo/proview/internal/markdown"
 	"emanuelelongo/proview/internal/model3d"
 	"emanuelelongo/proview/pkg/document"
@@ -252,13 +251,14 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 		progress = dialog.NewCustomWithoutButtons("Opening", widget.NewProgressBarInfinite(), g.window)
 		progress.Show()
 	}
+	markdownImageBytes, markdownAnimationBytes := g.markdownLoadBudgets()
 	go func() {
 		var doc *document.Document
 		var mesh *model3d.Mesh
 		var md *markdown.Document
 		var err error
 		if markdown.IsFile(target.Name()) {
-			md, err = loadMarkdownReader(uri)
+			md, err = loadMarkdownReader(uri, markdownImageBytes, markdownAnimationBytes)
 		} else if isModelFile(target.Name()) {
 			mesh, err = loadModelReader(uri)
 		} else {
@@ -300,7 +300,7 @@ func loadDocumentReader(uri fyne.URIReadCloser) (*document.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	source, err := document.LoadFrom(name, location, bytes.NewReader(data))
+	source, err := document.LoadBytes(name, location, data)
 	if err != nil {
 		return nil, err
 	}
@@ -331,6 +331,7 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.clearPDFDetail()
 	g.pdfPageTops = nil
 	g.pdfKeepStart, g.pdfKeepEnd, g.pdfThumbKeepStart, g.pdfThumbKeepEnd = 0, 0, 0, 0
+	g.pdfVisibleStart, g.pdfVisibleEnd = 0, 0
 	g.pdfResident, g.pdfThumbResident, g.pdfBaseKeys = nil, nil, nil
 	g.deactivatePDFCrops()
 	g.pdfCrops = nil
@@ -393,6 +394,23 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	generation := g.pdfGeneration
 	g.pdfPageTops = nil
 	g.pdfKeepStart, g.pdfKeepEnd, g.pdfThumbKeepStart, g.pdfThumbKeepEnd = 0, 0, 0, 0
+	g.pdfVisibleStart, g.pdfVisibleEnd = 0, 0
+	for _, img := range g.pdfPageImages {
+		if img != nil {
+			img.Image = nil
+		}
+	}
+	for _, img := range g.pdfThumbImages {
+		if img != nil {
+			img.Image = nil
+		}
+	}
+	if g.pdfPages != nil {
+		g.pdfPages.RemoveAll()
+	}
+	if g.thumbList != nil {
+		g.thumbList.RemoveAll()
+	}
 	g.pdfResident, g.pdfThumbResident = map[int]bool{0: true}, map[int]bool{0: true}
 	g.pdfBaseKeys = map[int]document.PageBaseKey{0: loadedDocument.BasePageKey(0)}
 	g.deactivatePDFCrops()
@@ -430,10 +448,12 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 			return
 		}
 		var preview image.Image
+		var thumbPreview image.Image
 		if page == 0 {
 			preview = firstPreview
 			pageLoaded[page] = true
 			thumbLoaded[page] = true
+			thumbPreview = downsampleImageThumbnail(firstPreview)
 		}
 		pageImage := canvas.NewImageFromImage(preview)
 		// Let the GPU scale the preview instead of resampling pixels on the UI thread.
@@ -470,7 +490,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		objects = append(objects, pageContainer)
 		pageContainers = append(pageContainers, pageContainer)
 
-		thumbImage := canvas.NewImageFromImage(preview)
+		thumbImage := canvas.NewImageFromImage(thumbPreview)
 		thumbImage.FillMode = canvas.ImageFillContain
 		thumbImage.SetMinSize(thumbnailSizeForSidebar(pageSize, g.sidebarSplit.width))
 		thumbImages = append(thumbImages, thumbImage)

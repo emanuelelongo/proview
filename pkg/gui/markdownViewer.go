@@ -60,6 +60,7 @@ type markdownView struct {
 	textBlocks             []*markdownSelectableText
 	selection              *markdownTextSelection
 	searchMatch            *markdownTextSelection
+	suspended              bool
 }
 
 func (g *Gui) showingMarkdown() bool { return g.markdownView != nil }
@@ -111,6 +112,7 @@ func (g *Gui) showMarkdown(d *markdown.Document) {
 	g.clearMarkdown()
 	g.document = nil
 	g.saveTarget = nil
+	g.detachDocumentView()
 	g.imageScroll.Hide()
 	g.pdfScroll.Hide()
 	g.annotationControls.Hide()
@@ -132,7 +134,7 @@ func (g *Gui) showMarkdown(d *markdown.Document) {
 		}
 	}
 	g.markdownView = v
-	if !reused || v.readingMode != g.markdownThemeMode() {
+	if !reused || v.suspended || v.readingMode != g.markdownThemeMode() {
 		v.rebuild()
 	} else {
 		v.diagramContext, v.cancelDiagrams = context.WithCancel(context.Background())
@@ -202,6 +204,72 @@ func (v *markdownView) rebuild() {
 	v.editor.ensureGIFPlayback()
 	if s := v.editor.search; s != nil && s.bar.Visible() {
 		v.editor.startSearchAt(max(0, s.current))
+	}
+	v.suspended = false
+}
+
+// suspend drops the retained canvas tree while preserving lightweight reading
+// state on the view and editorDocument.
+func (v *markdownView) suspend() {
+	if v == nil {
+		return
+	}
+	v.editor.stopGIFPlayback()
+	v.releaseImageSegments()
+	if v.imagePreview != nil {
+		v.imagePreview.close()
+	}
+	if v.cancelDiagrams != nil {
+		v.cancelDiagrams()
+	}
+	for _, diagram := range v.diagrams {
+		diagram.running, diagram.hasRequest = false, false
+		diagram.generation++
+	}
+	v.imagePreview = nil
+	v.animatedImages = nil
+	v.gifGroups = nil
+	v.diagrams = nil
+	v.cancelDiagrams = nil
+	v.diagramContext = nil
+	v.viewport = nil
+	v.scroll = nil
+	v.page = nil
+	v.body = nil
+	v.content = nil
+	v.textBlocks = nil
+	v.headings = nil
+	v.anchors = nil
+	v.outline = nil
+	v.outlinePanel = nil
+	v.outlineContent = nil
+	v.outlineTitle = nil
+	v.outlineToggle = nil
+	v.selection = nil
+	v.searchMatch = nil
+	v.suspended = true
+}
+
+// Detached Fyne renderers can outlive the parsed document while their texture
+// cache expires. Clear the source pixels from every old image segment as soon
+// as the view no longer displays them.
+func (v *markdownView) releaseImageSegments() {
+	if v == nil {
+		return
+	}
+	for _, block := range v.textBlocks {
+		for _, segment := range block.Segments {
+			picture, ok := segment.(*markdownImageSegment)
+			if !ok {
+				continue
+			}
+			picture.image = nil
+			picture.player = nil
+			if picture.visual != nil {
+				picture.visual.Image = nil
+				picture.visual.Refresh()
+			}
+		}
 	}
 }
 func (v *markdownView) zoom(delta int) {
@@ -571,9 +639,9 @@ func (v *markdownView) inline(parent ast.Node, style widget.RichTextStyle) []wid
 			}
 			result = append(result, &widget.HyperlinkSegment{Text: string(n.Label(v.doc.Source)), Alignment: style.Alignment, OnTapped: func() { v.openLink(dest) }})
 		case *ast.Image:
-			if img := v.doc.Images[string(n.Destination)]; img != nil {
+			if img := v.doc.Image(string(n.Destination)); img != nil {
 				segment := &markdownImageSegment{image: img, width: markdown.ImageWidth(n)}
-				if animation := v.doc.Animations[string(n.Destination)]; animation != nil {
+				if animation := v.doc.Animation(string(n.Destination)); animation != nil {
 					group := v.gifGroups[animation]
 					if group == nil {
 						group = &markdownGIFGroup{player: animation.NewPlayer()}
@@ -864,12 +932,38 @@ func (v *markdownView) openLink(destination string) {
 	v.editor.openStartupFiles([]string{path})
 }
 
-func loadMarkdownReader(uri fyne.URIReadCloser) (*markdown.Document, error) {
+const (
+	maxWorkspaceMarkdownImageBytes     int64 = 128 << 20
+	minDocumentMarkdownImageBytes      int64 = 16 << 20
+	maxWorkspaceMarkdownAnimationBytes int64 = 128 << 20
+	minDocumentMarkdownAnimationBytes  int64 = 16 << 20
+)
+
+// markdownLoadBudgets divides one workspace allowance between open documents.
+func (g *Gui) markdownLoadBudgets() (imageBytes, animationBytes int64) {
+	open := map[*markdown.Document]bool{}
+	for _, entry := range g.documents {
+		if entry.markdown != nil {
+			open[entry.markdown] = true
+		}
+	}
+	if g.markdownView != nil && g.markdownView.doc != nil {
+		open[g.markdownView.doc] = true
+	}
+	count := int64(len(open) + 1)
+	shared := func(maximum, sharedCap, minimum int64) int64 {
+		return min(maximum, max(minimum, sharedCap/count))
+	}
+	return shared(markdown.MaxDocumentImageBytes, maxWorkspaceMarkdownImageBytes, minDocumentMarkdownImageBytes),
+		shared(markdown.MaxDocumentAnimationBytes, maxWorkspaceMarkdownAnimationBytes, minDocumentMarkdownAnimationBytes)
+}
+
+func loadMarkdownReader(uri fyne.URIReadCloser, imageBytes, animationBytes int64) (*markdown.Document, error) {
 	path := ""
 	if uri.URI().Scheme() == "file" {
 		path = uri.URI().Path()
 	}
-	d, err := markdown.Load(uri.URI().Name(), path, uri)
+	d, err := markdown.LoadWithBudget(uri.URI().Name(), path, uri, imageBytes, animationBytes)
 	return d, errors.Join(err, uri.Close())
 }
 
@@ -901,6 +995,10 @@ func (s *markdownImageSegment) Visual() fyne.CanvasObject {
 func (s *markdownImageSegment) Update(object fyne.CanvasObject) {
 	o := object.(*canvas.Image)
 	o.Image = s.image
+	if s.image == nil {
+		o.Refresh()
+		return
+	}
 	size := s.image.Bounds().Size()
 	limit := float32(300)
 	if s.width > 0 {

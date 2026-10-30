@@ -38,6 +38,54 @@ func BenchmarkLoadMarkdownImage(b *testing.B) {
 	}
 }
 
+func TestLoadWithBudgetAndClose(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "image.png")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(f, image.NewRGBA64(image.Rect(0, 0, 16, 16))); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		budget int64
+		want   bool
+	}{{1, false}, {4096, true}} {
+		doc, err := LoadWithBudget("test.md", filepath.Join(dir, "test.md"), strings.NewReader("![image](image.png)"), tc.budget, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := doc.Images["image.png"] != nil; got != tc.want {
+			t.Fatalf("budget %d loaded image = %v, want %v", tc.budget, got, tc.want)
+		}
+		before := doc.ImageBytes()
+		if tc.want {
+			if doc.ImageCount() != 1 || doc.AnimationCount() != 0 || !doc.HasDecodedImages() {
+				t.Fatal("decoded Markdown resource counts are incorrect")
+			}
+			original := doc.Image("image.png")
+			doc.TrimImages()
+			if !doc.ImagesTrimmed() || doc.HasDecodedImages() || doc.Image("image.png") != nil || doc.Animation("image.png") != nil {
+				t.Fatal("TrimImages retained decoded image resources")
+			}
+			doc.RestoreImages()
+			restored := doc.Image("image.png")
+			if doc.ImagesTrimmed() || !doc.HasDecodedImages() || doc.ImageCount() != 1 || restored == nil || restored.Bounds() != original.Bounds() || restored.At(3, 4) != original.At(3, 4) {
+				t.Fatal("RestoreImages did not restore the local image")
+			}
+		}
+		doc.Close()
+		doc.Close()
+		if doc.Images != nil || doc.Animations != nil || before != 0 && doc.ImageBytes() != 0 {
+			t.Fatal("Close did not release decoded Markdown resources")
+		}
+	}
+}
+
 func TestMarkdownImageDecodeBudget(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "image.png")

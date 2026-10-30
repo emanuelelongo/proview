@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -152,7 +151,7 @@ func (g *Gui) createSelectionPDF(sources []selectedPageSource, layout *document.
 		if err != nil {
 			return nil, err
 		}
-		source, err := document.LoadFrom("Selection.pdf", "", bytes.NewReader(job.PDF))
+		source, err := document.LoadBytes("Selection.pdf", "", job.PDF)
 		if err != nil {
 			return nil, err
 		}

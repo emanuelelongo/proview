@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"image"
 	"testing"
 
 	"emanuelelongo/proview/pkg/annotations"
@@ -86,4 +87,49 @@ func TestPDFResidencyReleasesSidebarRastersIndependently(t *testing.T) {
 		t.Fatal("returning thumbnail did not use sidebar density")
 	}
 	g.closeWindow()
+}
+
+func TestPDFResidencyOversizedPages(t *testing.T) {
+	g := &Gui{
+		pdfPageSizes: []image.Point{
+			image.Pt(5000, 3000), // 15 MP (oversized)
+			image.Pt(1000, 1000), // 1 MP (normal)
+			image.Pt(5000, 3000), // 15 MP (oversized)
+		},
+	}
+	if !g.isOversizedPDFPage(0) {
+		t.Fatal("expected page 0 to be oversized")
+	}
+	if g.isOversizedPDFPage(1) {
+		t.Fatal("expected page 1 to be normal")
+	}
+	if !g.isOversizedPDFPage(2) {
+		t.Fatal("expected page 2 to be oversized")
+	}
+
+	// Viewport is on page 1: [1, 2). Normal keep window is [0, 3).
+	g.pdfVisibleStart, g.pdfVisibleEnd = 1, 2
+	g.pdfKeepStart, g.pdfKeepEnd = 0, 3
+
+	// Normal page 1 is wanted (both visible and in keep window).
+	if !g.pdfPageWanted(1) {
+		t.Fatal("expected visible normal page 1 to be wanted")
+	}
+
+	// Oversized page 0 is within keep window [0, 3) but outside visible range [1, 2).
+	// It must NOT be wanted!
+	if g.pdfPageWanted(0) {
+		t.Fatal("expected offscreen oversized page 0 to NOT be wanted")
+	}
+
+	// Oversized page 2 is also offscreen and outside visible range [1, 2).
+	if g.pdfPageWanted(2) {
+		t.Fatal("expected offscreen oversized page 2 to NOT be wanted")
+	}
+
+	// When visible [0, 1), oversized page 0 IS wanted.
+	g.pdfVisibleStart, g.pdfVisibleEnd = 0, 1
+	if !g.pdfPageWanted(0) {
+		t.Fatal("expected visible oversized page 0 to be wanted")
+	}
 }

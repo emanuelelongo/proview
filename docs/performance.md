@@ -287,3 +287,123 @@ software-driver test.
 
 Regression tests cover image identity reuse, cross-document replacement, cleared
 references on close, zoom/pan/fit/focus handling and animated image playback.
+
+## Retained-memory review (2026-10-30)
+
+Code review changes without new RSS measurements. Verify on real documents with
+**Help → Save memory report** before treating any figure as a regression or a
+guarantee. The report now also lists retained source bytes, PDF raster bytes and
+decoded Markdown image/animation bytes per window. `preview_cache_bytes` reports
+the base page, lens-sampling page and highlight fragments retained by each window's
+`PreviewRenderer`; it is not a count of every image reachable through canvas widgets.
+
+- Each `Source` opens its own MuPDF context. The library-wide `fitz.MaxStore`
+  limit is now 32 MiB instead of 256 MiB, bounding native font/image caches on
+  multi-source documents and annotated sources (including the annotation base).
+  Trade-off: image-heavy PDFs may re-decode resources more often.
+- PDF raster caches now share a 128 MiB allowance: each live PDF source receives
+  `clamp(128 MiB / sources, 16 MiB, 64 MiB)`. One long document still gets its
+  previous 64 MiB; several open sources no longer multiply the same budget. The
+  limit is approximate and applies on the next raster access, without cross-source
+  locks or eviction scans.
+- `debug.FreeOSMemory` is coalesced behind one delayed request instead of running
+  on every oversized-page eviction, document close, collection rebuild and save.
+  This removes repeated full collections with scavenging from scroll paths.
+- Inactive image and GIF documents release their decoded raster and animation on
+  document switch. Reopening decodes from the immutable encoded bytes; page size,
+  history and imports are unchanged. GIF animations are re-decoded lazily outside
+  the source render lock so playback ticks never queue behind a native render.
+- Sidebar thumbnails for image documents are reused while the preview image
+  identity is unchanged, avoiding a new RGBA allocation and texture identity on
+  every sidebar refresh.
+- Accepted native text edits keep one full edited source for Undo. Sources that
+  history eviction or a cleared redo stack makes unreachable are closed instead of
+  accumulating for the rest of the session.
+- The PDF bridge no longer copies the whole source file into C for layout, print,
+  form and text-edit calls: immutable Go bytes are passed for the duration of the
+  call and dropped by the bridge before returning. Form/annotation page previews
+  return raw RGBA rows instead of an encoded PNG, removing encode/decode buffers
+  on every preview and thumbnail render.
+- Open Markdown documents within each editor workspace share a 128 MiB image and
+  animation allowance,
+  `clamp(128 MiB / open documents, 16 MiB, default per-document limit)`. Closing a
+  retained workspace entry releases its decoded images and animations.
+- `Source.Close` now also clears disposable previews, thumbnails, glyph layouts
+  and animations while keeping original bytes and imported overlay metadata, so a
+  closed source can still be reopened. Export and page collection read the
+  immutable source buffer without cloning the entire PDF.
+
+Inactive Markdown entries now release decoded local images, animations and their
+canvas tree while retaining the parsed document and reading state. Images are
+restored off the UI thread when the entry is activated again. Text-only Markdown
+views stay retained to preserve the measured workspace font/view reuse.
+
+Follow-up fixes to the retained-memory changes:
+
+- Detached Markdown viewports retain their own renderer children until Fyne
+  finishes releasing textures. Suspending an image-bearing Markdown document
+  no longer leaves a renderer dereferencing its cleared scroll state during the
+  resize caused by opening another file. Suspended and closed views clear their
+  old image segments' pixel references immediately, even while Fyne retains
+  the canvas objects; the retained view also releases its outline panel.
+- An inactive image entry keeps its bounded sidebar thumbnail but drops the
+  thumbnail's full-size identity reference, allowing `TrimInactive` to release
+  the decoded source raster.
+- Switching from a PDF or image to Markdown or a 3D model now detaches the
+  previous view (page and thumbnail canvases, overlay layers, high-DPI detail and
+  `PreviewRenderer`). Previously the inactive document's rasters stayed reachable
+  through window fields, defeating `TrimInactive`.
+- Inactive Markdown entries also clear their Mermaid diagram cache (up to 8 MP per
+  document); diagram-only documents are suspended too and rebuild synchronously.
+- Printing, "Create PDF" and the Markdown sidebar thumbnail of a trimmed entry
+  decode images into a transient copy instead of emitting `[Image: …]`
+  placeholders, without restoring them into the inactive entry.
+- PDF sidebar thumbnails use the cached 72 DPI source raster directly instead of a
+  320 px resampled copy. Image-document and first-page thumbnails are bounded to
+  twice the maximum sidebar width (720 × 1440 px) so they stay sharp on 2x displays.
+- A PDF source reopened after `Close` rejoins the shared raster budget, and a
+  reloaded GIF preview uses the same composited first frame as playback.
+- Preview trims from scroll eviction and document switch no longer wait on the
+  source lock held during a MuPDF render: a busy source queues the trim to one
+  background worker, which keeps previews used after the request.
+- "Open PDFs together" keeps the prepared list until loading succeeds, so an
+  invalid PDF no longer empties the still-open dialog.
+- `GOGC=50` (unless `GOGC` is set) is retained as a deliberate CPU-for-RSS
+  trade-off.
+
+Derived rasters and load-time copies (second audit):
+
+- `Document` keeps a byte-bounded LRU (`derived_cache.go`, same budget as one
+  source cache) of page rasters derived from source pixels: rotated pages,
+  filled-form renders and redaction-painted thumbnails. Keys include source,
+  page, turns and fingerprints of form values and redaction quads, so edits
+  never see stale output. Repeated `Preview`/`Thumbnail` calls reuse one copy,
+  and after a rotated preview is cached the unrotated source raster is trimmed
+  so the page is not resident twice. `TrimInactive`, `TrimPagePreview` and
+  `Close` release the cache; `MemoryUsage` counts it.
+- Filled-form previews reuse a generated PDF per source while field values
+  are unchanged, instead of rebuilding the whole file for every page render.
+  These generated PDFs share a byte-bounded LRU. One oversized generated PDF
+  may stay cached so rendering each of its pages does not regenerate it.
+- `Transform.Apply` and redaction painting return `*image.RGBA` for RGBA input,
+  which Fyne uploads without converting into another full-size copy. Form
+  renders composite onto white in place instead of allocating a second raster.
+- A PDF with imported annotations renders through its clean base source; the
+  outer source closes its MuPDF context after loading and no longer takes a
+  share of the raster budget (it reopens lazily when needed). The base is built
+  from the cleaned bytes without an extra copy.
+- `LoadBytes` takes ownership of an in-memory buffer. GUI open, PDF collection,
+  clipboard, selection output and internal reloads use it, removing the
+  `io.ReadAll` duplicate of every opened file.
+- `rasterBytes` counts actual storage of compact formats (JPEG YCbCr, gray,
+  paletted, 64-bit) instead of assuming 8 bytes per pixel, so budgets no longer
+  evict early for JPEG-heavy documents.
+- The memory report adds `displayed_texture_bytes_estimate`: 4 bytes per pixel
+  of resident page, thumbnail and image-view rasters. Fyne does not expose real
+  texture sizes, so it is an estimate.
+
+Remaining, intentionally deferred: enforcing one process-wide budget across all
+widget-bound and transient rasters (including lens outputs and selection/highlight
+rasters). The report exposes source, PDF source-cache, derived-raster,
+Markdown-resource and `PreviewRenderer` cache bytes plus a texture estimate per
+window, but is not a complete native/GPU allocation ledger or an RSS cap.

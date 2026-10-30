@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/alecthomas/chroma/v2"
@@ -32,14 +33,20 @@ import (
 const MaxSourceBytes = 2 << 20
 
 type Document struct {
-	Name       string
-	Source     []byte
-	Root       ast.Node
-	Images     map[string]image.Image
-	Animations map[string]*gifplay.Animation
-	Tokens     map[ast.Node][]chroma.Token
-	Diagrams   *mermaid.Renderer
-	directory  string
+	Name           string
+	Source         []byte
+	Root           ast.Node
+	Images         map[string]image.Image
+	Animations     map[string]*gifplay.Animation
+	Tokens         map[ast.Node][]chroma.Token
+	Diagrams       *mermaid.Renderer
+	directory      string
+	closed         bool
+	resourcesMu    sync.RWMutex
+	restoreMu      sync.Mutex
+	imageLimit     int64
+	animationLimit int64
+	imagesTrimmed  bool
 }
 
 func IsFile(name string) bool {
@@ -52,6 +59,22 @@ func IsFile(name string) bool {
 
 // Load prepares parsing, highlighting and bounded local images off the UI thread.
 func Load(name, path string, r io.Reader) (*Document, error) {
+	return LoadWithBudget(name, path, r, MaxDocumentImageBytes, MaxDocumentAnimationBytes)
+}
+
+// LoadWithBudget applies explicit decoded-image and animation allowances. A
+// workspace with several open documents can divide one shared cap between them.
+func LoadWithBudget(name, path string, r io.Reader, imageBytes, animationBytes int64) (*Document, error) {
+	if imageBytes <= 0 {
+		imageBytes = MaxDocumentImageBytes
+	}
+	if animationBytes <= 0 {
+		animationBytes = MaxDocumentAnimationBytes
+	}
+	return load(name, path, r, imageBytes, animationBytes)
+}
+
+func load(name, path string, r io.Reader, imageLimit, animationLimit int64) (*Document, error) {
 	source, err := io.ReadAll(io.LimitReader(r, MaxSourceBytes+1))
 	if err != nil {
 		return nil, err
@@ -71,7 +94,11 @@ func Load(name, path string, r io.Reader) (*Document, error) {
 	)))
 	reader := text.NewReader(source)
 	reader.Advance(frontMatterEnd(source))
-	d := &Document{Name: name, Source: source, Root: md.Parser().Parse(reader), Images: map[string]image.Image{}, Tokens: map[ast.Node][]chroma.Token{}, Diagrams: mermaid.NewRenderer()}
+	d := &Document{
+		Name: name, Source: source, Root: md.Parser().Parse(reader), Images: map[string]image.Image{},
+		Tokens: map[ast.Node][]chroma.Token{}, Diagrams: mermaid.NewRenderer(),
+		imageLimit: imageLimit, animationLimit: animationLimit,
+	}
 	expandHTML(d.Root, source)
 	d.Animations = make(map[string]*gifplay.Animation)
 	if path != "" {
@@ -87,9 +114,9 @@ func Load(name, path string, r io.Reader) (*Document, error) {
 		switch n := n.(type) {
 		case *ast.Image:
 			dest := string(n.Destination)
-			if !attemptedImages[dest] && imageBytes < 64<<20 {
+			if !attemptedImages[dest] && imageBytes < imageLimit {
 				attemptedImages[dest] = true
-				if img, animation := d.loadImageResource(dest, (64<<20)-imageBytes, gifplay.MaxBytes-animationBytes); img != nil {
+				if img, animation := d.loadImageResource(dest, imageLimit-imageBytes, animationLimit-animationBytes); img != nil {
 					d.Images[dest] = img
 					imageBytes += decodedImageBytes(img)
 					if animation != nil {
@@ -227,6 +254,222 @@ func (d *Document) loadImageResource(destination string, budget, animationBudget
 		return nil, nil
 	}
 	return img, nil
+}
+
+// Close releases decoded images and animations. It is safe to call more than
+// once. Rebuilding the view afterwards requires loading the document again.
+func (d *Document) Close() {
+	if d == nil {
+		return
+	}
+	d.resourcesMu.Lock()
+	defer d.resourcesMu.Unlock()
+	if d.closed {
+		return
+	}
+	d.closed = true
+	d.Images = nil
+	d.Animations = nil
+	d.imagesTrimmed = false
+	d.Diagrams.Clear()
+}
+
+// Image returns the decoded local image for a Markdown destination.
+func (d *Document) Image(destination string) image.Image {
+	if d == nil {
+		return nil
+	}
+	d.resourcesMu.RLock()
+	defer d.resourcesMu.RUnlock()
+	return d.Images[destination]
+}
+
+// Animation returns the decoded animation for a Markdown destination.
+func (d *Document) Animation(destination string) *gifplay.Animation {
+	if d == nil {
+		return nil
+	}
+	d.resourcesMu.RLock()
+	defer d.resourcesMu.RUnlock()
+	return d.Animations[destination]
+}
+
+// ImageCount reports the number of decoded local images retained by the document.
+func (d *Document) ImageCount() int {
+	if d == nil {
+		return 0
+	}
+	d.resourcesMu.RLock()
+	defer d.resourcesMu.RUnlock()
+	return len(d.Images)
+}
+
+// AnimationCount reports the number of decoded animations retained by the document.
+func (d *Document) AnimationCount() int {
+	if d == nil {
+		return 0
+	}
+	d.resourcesMu.RLock()
+	defer d.resourcesMu.RUnlock()
+	return len(d.Animations)
+}
+
+// ImagesTrimmed reports whether decoded resources must be restored before the
+// document is shown again.
+func (d *Document) ImagesTrimmed() bool {
+	if d == nil {
+		return false
+	}
+	d.resourcesMu.RLock()
+	defer d.resourcesMu.RUnlock()
+	return d.imagesTrimmed
+}
+
+// TrimImages releases decoded local images and animations while retaining the
+// parsed document and original Markdown source.
+func (d *Document) TrimImages() {
+	if d == nil {
+		return
+	}
+	d.resourcesMu.Lock()
+	defer d.resourcesMu.Unlock()
+	if d.closed {
+		return
+	}
+	// Diagram-only documents have nothing to decode again on activation.
+	if len(d.Images) > 0 || len(d.Animations) > 0 {
+		d.imagesTrimmed = true
+	}
+	d.Images = nil
+	d.Animations = nil
+	d.Diagrams.Clear()
+}
+
+// resourceSnapshot returns d, or a transient copy with decoded still images
+// when d is trimmed. Output paths use it so an inactive document prints its
+// pictures without restoring them into the retained document.
+func (d *Document) resourceSnapshot() *Document {
+	if d == nil {
+		return nil
+	}
+	d.resourcesMu.RLock()
+	trimmed := d.imagesTrimmed && !d.closed
+	d.resourcesMu.RUnlock()
+	if !trimmed {
+		return d
+	}
+	snapshot := &Document{
+		Name:           d.Name,
+		Source:         d.Source,
+		Root:           d.Root,
+		Tokens:         d.Tokens,
+		directory:      d.directory,
+		imageLimit:     d.imageLimit,
+		animationLimit: 0,
+	}
+	snapshot.Images, _ = snapshot.decodeImages()
+	return snapshot
+}
+
+// RestoreImages decodes bounded local image resources after TrimImages.
+func (d *Document) RestoreImages() {
+	if d == nil {
+		return
+	}
+	d.restoreMu.Lock()
+	defer d.restoreMu.Unlock()
+	d.resourcesMu.RLock()
+	trimmed, closed := d.imagesTrimmed, d.closed
+	d.resourcesMu.RUnlock()
+	if !trimmed || closed {
+		return
+	}
+	images, animations := d.decodeImages()
+	d.resourcesMu.Lock()
+	defer d.resourcesMu.Unlock()
+	if d.closed {
+		return
+	}
+	d.Images, d.Animations = images, animations
+	d.imagesTrimmed = false
+}
+
+func (d *Document) decodeImages() (map[string]image.Image, map[string]*gifplay.Animation) {
+	images := make(map[string]image.Image)
+	animations := make(map[string]*gifplay.Animation)
+	imageBytes, animationBytes := int64(0), int64(0)
+	attempted := make(map[string]bool)
+	_ = ast.Walk(d.Root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		imageNode, ok := n.(*ast.Image)
+		if !ok {
+			return ast.WalkContinue, nil
+		}
+		destination := string(imageNode.Destination)
+		if attempted[destination] || imageBytes >= d.imageLimit {
+			return ast.WalkContinue, nil
+		}
+		attempted[destination] = true
+		picture, animation := d.loadImageResource(destination, d.imageLimit-imageBytes, d.animationLimit-animationBytes)
+		if picture != nil {
+			images[destination] = picture
+			imageBytes += decodedImageBytes(picture)
+			if animation != nil {
+				animations[destination] = animation
+				animationBytes += animation.Bytes
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	return images, animations
+}
+
+// ImageBytes reports retained decoded image bytes for diagnostics.
+func (d *Document) ImageBytes() int64 {
+	if d == nil {
+		return 0
+	}
+	d.resourcesMu.RLock()
+	defer d.resourcesMu.RUnlock()
+	var total int64
+	for _, img := range d.Images {
+		total += decodedImageBytes(img)
+	}
+	return total
+}
+
+// AnimationBytes reports retained GIF animation bytes for diagnostics.
+func (d *Document) AnimationBytes() int64 {
+	if d == nil {
+		return 0
+	}
+	d.resourcesMu.RLock()
+	defer d.resourcesMu.RUnlock()
+	var total int64
+	for _, animation := range d.Animations {
+		if animation != nil {
+			total += animation.Bytes
+		}
+	}
+	return total
+}
+
+// HasDecodedImages reports whether decoded image or animation resources are retained.
+func (d *Document) HasDecodedImages() bool {
+	if d == nil {
+		return false
+	}
+	d.resourcesMu.RLock()
+	defer d.resourcesMu.RUnlock()
+	return len(d.Images) > 0 || len(d.Animations) > 0
+}
+
+// HasReleasableResources reports decoded images, animations or cached diagram
+// rasters that TrimImages would release.
+func (d *Document) HasReleasableResources() bool {
+	return d.HasDecodedImages() || d != nil && d.Diagrams.CachedPixels() > 0
 }
 
 func (d *Document) Info() string {

@@ -89,6 +89,7 @@ type Gui struct {
 	pdfPageIDs                        []uint64
 	pdfPageTops                       []float32
 	pdfKeepStart, pdfKeepEnd          int
+	pdfVisibleStart, pdfVisibleEnd    int
 	pdfThumbKeepStart                 int
 	pdfThumbKeepEnd                   int
 	pdfResident, pdfThumbResident     map[int]bool

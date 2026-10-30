@@ -657,8 +657,7 @@ void pv_render_forms(const unsigned char *data, size_t length, int number, float
     pdf_document *doc = NULL;
     pdf_page *page = NULL;
     fz_pixmap *pixmap = NULL;
-    fz_buffer *buffer = NULL;
-    fz_var(doc); fz_var(page); fz_var(pixmap); fz_var(buffer);
+    fz_var(doc); fz_var(page); fz_var(pixmap);
     if (!ctx) { pv_error(result, "Cannot create MuPDF context"); return; }
     fz_try(ctx) {
         doc = pv_open(ctx, data, length);
@@ -666,15 +665,24 @@ void pv_render_forms(const unsigned char *data, size_t length, int number, float
         page = pdf_load_page(ctx, doc, number);
         pv_update_form_page(ctx, doc, page);
         pixmap = fz_new_pixmap_from_page(ctx, &page->super, fz_scale(dpi/72, dpi/72), fz_device_rgb(ctx), 1);
-        buffer = fz_new_buffer_from_pixmap_as_png(ctx, pixmap, fz_default_color_params);
-        unsigned char *bytes = NULL;
-        result->length = fz_buffer_storage(ctx, buffer, &bytes);
+        /* Return raw RGBA rows: the caller builds the image directly instead of
+         * paying PNG encode and decode buffers for every page preview. */
+        int width = fz_pixmap_width(ctx, pixmap);
+        int height = fz_pixmap_height(ctx, pixmap);
+        int components = fz_pixmap_components(ctx, pixmap);
+        int stride = fz_pixmap_stride(ctx, pixmap);
+        unsigned char *samples = fz_pixmap_samples(ctx, pixmap);
+        result->length = (size_t)stride * (size_t)height;
+        result->raster_width = width;
+        result->raster_height = height;
+        result->raster_components = components;
+        result->raster_stride = stride;
         result->bytes = malloc(result->length);
         if (!result->bytes) fz_throw(ctx, FZ_ERROR_SYSTEM, "Cannot allocate form preview");
-        memcpy(result->bytes, bytes, result->length);
+        memcpy(result->bytes, samples, result->length);
     }
     fz_always(ctx) {
-        fz_drop_buffer(ctx, buffer); fz_drop_pixmap(ctx, pixmap);
+        fz_drop_pixmap(ctx, pixmap);
         fz_drop_page(ctx, (fz_page *)page); pdf_drop_document(ctx, doc);
     }
     fz_catch(ctx) { pv_error(result, fz_caught_message(ctx)); }

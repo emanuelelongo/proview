@@ -71,6 +71,7 @@ func (g *Gui) closeDocument() {
 	g.stopFormPulse()
 	if g.showingMarkdown() {
 		g.window.Canvas().Focus(nil)
+		g.markdownView.releaseImageSegments()
 		g.clearMarkdown()
 		g.imageScroll.Show()
 		g.updateHistoryActions()
@@ -89,13 +90,8 @@ func (g *Gui) closeDocument() {
 	g.setAnnotationTool(toolSelect)
 	g.stopOCR()
 	g.stopSelectionModifierTimer()
-	g.cancelThumbnailDrag()
-	g.pdfGeneration++
-	g.clearPDFDetail()
 	g.panModifierDown = false
 	g.setPanActive(false)
-	g.clearAreaSelection()
-	g.clearSignatureSelection()
 	g.clearRedactionSelection()
 	doc := g.document
 	g.document = nil
@@ -105,12 +101,37 @@ func (g *Gui) closeDocument() {
 	g.objectPasteCount = 0
 	g.redactedTargets = nil
 	g.zoom, g.fitZoom, g.zoomLevel = 1, 1, 0
+	g.detachDocumentView()
+	g.imageScroll.Show()
+	g.updateHistoryActions()
+	if doc != nil {
+		go func() {
+			doc.Close()
+			requestMemoryRelease()
+		}()
+	} else {
+		requestMemoryRelease()
+	}
+	g.restoreRemainingDocument()
+}
+
+// detachDocumentView drops every canvas, layer and detail raster bound to the
+// PDF or image view. The retained document entry keeps its own state; leaving
+// these references alive while Markdown or a model is shown would pin page
+// previews, thumbnails and high-DPI detail renders of an inactive document.
+func (g *Gui) detachDocumentView() {
+	g.cancelThumbnailDrag()
+	g.pdfGeneration++
+	g.clearPDFDetail()
+	g.clearAreaSelection()
+	g.clearSignatureSelection()
 	g.activePDFPage = 0
 	g.imageSignatureLayer.SetDocument(nil, 0, image.Point{})
 	g.signatureLayers = map[int]*signatureLayer{}
 	g.formLayers = nil
 	g.correctionLayers = nil
 	g.panOverlays = []*panOverlay{g.imagePanOverlay}
+	g.deactivatePDFCrops()
 	g.pdfCrops = nil
 	g.pdfPageIDs = nil
 	g.pdfThumbDropIndicators = nil
@@ -120,6 +141,10 @@ func (g *Gui) closeDocument() {
 	g.pdfThumbLoaded, g.pdfThumbLoading = nil, nil
 	g.pdfPageLoaded, g.pdfPageLoading = nil, nil
 	g.pdfPageSizes, g.pdfPageContainers = nil, nil
+	g.pdfPageTops = nil
+	g.pdfKeepStart, g.pdfKeepEnd, g.pdfThumbKeepStart, g.pdfThumbKeepEnd = 0, 0, 0, 0
+	g.pdfVisibleStart, g.pdfVisibleEnd = 0, 0
+	g.pdfResident, g.pdfThumbResident, g.pdfBaseKeys = nil, nil, nil
 	g.pdfPages.RemoveAll()
 	g.thumbList.RemoveAll()
 	g.pdfScroll.Hide()
@@ -127,12 +152,6 @@ func (g *Gui) closeDocument() {
 	g.image.Image = nil
 	g.image.SetMinSize(fyne.NewSize(0, 0))
 	g.image.Refresh()
-	g.imageScroll.Show()
-	g.updateHistoryActions()
-	if doc != nil {
-		go doc.Close()
-	}
-	g.restoreRemainingDocument()
 }
 
 func (g *Gui) closeWindow() {
@@ -164,6 +183,9 @@ func (g *Gui) closeWindow() {
 	g.unregisterEditor()
 	g.hideObjectOrderMenu()
 	g.clearModel()
+	if g.markdownView != nil {
+		g.markdownView.releaseImageSegments()
+	}
 	g.clearMarkdown()
 	g.stopOCR()
 	if g.signatureDialog != nil {
@@ -182,7 +204,10 @@ func (g *Gui) closeWindow() {
 	if g.document != nil {
 		doc := g.document
 		g.document = nil
-		go doc.Close()
+		go func() {
+			doc.Close()
+			requestMemoryRelease()
+		}()
 	}
 	if g.annotationJobs != nil {
 		close(g.annotationJobs)

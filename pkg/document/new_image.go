@@ -27,7 +27,7 @@ func imageDocument(name string, img image.Image) (*Document, error) {
 	if err := png.Encode(&encoded, img); err != nil {
 		return nil, err
 	}
-	source, err := LoadFrom(name, "", bytes.NewReader(encoded.Bytes()))
+	source, err := LoadBytes(name, "", encoded.Bytes())
 	if err != nil {
 		return nil, err
 	}

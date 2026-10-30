@@ -24,8 +24,7 @@ func CorrectionTextLayout(data []byte, page int) (Layout, error) {
 	if len(data) == 0 || page < 0 || page > math.MaxInt32 {
 		return Layout{}, errors.New("pdfengine: invalid text editing layout arguments")
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	var result C.pv_result
 	defer C.pv_free_result(&result)
 	C.pv_correct_text((*C.uchar)(input), C.size_t(len(data)), C.int(page), 0, 0, nil, 0, 0, 0, &result)
@@ -64,8 +63,7 @@ func editText(data []byte, page, start, count int, replacement string, dx, dy fl
 		math.IsNaN(dx) || math.IsNaN(dy) || math.IsInf(dx, 0) || math.IsInf(dy, 0) || math.Abs(dx) > 100000 || math.Abs(dy) > 100000 {
 		return nil, errors.New("pdfengine: invalid text editing arguments")
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	runes := []rune(replacement)
 	// C owns all buffers used across its exception boundary.
 	codes := C.malloc(C.size_t((len(runes) + 1) * int(unsafe.Sizeof(C.int(0)))))

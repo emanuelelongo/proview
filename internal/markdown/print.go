@@ -63,6 +63,7 @@ func (d *Document) layoutPDF(ctx context.Context, preview bool) (PrintedDocument
 	if err := ctx.Err(); err != nil {
 		return PrintedDocument{}, err
 	}
+	d = d.resourceSnapshot()
 	p := &markdownPrinter{ctx: ctx, doc: d, pdf: fpdf.New("P", "pt", "A4", ""), margin: printMargin, preview: preview, imageNames: make(map[image.Image]string), diagramRenderer: mermaid.NewRenderer()}
 	if preview {
 		p.pdf = fpdf.NewCustom(&fpdf.InitType{UnitStr: "pt", Size: fpdf.SizeType{Wd: 320, Ht: 240}})
@@ -459,7 +460,7 @@ func (p *markdownPrinter) inline(parent ast.Node, style printTextStyle) []printS
 			spans = append(spans, printSpan{text: string(n.Label(p.doc.Source)), style: st})
 		case *ast.Image:
 			alt := string(n.Text(p.doc.Source))
-			if picture := p.doc.Images[string(n.Destination)]; picture != nil {
+			if picture := p.doc.Image(string(n.Destination)); picture != nil {
 				spans = append(spans, printSpan{style: style, image: picture, imageWidth: float64(ImageWidth(n)) * .75, alt: alt})
 			} else {
 				spans = append(spans, printSpan{text: "[Image: " + alt + "]", style: style})

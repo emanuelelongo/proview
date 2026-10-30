@@ -23,6 +23,9 @@ func TestMemoryReportIncludesLiveHeapAndCacheCountsWithoutDocumentNames(t *testi
 	if len(context.Windows) != 1 || context.Windows[0].DocumentFormats["png"] != 1 {
 		t.Fatalf("wrong workspace summary: %+v", context.Windows)
 	}
+	if context.Windows[0].SourceBytes == 0 || context.Windows[0].RasterBytes == 0 {
+		t.Fatalf("retained bytes missing from workspace summary: %+v", context.Windows[0])
+	}
 	var output bytes.Buffer
 	if err := writeMemoryReport(&output, context); err != nil {
 		t.Fatal(err)

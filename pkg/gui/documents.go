@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
+	"math"
 	"slices"
 
 	"fyne.io/fyne/v2"
@@ -17,11 +19,13 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	xdraw "golang.org/x/image/draw"
 )
 
 // Each retained document owns its history, save destination and view state.
 type editorDocument struct {
 	thumbnail       image.Image
+	thumbnailSource image.Image
 	thumbnailCancel context.CancelFunc
 	thumbnailFailed bool
 	markdown        *markdown.Document
@@ -48,6 +52,41 @@ func (g *Gui) retainsDocument(doc *document.Document) bool {
 	return false
 }
 
+// Sidebar thumbnails are drawn at most maxSidebarWidth points wide; keep enough
+// pixels for a 2x display while bounding very tall images.
+const (
+	maxThumbnailPixelWidth  = int(2 * maxSidebarWidth)
+	maxThumbnailPixelHeight = 2 * maxThumbnailPixelWidth
+)
+
+func downsampleImageThumbnail(src image.Image) image.Image {
+	if src == nil {
+		return nil
+	}
+	bounds := src.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	if w <= 0 || h <= 0 || w <= maxThumbnailPixelWidth && h <= maxThumbnailPixelHeight {
+		return src
+	}
+	scale := math.Min(float64(maxThumbnailPixelWidth)/float64(w), float64(maxThumbnailPixelHeight)/float64(h))
+	nw := max(1, int(math.Round(float64(w)*scale)))
+	nh := max(1, int(math.Round(float64(h)*scale)))
+	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
+	xdraw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, bounds, draw.Src, nil)
+	return dst
+}
+
+// thumbnailFor reuses a sidebar thumbnail while the source image identity is
+// unchanged. Edited documents replace their preview image instead of mutating it.
+func (e *editorDocument) thumbnailFor(src image.Image) image.Image {
+	if e.thumbnail != nil && e.thumbnailSource == src {
+		return e.thumbnail
+	}
+	e.thumbnailSource = src
+	e.thumbnail = downsampleImageThumbnail(src)
+	return e.thumbnail
+}
+
 func (g *Gui) captureDocument() {
 	if !g.hasOpenContent() {
 		return
@@ -59,7 +98,7 @@ func (g *Gui) captureDocument() {
 		g.activeDocument = entry
 	}
 	if g.document != nil && g.document.Format() != document.FormatPDF {
-		entry.thumbnail = g.image.Image
+		entry.thumbnailFor(g.image.Image)
 	}
 	entry.doc = g.document
 	if !g.showingMarkdown() && !g.showingModel() {
@@ -71,6 +110,7 @@ func (g *Gui) captureDocument() {
 	if g.document != nil && g.document.Format() == document.FormatPDF {
 		entry.offset = g.pdfScroll.Offset
 	}
+	previousMarkdown := entry.markdown
 	entry.markdown = nil
 	if g.showingMarkdown() {
 		entry.markdown = g.markdownView.doc
@@ -82,6 +122,9 @@ func (g *Gui) captureDocument() {
 		if g.markdownView.pendingReadingOffset != nil {
 			entry.offset = *g.markdownView.pendingReadingOffset
 		}
+	}
+	if previousMarkdown != nil && previousMarkdown != entry.markdown {
+		previousMarkdown.Close()
 	}
 	entry.mesh = nil
 	if g.showingModel() {
@@ -103,6 +146,21 @@ func (g *Gui) prepareDocumentSwitch() {
 	g.panModifierDown = false
 	g.setPanActive(false)
 	g.captureDocument()
+	if g.activeDocument != nil && g.activeDocument.doc != nil {
+		g.activeDocument.doc.TrimInactive()
+		// The thumbnail can stay in the sidebar, but its identity reference
+		// must not keep the full decoded image alive after the source trims it.
+		g.activeDocument.thumbnailSource = nil
+	}
+	if g.activeDocument != nil && g.activeDocument.markdown != nil {
+		md := g.activeDocument.markdown
+		if md.HasReleasableResources() {
+			if g.activeDocument.markdownView != nil {
+				g.activeDocument.markdownView.suspend()
+			}
+			md.TrimImages()
+		}
+	}
 }
 
 func (g *Gui) addDocument(doc *document.Document, mesh *model3d.Mesh, target fyne.URI) {
@@ -132,6 +190,34 @@ func (g *Gui) selectDocument(entry *editorDocument) {
 }
 
 func (g *Gui) activateDocument(entry *editorDocument) {
+	if entry.markdown != nil && entry.markdown.ImagesTrimmed() {
+		g.working = true
+		g.clearMarkdown()
+		g.markdownPanel.Add(widget.NewLabel("Restoring Markdown images…"))
+		g.markdownPanel.Show()
+		doc := entry.markdown
+		go func() {
+			doc.RestoreImages()
+			fyne.Do(func() {
+				if g.closed {
+					return
+				}
+				g.working = false
+				if !slices.Contains(g.documents, entry) || entry.markdown != doc {
+					g.markdownPanel.RemoveAll()
+					g.markdownPanel.Hide()
+					return
+				}
+				g.markdownPanel.RemoveAll()
+				g.activateDocumentReady(entry)
+			})
+		}()
+		return
+	}
+	g.activateDocumentReady(entry)
+}
+
+func (g *Gui) activateDocumentReady(entry *editorDocument) {
 	g.activeDocument = entry
 	g.document = nil
 	if entry.markdown != nil {
@@ -173,7 +259,7 @@ func (g *Gui) refreshDocumentSidebar() {
 	g.documentThumbs = nil
 	g.normalizeDocumentSelection()
 	if g.activeDocument != nil && g.document != nil && g.document.Format() != document.FormatPDF {
-		g.activeDocument.thumbnail = g.image.Image
+		g.activeDocument.thumbnailFor(g.image.Image)
 	}
 	for _, entry := range g.documents {
 		g.ensureMarkdownThumbnail(entry)
@@ -380,6 +466,11 @@ func (g *Gui) removeActiveDocument() {
 	for i, entry := range g.documents {
 		if entry == g.activeDocument {
 			entry.markdownView = nil
+			if entry.markdown != nil {
+				entry.markdown.Close()
+				entry.markdown = nil
+			}
+			entry.thumbnail, entry.thumbnailSource = nil, nil
 			if entry.thumbnailCancel != nil {
 				entry.thumbnailCancel()
 			}
@@ -399,11 +490,20 @@ func (g *Gui) restoreRemainingDocument() {
 func (g *Gui) closeRetainedDocuments() {
 	for _, entry := range g.documents {
 		entry.markdownView = nil
+		if entry.markdown != nil {
+			entry.markdown.Close()
+			entry.markdown = nil
+		}
+		entry.thumbnail, entry.thumbnailSource = nil, nil
 		if entry.thumbnailCancel != nil {
 			entry.thumbnailCancel()
 		}
 		if entry.doc != nil && entry.doc != g.document {
-			go entry.doc.Close()
+			doc := entry.doc
+			go func() {
+				doc.Close()
+				requestMemoryRelease()
+			}()
 		}
 	}
 	g.documents = nil

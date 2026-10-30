@@ -9,11 +9,9 @@ package pdfengine
 import "C"
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"image"
-	"image/png"
 	"math"
 	"sort"
 	"strings"
@@ -43,8 +41,7 @@ func ReadForms(data []byte) ([]FormField, error) {
 	if len(data) == 0 {
 		return nil, errors.New("pdfengine: empty PDF")
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	var result C.pv_form_result
 	defer C.pv_free_forms(&result)
 	C.pv_read_forms((*C.uchar)(input), C.size_t(len(data)), &result)
@@ -126,8 +123,7 @@ func FillFormValues(data []byte, values map[int][]string) ([]byte, error) {
 			unsafe.Slice(edits[i].values, len(values[id]))[j] = chars
 		}
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	var result C.pv_result
 	defer C.pv_free_result(&result)
 	C.pv_fill_form((*C.uchar)(input), C.size_t(len(data)), (*C.pv_form_edit)(array), C.size_t(len(keys)), &result)
@@ -143,13 +139,33 @@ func RenderFormPage(data []byte, page int, dpi float64) (image.Image, error) {
 	if len(data) == 0 || page < 0 || page > math.MaxInt32 || math.IsNaN(dpi) || dpi <= 0 || dpi > 600 {
 		return nil, errors.New("pdfengine: invalid form preview")
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	var result C.pv_result
 	defer C.pv_free_result(&result)
 	C.pv_render_forms((*C.uchar)(input), C.size_t(len(data)), C.int(page), C.float(dpi), &result)
 	if err := resultError(&result); err != nil {
 		return nil, err
 	}
-	return png.Decode(bytes.NewReader(C.GoBytes(unsafe.Pointer(result.bytes), C.int(result.length))))
+	width, height := int(result.raster_width), int(result.raster_height)
+	components, stride, length := int(result.raster_components), int(result.raster_stride), int(result.length)
+	if width <= 0 || height <= 0 || components < 3 || stride < width*components || length < stride*height {
+		return nil, errors.New("pdfengine: invalid form preview raster")
+	}
+	samples := unsafe.Slice((*byte)(unsafe.Pointer(result.bytes)), length)
+	out := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		src := samples[y*stride : y*stride+width*components]
+		dst := out.Pix[y*out.Stride : y*out.Stride+width*4]
+		switch components {
+		case 4:
+			copy(dst, src)
+		case 3:
+			for x := range width {
+				dst[x*4+0], dst[x*4+1], dst[x*4+2], dst[x*4+3] = src[x*3+0], src[x*3+1], src[x*3+2], 0xff
+			}
+		default:
+			return nil, fmt.Errorf("pdfengine: unsupported form preview raster components: %d", components)
+		}
+	}
+	return out, nil
 }

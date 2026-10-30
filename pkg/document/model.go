@@ -130,6 +130,7 @@ type Document struct {
 	imageTransform  img.Transform
 	revision        atomic.Uint64
 	sourceRevision  atomic.Uint64
+	derived         derivedRasterCache
 }
 
 type editorState struct {
@@ -185,7 +186,9 @@ func (d *Document) Original() []byte {
 	return d.source.Original()
 }
 
-func (d *Document) Close() {
+// collectSources returns every source still reachable from the current state,
+// saved state and history. Callers own the returned map.
+func (d *Document) collectSources() map[*Source]bool {
 	sources := map[*Source]bool{d.source: true}
 	for _, source := range d.textSources {
 		sources[source] = true
@@ -206,8 +209,100 @@ func (d *Document) Close() {
 		collect(entry.after.pages)
 	}
 	for source := range sources {
+		for base := source.annotationBase; base != nil; base = base.annotationBase {
+			sources[base] = true
+		}
+	}
+	return sources
+}
+
+func (d *Document) Close() {
+	d.derived.trim(false)
+	for source := range d.collectSources() {
 		source.Close()
 	}
+	d.textSources = nil
+}
+
+// TrimInactive releases disposable page previews and image/GIF rasters from an
+// inactive document. Layout sizes, history and original bytes are retained.
+func (d *Document) TrimInactive() {
+	if d == nil {
+		return
+	}
+	sources := map[*Source]bool{d.source: true}
+	for _, page := range d.pages {
+		sources[page.source] = true
+	}
+	for _, source := range d.textSources {
+		sources[source] = true
+	}
+	for source := range sources {
+		source.TrimPreviews()
+	}
+	d.derived.trim(true)
+}
+
+// MemoryUsage reports retained source bytes and disposable raster bytes for
+// every source reachable from the document. Each source is counted once.
+func (d *Document) MemoryUsage() (sourceBytes, rasterBytes int64) {
+	if d == nil {
+		return 0, 0
+	}
+	for source := range d.collectSources() {
+		sourceBytes += int64(len(source.original))
+		rasterBytes += source.rasterByteCount() + source.animationBytes.Load()
+	}
+	rasterBytes += d.derived.retainedBytes()
+	return sourceBytes, rasterBytes
+}
+
+// pruneTextSources closes edited sources that are no longer reachable from the
+// current, saved, undo or redo state. Older full-document copies would otherwise
+// stay alive for the rest of the session after history eviction.
+func (d *Document) pruneTextSources() {
+	if len(d.textSources) == 0 {
+		return
+	}
+	keep := map[*Source]bool{d.source: true}
+	collect := func(pages []pageRef) {
+		for _, page := range pages {
+			keep[page.source] = true
+		}
+	}
+	collect(d.pages)
+	collect(d.saved.pages)
+	for _, entry := range d.undoStack {
+		collect(entry.before.pages)
+		collect(entry.after.pages)
+	}
+	for _, entry := range d.redoStack {
+		collect(entry.before.pages)
+		collect(entry.after.pages)
+	}
+	kept := d.textSources[:0]
+	for _, source := range d.textSources {
+		if keep[source] {
+			kept = append(kept, source)
+			continue
+		}
+		source.Close()
+	}
+	clear(d.textSources[len(kept):])
+	d.textSources = kept
+}
+
+// TrimPagePreview releases the cached full-size preview for a single page in its source.
+func (d *Document) TrimPagePreview(page int) {
+	if d == nil || d.Format() != FormatPDF {
+		return
+	}
+	source, index, err := d.pageSource(page)
+	if err != nil {
+		return
+	}
+	source.TrimPagePreview(index)
+	d.derived.dropPreview(source, index)
 }
 
 // MarkUnsaved is for generated files that have no saved destination yet.
@@ -225,14 +320,36 @@ func (d *Document) Preview(page int) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	preview, changed, err := d.formPreview(source, index, pdfPreviewDPI)
+	key := derivedKey{source: source, index: index, forms: d.formsFingerprint(source)}
+	if d.Format() == FormatPDF {
+		key.turns = d.pages[page].turns
+	}
+	if key.turns == 0 && key.forms == 0 {
+		return source.Preview(index)
+	}
+	if cached := d.derived.get(key); cached != nil {
+		return cached, nil
+	}
+	preview, changed, err := d.formPreview(source, index, pdfPreviewDPI, key.forms)
+	if err != nil {
+		return nil, err
+	}
 	if !changed {
-		preview, err = source.Preview(index)
+		if preview, err = source.Preview(index); err != nil {
+			return nil, err
+		}
 	}
-	if err == nil && d.Format() == FormatPDF {
-		preview = (img.Transform{Turns: d.pages[page].turns}).Apply(preview)
+	if !changed && key.turns == 0 {
+		return preview, nil
 	}
-	return preview, err
+	preview = (img.Transform{Turns: key.turns}).Apply(preview)
+	d.derived.put(key, preview)
+	if !changed && key.turns != 0 {
+		// The rotated copy is what the view retains; keeping the unrotated
+		// source raster as well would hold the page twice.
+		source.TrimPagePreview(index)
+	}
+	return preview, nil
 }
 
 func (d *Document) Thumbnail(page int) (image.Image, error) {
@@ -240,17 +357,33 @@ func (d *Document) Thumbnail(page int) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	thumbnail, changed, err := d.formPreview(source, index, pdfThumbnailDPI)
-	if !changed {
+	var quads []TextQuad
+	for _, r := range d.RedactionsForPage(page) {
+		quads = append(quads, r.Quads...)
+	}
+	key := derivedKey{source: source, index: index, thumbnail: true, forms: d.formsFingerprint(source), redactions: redactionsFingerprint(quads)}
+	if d.Format() == FormatPDF {
+		key.turns = d.pages[page].turns
+	}
+	if key.turns == 0 && key.forms == 0 && key.redactions == 0 {
+		return source.Thumbnail(index)
+	}
+	if cached := d.derived.get(key); cached != nil {
+		return cached, nil
+	}
+	thumbnail, changed, err := d.formPreview(source, index, pdfThumbnailDPI, key.forms)
+	if err == nil && !changed {
 		thumbnail, err = source.Thumbnail(index)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if d.Format() == FormatPDF {
-		thumbnail = (img.Transform{Turns: d.pages[page].turns}).Apply(thumbnail)
+	if !changed && key.turns == 0 && key.redactions == 0 {
+		return thumbnail, nil
 	}
-	return d.paintRedactions(page, thumbnail), nil
+	thumbnail = paintRedactionQuads((img.Transform{Turns: key.turns}).Apply(thumbnail), quads)
+	d.derived.put(key, thumbnail)
+	return thumbnail, nil
 }
 
 func (d *Document) PageSize(page int) (image.Point, error) {
@@ -775,11 +908,16 @@ func (d *Document) record(before editorState) {
 	}
 	after := d.snapshot()
 	d.undoStack = append(d.undoStack, historyEntry{before: before, after: after})
-	if len(d.undoStack) > maxHistoryEntries {
+	trimmed := len(d.undoStack) > maxHistoryEntries
+	if trimmed {
 		copy(d.undoStack, d.undoStack[len(d.undoStack)-maxHistoryEntries:])
 		d.undoStack = d.undoStack[:maxHistoryEntries]
 	}
+	hadRedo := len(d.redoStack) > 0
 	d.redoStack = nil
+	if trimmed || hadRedo {
+		d.pruneTextSources()
+	}
 	d.advanceRevision(before, after)
 }
 
