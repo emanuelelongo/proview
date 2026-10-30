@@ -20,8 +20,10 @@ type derivedRasterCache struct {
 	bytes   int64
 	clock   uint64
 	// One filled-form PDF per source, reused for every page render with the
-	// same field values instead of regenerating the whole file per page.
-	filled map[*Source]filledPDF
+	// same field values instead of regenerating the whole file per page. Bound
+	// the total bytes as sources can be replaced during a long editing session.
+	filled      map[*Source]filledPDF
+	filledBytes int64
 }
 
 type derivedKey struct {
@@ -41,6 +43,7 @@ type derivedEntry struct {
 type filledPDF struct {
 	forms uint64
 	data  []byte
+	used  uint64
 }
 
 func (c *derivedRasterCache) get(key derivedKey) image.Image {
@@ -109,21 +112,21 @@ func (c *derivedRasterCache) trim(previewsOnly bool) {
 		}
 	}
 	c.filled = nil
+	c.filledBytes = 0
 }
 
 func (c *derivedRasterCache) retainedBytes() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	total := c.bytes
-	for _, f := range c.filled {
-		total += int64(len(f.data))
-	}
-	return total
+	return c.bytes + c.filledBytes
 }
 
 func (c *derivedRasterCache) filledPDF(source *Source, forms uint64, fill func() ([]byte, error)) ([]byte, error) {
 	c.mu.Lock()
 	if f, ok := c.filled[source]; ok && f.forms == forms {
+		c.clock++
+		f.used = c.clock
+		c.filled[source] = f
 		c.mu.Unlock()
 		return f.data, nil
 	}
@@ -136,7 +139,25 @@ func (c *derivedRasterCache) filledPDF(source *Source, forms uint64, fill func()
 	if c.filled == nil {
 		c.filled = make(map[*Source]filledPDF)
 	}
-	c.filled[source] = filledPDF{forms: forms, data: data}
+	if old, ok := c.filled[source]; ok {
+		c.filledBytes -= int64(len(old.data))
+		delete(c.filled, source)
+	}
+	c.clock++
+	c.filled[source] = filledPDF{forms: forms, data: data, used: c.clock}
+	c.filledBytes += int64(len(data))
+	limit := sourceRasterLimit()
+	for c.filledBytes > limit && len(c.filled) > 1 {
+		var oldest *Source
+		oldestUsed := ^uint64(0)
+		for key, entry := range c.filled {
+			if entry.used < oldestUsed {
+				oldest, oldestUsed = key, entry.used
+			}
+		}
+		c.filledBytes -= int64(len(c.filled[oldest].data))
+		delete(c.filled, oldest)
+	}
 	c.mu.Unlock()
 	return data, nil
 }

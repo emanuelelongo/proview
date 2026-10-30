@@ -38,6 +38,9 @@ func TestInactiveMarkdownImagesAreTrimmedAndRestored(t *testing.T) {
 	}
 	g.addMarkdown(firstDoc, nil)
 	first, firstView := g.activeDocument, g.markdownView
+	oldViewport := firstView.viewport
+	oldRenderer := oldViewport.CreateRenderer()
+	oldObjects := oldRenderer.Objects()
 	if firstDoc.Image("image.png") == nil || len(firstView.textBlocks) == 0 {
 		t.Fatal("Markdown image was not loaded into the active view")
 	}
@@ -50,9 +53,16 @@ func TestInactiveMarkdownImagesAreTrimmedAndRestored(t *testing.T) {
 	if !firstDoc.ImagesTrimmed() || firstDoc.Image("image.png") != nil {
 		t.Fatal("inactive Markdown document retained decoded image resources")
 	}
-	if !firstView.suspended || firstView.viewport != nil || firstView.textBlocks != nil || first.markdownView != firstView {
+	if !firstView.suspended || firstView.viewport != nil || firstView.outlinePanel != nil || firstView.textBlocks != nil || first.markdownView != firstView {
 		t.Fatal("inactive Markdown canvas tree was not released while retaining its entry")
 	}
+	// Fyne can still traverse and lay out the detached viewport while freeing
+	// dirty textures during the next window resize.
+	objects := oldRenderer.Objects()
+	if len(objects) != len(oldObjects) || objects[0] != oldObjects[0] {
+		t.Fatal("detached Markdown renderer lost its canvas children")
+	}
+	oldRenderer.Layout(oldViewport.Size())
 
 	g.selectDocument(first)
 	driver.runNext(t)

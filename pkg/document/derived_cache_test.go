@@ -93,6 +93,49 @@ func TestFilledFormPDFIsReusedForSameValues(t *testing.T) {
 	}
 }
 
+func TestFilledFormPDFCacheIsByteBounded(t *testing.T) {
+	var cache derivedRasterCache
+	a, b, c := &Source{}, &Source{}, &Source{}
+	limit := sourceRasterLimit()
+	fill := func() ([]byte, error) { return make([]byte, limit/3+1), nil }
+	for _, source := range []*Source{a, b} {
+		if _, err := cache.filledPDF(source, 1, fill); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Reusing A makes B the oldest entry before the third source arrives.
+	if _, err := cache.filledPDF(a, 1, func() ([]byte, error) {
+		t.Fatal("recent filled PDF was regenerated")
+		return nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.filledPDF(c, 1, fill); err != nil {
+		t.Fatal(err)
+	}
+	if cache.filledBytes > limit || cache.filled[a].data == nil || cache.filled[c].data == nil {
+		t.Fatal("filled PDF cache exceeded its budget or evicted a recent entry")
+	}
+	if _, ok := cache.filled[b]; ok {
+		t.Fatal("old filled PDF was not evicted")
+	}
+	oversized := &Source{}
+	if _, err := cache.filledPDF(oversized, 1, func() ([]byte, error) {
+		return make([]byte, limit+1), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(cache.filled) != 1 || cache.filled[oversized].data == nil {
+		t.Fatal("oversized filled PDF displaced the wrong entries")
+	}
+	if _, err := cache.filledPDF(oversized, 1, func() ([]byte, error) {
+		t.Fatal("oversized filled PDF was regenerated")
+		return nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFormsFingerprintIgnoresMapOrder(t *testing.T) {
 	source := &Source{}
 	a := &Document{formValues: map[formKey][]string{{source, 1}: {"x"}, {source, 2}: {"y"}}}

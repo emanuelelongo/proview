@@ -148,6 +148,9 @@ func (g *Gui) prepareDocumentSwitch() {
 	g.captureDocument()
 	if g.activeDocument != nil && g.activeDocument.doc != nil {
 		g.activeDocument.doc.TrimInactive()
+		// The thumbnail can stay in the sidebar, but its identity reference
+		// must not keep the full decoded image alive after the source trims it.
+		g.activeDocument.thumbnailSource = nil
 	}
 	if g.activeDocument != nil && g.activeDocument.markdown != nil {
 		md := g.activeDocument.markdown

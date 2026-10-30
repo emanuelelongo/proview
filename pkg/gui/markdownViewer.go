@@ -240,6 +240,7 @@ func (v *markdownView) suspend() {
 	v.headings = nil
 	v.anchors = nil
 	v.outline = nil
+	v.outlinePanel = nil
 	v.outlineContent = nil
 	v.outlineTitle = nil
 	v.outlineToggle = nil

@@ -340,6 +340,14 @@ views stay retained to preserve the measured workspace font/view reuse.
 
 Follow-up fixes to the retained-memory changes:
 
+- Detached Markdown viewports retain their own renderer children until Fyne
+  finishes releasing textures. Suspending an image-bearing Markdown document
+  no longer leaves a renderer dereferencing its cleared scroll state during the
+  resize caused by opening another file; the retained view also releases its
+  outline panel.
+- An inactive image entry keeps its bounded sidebar thumbnail but drops the
+  thumbnail's full-size identity reference, allowing `TrimInactive` to release
+  the decoded source raster.
 - Switching from a PDF or image to Markdown or a 3D model now detaches the
   previous view (page and thumbnail canvases, overlay layers, high-DPI detail and
   `PreviewRenderer`). Previously the inactive document's rasters stayed reachable
@@ -372,8 +380,10 @@ Derived rasters and load-time copies (second audit):
   and after a rotated preview is cached the unrotated source raster is trimmed
   so the page is not resident twice. `TrimInactive`, `TrimPagePreview` and
   `Close` release the cache; `MemoryUsage` counts it.
-- Filled-form previews reuse one generated PDF per source while field values
+- Filled-form previews reuse a generated PDF per source while field values
   are unchanged, instead of rebuilding the whole file for every page render.
+  These generated PDFs share a byte-bounded LRU. One oversized generated PDF
+  may stay cached so rendering each of its pages does not regenerate it.
 - `Transform.Apply` and redaction painting return `*image.RGBA` for RGBA input,
   which Fyne uploads without converting into another full-size copy. Form
   renders composite onto white in place instead of allocating a second raster.
