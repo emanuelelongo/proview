@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"io"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -266,6 +267,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 			return
 		}
 		selectedInputs := append([]pdfInput(nil), inputs...)
+		inputs = nil
 		current := g.document
 		if appendPages && (current == nil || current.Format() != document.FormatPDF) {
 			dialog.ShowInformation("Append PDF", "Open a PDF first.", g.window)
@@ -273,8 +275,9 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 		}
 		g.runFileWork("Loading PDFs", func() (*document.Document, error) {
 			sources := make([]*document.Source, 0, len(selectedInputs))
-			for _, input := range selectedInputs {
+			for i, input := range selectedInputs {
 				source, err := document.LoadFrom(input.name, input.location, bytes.NewReader(input.data))
+				selectedInputs[i].data = nil
 				if err != nil {
 					for _, s := range sources {
 						s.Close()
@@ -318,6 +321,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 				g.showDocument(loaded)
 				g.saveTarget = nil
 			}
+			go debug.FreeOSMemory()
 		})
 	})
 	scroll := container.NewGridWrap(fyne.NewSize(520, 280), list)
@@ -397,6 +401,7 @@ func (g *Gui) rebuildPDFWithCompletion(active int, done func()) {
 		if done != nil {
 			done()
 		}
+		go debug.FreeOSMemory()
 	})
 }
 

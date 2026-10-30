@@ -62,3 +62,44 @@ func TestEvictedPDFPreviewReloadsWithoutChangingSourceOrHistory(t *testing.T) {
 		t.Fatal("eviction lost logical page dimensions", err)
 	}
 }
+
+func TestSourceTrimPreviews(t *testing.T) {
+	source := &Source{format: FormatPDF, pages: make([]pageData, 3)}
+	source.pages[0].preview = image.NewRGBA(image.Rect(0, 0, 100, 100))
+	source.pages[0].thumbnail = image.NewRGBA(image.Rect(0, 0, 20, 20))
+	source.rasterBytes = rasterBytes(source.pages[0].preview) + rasterBytes(source.pages[0].thumbnail)
+
+	source.TrimPreviews()
+	if source.pages[0].preview != nil {
+		t.Fatal("preview was not trimmed")
+	}
+	if source.pages[0].thumbnail == nil {
+		t.Fatal("thumbnail was trimmed")
+	}
+	if source.rasterBytes != rasterBytes(source.pages[0].thumbnail) {
+		t.Fatalf("unexpected rasterBytes: %d", source.rasterBytes)
+	}
+
+	doc, err := New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.pages[0].preview = image.NewRGBA(image.Rect(0, 0, 100, 100))
+	source.rasterBytes += rasterBytes(source.pages[0].preview)
+	doc.TrimInactive()
+	if source.pages[0].preview != nil {
+		t.Fatal("document TrimInactive did not trim preview")
+	}
+
+	source.pages[0].preview = image.NewRGBA(image.Rect(0, 0, 100, 100))
+	source.pages[1].preview = image.NewRGBA(image.Rect(0, 0, 100, 100))
+	source.rasterBytes += rasterBytes(source.pages[0].preview) + rasterBytes(source.pages[1].preview)
+
+	doc.TrimPagePreview(0)
+	if source.pages[0].preview != nil {
+		t.Fatal("TrimPagePreview did not trim target page")
+	}
+	if source.pages[1].preview == nil {
+		t.Fatal("TrimPagePreview trimmed non-target page")
+	}
+}

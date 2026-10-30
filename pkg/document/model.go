@@ -210,6 +210,32 @@ func (d *Document) Close() {
 	}
 }
 
+// TrimInactive releases disposable page previews from inactive sources.
+func (d *Document) TrimInactive() {
+	if d == nil || d.Format() != FormatPDF {
+		return
+	}
+	sources := map[*Source]bool{d.source: true}
+	for _, page := range d.pages {
+		sources[page.source] = true
+	}
+	for source := range sources {
+		source.TrimPreviews()
+	}
+}
+
+// TrimPagePreview releases the cached full-size preview for a single page in its source.
+func (d *Document) TrimPagePreview(page int) {
+	if d == nil || d.Format() != FormatPDF {
+		return
+	}
+	source, index, err := d.pageSource(page)
+	if err != nil {
+		return
+	}
+	source.TrimPagePreview(index)
+}
+
 // MarkUnsaved is for generated files that have no saved destination yet.
 func (d *Document) MarkUnsaved() { d.unsaved = true }
 

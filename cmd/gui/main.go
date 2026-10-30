@@ -17,10 +17,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"time"
 )
 
 func main() {
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(50)
+	}
 	options, err := parseLaunchOptions(os.Args[1:], os.Stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {

@@ -58,3 +58,40 @@ func (s *Source) trimRasters(limit int64) {
 		}
 	}
 }
+
+// TrimPreviews releases cached full-size page previews while retaining thumbnails.
+func (s *Source) TrimPreviews() {
+	if s == nil || s.format != FormatPDF {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.pages {
+		if s.pages[i].preview != nil {
+			s.rasterBytes -= rasterBytes(s.pages[i].preview)
+			s.pages[i].preview = nil
+		}
+	}
+	if s.rasterBytes < 0 {
+		s.rasterBytes = 0
+	}
+}
+
+// TrimPagePreview releases the cached full-size preview for a single page.
+func (s *Source) TrimPagePreview(page int) {
+	if s == nil || s.format != FormatPDF {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if page < 0 || page >= len(s.pages) {
+		return
+	}
+	if s.pages[page].preview != nil {
+		s.rasterBytes -= rasterBytes(s.pages[page].preview)
+		s.pages[page].preview = nil
+	}
+	if s.rasterBytes < 0 {
+		s.rasterBytes = 0
+	}
+}

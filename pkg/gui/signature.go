@@ -240,7 +240,7 @@ func (g *Gui) loadVisiblePDFPages() {
 		g.activatePDFPage(selected)
 	}
 	g.refreshPDFDetail()
-	if end > first && end < len(g.pdfPageContainers) {
+	if end > first && end < len(g.pdfPageContainers) && !g.isOversizedPDFPage(end) {
 		g.loadPDFPage(end)
 	}
 }
@@ -311,7 +311,7 @@ func (g *Gui) loadPDFThumbnail(page int) {
 			if g.pdfThumbLoaded[page] {
 				return
 			}
-			g.pdfThumbImages[page].Image = preview
+			g.pdfThumbImages[page].Image = downsampleImageThumbnail(preview)
 			g.pdfThumbImages[page].Refresh()
 			g.pdfThumbLoaded[page] = true
 			g.retainPDFThumbnailImage(page)

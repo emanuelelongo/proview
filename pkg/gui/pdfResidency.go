@@ -1,11 +1,22 @@
 package gui
 
 import (
+	"runtime/debug"
 	"sort"
 
 	"emanuelelongo/proview/pkg/document"
 	"fyne.io/fyne/v2/theme"
 )
+
+const maxRetainedPagePixels = 8_000_000
+
+func (g *Gui) isOversizedPDFPage(page int) bool {
+	if page < 0 || page >= len(g.pdfPageSizes) {
+		return false
+	}
+	size := g.pdfPageSizes[page]
+	return int64(size.X)*int64(size.Y) > maxRetainedPagePixels
+}
 
 func (g *Gui) updatePDFPageTops() {
 	g.pdfPageTops = make([]float32, len(g.pdfPageContainers)+1)
@@ -60,15 +71,29 @@ func (g *Gui) pdfPagePinned(page int) bool {
 }
 
 func (g *Gui) pdfPageWanted(page int) bool {
-	return g.pdfKeepEnd == 0 || page >= g.pdfKeepStart && page < g.pdfKeepEnd || g.pdfPagePinned(page)
+	if g.pdfPagePinned(page) {
+		return true
+	}
+	if g.isOversizedPDFPage(page) {
+		return g.pdfVisibleEnd == 0 || (page >= g.pdfVisibleStart && page < g.pdfVisibleEnd)
+	}
+	return g.pdfKeepEnd == 0 || (page >= g.pdfKeepStart && page < g.pdfKeepEnd)
 }
 
 func (g *Gui) retainPDFPages(first, end int) {
+	g.pdfVisibleStart, g.pdfVisibleEnd = first, end
 	g.pdfKeepStart, g.pdfKeepEnd = max(0, first-2), min(len(g.pdfPageImages), end+2)
 	g.cancelDistantPDFLoads()
+	evictedOversized := false
 	for page := range g.pdfResident {
 		if g.pdfPageWanted(page) {
 			continue
+		}
+		if g.isOversizedPDFPage(page) {
+			evictedOversized = true
+			if g.document != nil {
+				g.document.TrimPagePreview(page)
+			}
 		}
 		g.pdfPageImages[page].Image = nil
 		g.pdfPageImages[page].Refresh()
@@ -88,6 +113,9 @@ func (g *Gui) retainPDFPages(first, end int) {
 				p.geometry = nil
 			}
 		}
+	}
+	if evictedOversized {
+		go debug.FreeOSMemory()
 	}
 }
 
