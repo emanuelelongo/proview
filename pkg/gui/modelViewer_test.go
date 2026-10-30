@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"math"
 	"os"
+	"strings"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -93,13 +94,15 @@ func TestModelNavigationAndNewImagePreserveMesh(t *testing.T) {
 	if v.camera.Zoom != 1 || v.camera.PanX != 0 {
 		t.Fatal("Fit did not reset scale and pan")
 	}
+	g.setModelUnit(model3d.UnitCentimeter)
+	g.toggleModelGrid()
 	g.openNewImage(testDocument(t, 20, 10))
 	if g.showingModel() || g.document == nil || len(g.documents) != 2 {
 		t.Fatal("New image did not join the model workspace")
 	}
 	g.selectDocument(g.documents[0])
-	if !g.showingModel() || g.modelViewport.camera.Yaw != yaw {
-		t.Fatal("New image lost the model or its camera")
+	if !g.showingModel() || g.modelViewport.camera.Yaw != yaw || g.modelViewport.unit != model3d.UnitCentimeter || g.modelViewport.grid {
+		t.Fatal("New image lost the model, camera, units or grid state")
 	}
 	g.closeWindow()
 }
@@ -149,7 +152,7 @@ func TestModelViewKeysAndConditionalMenu(t *testing.T) {
 		t.Fatal("model key active without STL")
 	}
 	g.showModel(testSTLMesh(t))
-	if len(g.modelMenu.Items) != 14 {
+	if len(g.modelMenu.Items) != 17 {
 		t.Fatal("STL views missing from View")
 	}
 	expected := [][2]float64{{math.Pi / 4, math.Pi / 6}, {0, math.Pi / 2}, {0, -math.Pi / 2}, {0, 0}, {math.Pi, 0}, {-math.Pi / 2, 0}, {math.Pi / 2, 0}}
@@ -199,6 +202,45 @@ func TestModelViewKeysAndConditionalMenu(t *testing.T) {
 		t.Fatal("STL key active for image")
 	}
 	g.requestCloseDocument()
+}
+
+func TestModelGridUnitsAndPointMeasurement(t *testing.T) {
+	g, driver := newDropTestGui(t)
+	defer g.closeWindow()
+	g.modelViewport.running = true // Supply a stable published frame below.
+	mesh := testSTLMesh(t)
+	g.showModel(mesh)
+	v := g.modelViewport
+	v.Resize(fyne.NewSize(400, 400))
+	v.setView("Top")
+	v.publishedCamera, v.publishedSize = v.camera, image.Pt(400, 400)
+	v.image.Image = image.NewRGBA(image.Rect(0, 0, 400, 400))
+	if !v.grid || !g.modelGridItem.Checked {
+		t.Fatal("reference grid was not enabled by default")
+	}
+	g.toggleModelGrid()
+	if v.grid || g.modelGridItem.Checked {
+		t.Fatal("reference grid toggle failed")
+	}
+	g.setModelUnit(model3d.UnitMillimeter)
+	if v.unit != model3d.UnitMillimeter || !g.modelUnitItems[1].Checked || !strings.Contains(g.modelInfo(), "mm") {
+		t.Fatal("model unit selection was not reflected in the view")
+	}
+	g.toggleModelMeasurement()
+	if !v.measuring || !g.modelMeasureItem.Checked {
+		t.Fatal("measurement mode was not enabled")
+	}
+	for _, point := range []model3d.Vector{{X: -.5, Y: -.5, Z: 1}, {X: .5, Y: .5, Z: 1}} {
+		p := model3d.Project(mesh, v.camera, point, 400, 400)
+		v.Tapped(&fyne.PointEvent{Position: fyne.NewPos(float32(p.X), float32(p.Y))})
+		driver.runNext(t)
+	}
+	if len(v.measurePoints) != 2 || math.Abs(model3d.Distance(v.measurePoints[0], v.measurePoints[1])-math.Sqrt2) > 1e-6 || !v.measureLine.Visible() {
+		t.Fatal("two surface clicks did not create a distance measurement")
+	}
+	if !g.cancelCurrentOperation() || v.measuring || len(v.measurePoints) != 0 {
+		t.Fatal("Escape did not clear the measurement")
+	}
 }
 
 func TestModelCropCreatesIndependentEditableImage(t *testing.T) {

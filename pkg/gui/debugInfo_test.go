@@ -84,6 +84,9 @@ func TestModelFileInfoRetainsPath(t *testing.T) {
 	defer app.Quit()
 	g := newGui(app)
 	defer g.clearModel()
+	// This test checks file metadata, so keep the test driver's immediate
+	// fyne.Do callback from racing the render worker during teardown.
+	g.modelViewport.running = true
 	g.window = textClipboardWindow{g.window, fyneTest.NewClipboard()}
 	path := filepath.Join(t.TempDir(), "model.stl")
 	g.addDocument(nil, testSTLMesh(t), storage.NewFileURI(path))
