@@ -358,6 +358,10 @@ func (g *Gui) cancelCurrentOperation() bool {
 		g.modelCrop.Deactivate()
 		return true
 	}
+	if g.showingModel() && g.modelViewport.measuring {
+		g.toggleModelMeasurement()
+		return true
+	}
 	if g.textSelection != nil {
 		g.clearTextSelection()
 		return true

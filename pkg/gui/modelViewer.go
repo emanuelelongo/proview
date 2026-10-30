@@ -27,6 +27,17 @@ type modelViewport struct {
 	renderer                      *modelgpu.Renderer
 	camera                        model3d.Camera
 	image                         *canvas.Image
+	unit                          model3d.Unit
+	grid, measuring               bool
+	viewName                      string
+	measurePoints                 []model3d.Vector
+	measureLine                   *canvas.Line
+	measureMarkers                [2]*canvas.Circle
+	measureLabel, gridLabel       *canvas.Text
+	publishedCamera               model3d.Camera
+	publishedSize                 image.Point
+	pickPending                   bool
+	pickGeneration                uint64
 	generation                    uint64
 	epoch                         uint64
 	running, stopped, interacting bool
@@ -34,14 +45,16 @@ type modelViewport struct {
 }
 
 func newModelViewport(g *Gui) *modelViewport {
-	v := &modelViewport{editor: g, camera: model3d.DefaultCamera(), image: canvas.NewImageFromImage(nil)}
+	v := &modelViewport{editor: g, camera: model3d.DefaultCamera(), image: canvas.NewImageFromImage(nil), unit: model3d.UnitModel, grid: true, viewName: "Isometric"}
 	v.image.FillMode = canvas.ImageFillContain
 	v.image.ScaleMode = canvas.ImageScaleSmooth
+	v.initMeasurementOverlay()
 	v.ExtendBaseWidget(v)
 	return v
 }
 func (v *modelViewport) CreateRenderer() fyne.WidgetRenderer {
-	return widget.NewSimpleRenderer(container.NewStack(canvas.NewRectangle(model3d.BackgroundColor), v.image))
+	overlay := container.NewWithoutLayout(v.measureLine, v.measureMarkers[0], v.measureMarkers[1], v.measureLabel, v.gridLabel)
+	return widget.NewSimpleRenderer(container.NewStack(canvas.NewRectangle(model3d.BackgroundColor), v.image, overlay))
 }
 func (v *modelViewport) MinSize() fyne.Size { return fyne.NewSize(240, 180) }
 func (v *modelViewport) Resize(s fyne.Size) {
@@ -53,6 +66,7 @@ func (v *modelViewport) Resize(s fyne.Size) {
 		}
 		v.requestRender()
 	}
+	v.updateMeasurementOverlay()
 }
 func (v *modelViewport) Cursor() desktop.Cursor        { return desktop.PointerCursor }
 func (v *modelViewport) MouseDown(*desktop.MouseEvent) { v.editor.window.Canvas().Focus(nil) }
@@ -69,6 +83,7 @@ func (v *modelViewport) Dragged(event *fyne.DragEvent) {
 		v.camera.PanX = math.Max(-2, math.Min(2, v.camera.PanX))
 		v.camera.PanY = math.Max(-2, math.Min(2, v.camera.PanY))
 	} else {
+		v.viewName = ""
 		v.camera.Yaw += float64(event.Dragged.DX) * .01
 		v.camera.Pitch = math.Max(-math.Pi/2, math.Min(math.Pi/2, v.camera.Pitch+float64(event.Dragged.DY)*.01))
 	}
@@ -91,6 +106,7 @@ func (v *modelViewport) setView(name string) {
 	}
 	wire := v.camera.Wireframe
 	v.camera = model3d.DefaultCamera()
+	v.viewName = name
 	v.camera.Wireframe = wire
 	switch name {
 	case "Front":
@@ -123,6 +139,12 @@ func (v *modelViewport) stop() {
 	}
 	v.image.Image = nil
 	v.image.Refresh()
+	v.measurePoints = nil
+	v.measuring = false
+	v.pickPending = false
+	v.pickGeneration++
+	v.publishedSize = image.Point{}
+	v.updateMeasurementOverlay()
 }
 func (v *modelViewport) requestRender() {
 	// Coalesce camera changes without repeatedly aborting an in-flight frame.
@@ -155,6 +177,7 @@ func (v *modelViewport) startRender() {
 	}
 	renderer := v.renderer
 	mesh, camera, generation := v.mesh, v.camera, v.generation
+	grid, unit, viewName := v.grid, v.unit, v.viewName
 	epoch := v.epoch
 	interacting := v.interacting
 	ctx, cancel := context.WithCancel(context.Background())
@@ -168,6 +191,9 @@ func (v *modelViewport) startRender() {
 		} else {
 			frame, err = renderer.Render(ctx, mesh, camera, w, h)
 		}
+		if err == nil && grid {
+			model3d.DrawGrid(frame, mesh, camera, unit, viewName)
+		}
 		cancel()
 		fyne.Do(func() {
 			v.running = false
@@ -178,6 +204,8 @@ func (v *modelViewport) startRender() {
 			if err == nil && mesh == v.mesh && epoch == v.epoch && !v.editor.modelCrop.active {
 				v.image.Image = frame
 				v.image.Refresh()
+				v.publishedCamera, v.publishedSize = camera, frame.Bounds().Size()
+				v.updateMeasurementOverlay()
 			}
 			if generation != v.generation {
 				v.startRender()
@@ -213,9 +241,16 @@ func (g *Gui) showModel(mesh *model3d.Mesh) {
 	g.modelViewport.interacting = false
 	g.modelViewport.mesh = mesh
 	g.modelViewport.camera = model3d.DefaultCamera()
+	g.modelViewport.unit = model3d.UnitModel
+	g.modelViewport.grid = true
+	g.modelViewport.viewName = "Isometric"
+	g.modelViewport.measurePoints = nil
+	g.modelViewport.measuring = false
+	g.modelViewport.updateMeasurementOverlay()
 	if g.modelWireframeItem != nil {
 		g.modelWireframeItem.Checked = false
 	}
+	g.updateModelMeasurementMenu()
 	g.imageScroll.Hide()
 	g.pdfScroll.Hide()
 	g.sidebar.container.Hide()
@@ -244,7 +279,7 @@ func isModelFile(name string) bool { return strings.HasSuffix(strings.ToLower(na
 func (g *Gui) modelInfo() string {
 	m := g.modelViewport.mesh
 	s := m.Size()
-	return fmt.Sprintf("%d triangles · %.3g × %.3g × %.3g units", len(m.Triangles), s.X, s.Y, s.Z)
+	return fmt.Sprintf("%d triangles · %.3g × %.3g × %.3g %s", len(m.Triangles), s.X, s.Y, s.Z, g.modelViewport.unit.Label())
 }
 
 var modelViews = []string{"Isometric", "Top", "Bottom", "Front", "Rear", "Left", "Right"}

@@ -821,8 +821,13 @@ file arguments and macOS open-request registration order.
   editing, signatures, save and OCR remain unavailable, while Open/Close/zoom work.
   Crop captures the displayed frame into an independent, unsaved PNG in the same workspace.
   Selection freezes frame publication; Escape/camera changes/Close cancel it.
-- STL has no additional on-canvas controls/help. View contains STL-only commands:
-  1–7 select Isometric, Top, Bottom, Front, Rear, Left, Right; 0 toggles wireframe.
+- STL keeps interactive controls in View: 1–7 select Isometric, Top, Bottom,
+  Front, Rear, Left, Right; 0 toggles wireframe. A subtle grid legend and
+  distance readout may appear on the canvas. The grid follows source-coordinate
+  planes and adaptive 1/2/5 spacing. STL has no declared units: default to
+  model units and require an explicit interpretation before labeling values
+  as millimeters, centimeters, meters or inches. Point-to-point measurement
+  picks the nearest visible mesh triangle and reports straight-line 3D distance.
   Native macOS hides that section through an AppKit menu delegate without rebuilding
   Fyne menus or changing callback IDs. White surfaces use a dark viewport background.
 - Orbit with drag, pan with Space+drag; camera changes never dirty the model.

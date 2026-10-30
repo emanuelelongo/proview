@@ -59,6 +59,8 @@ type Gui struct {
 	modelCrop                         *cropOverlay
 	modelMenu                         *fyne.Menu
 	modelMenuItems                    []*fyne.MenuItem
+	modelGridItem, modelMeasureItem   *fyne.MenuItem
+	modelUnitItems                    []*fyne.MenuItem
 	modelWireframeItem                *fyne.MenuItem
 	ocr                               *ocrState
 	qr                                *qrState

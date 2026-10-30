@@ -13,7 +13,8 @@ extern BOOL menuEnabled(int);
         ![[menu itemAtIndex:4].title isEqualToString:@"Isometric"]) return;
     NSMenuItem *firstView = [menu itemAtIndex:4];
     BOOL hidden = !menuEnabled((int)firstView.tag - 5000);
-    for (NSInteger i = 3; i < 12; i++) {
+    for (NSInteger i = 3; i < menu.numberOfItems; i++) {
+        if ([[menu itemAtIndex:i].title isEqualToString:@"Markdown Theme"]) break;
         [[menu itemAtIndex:i] setHidden:hidden];
     }
 }
