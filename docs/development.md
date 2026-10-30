@@ -510,6 +510,17 @@ and project documentation use English.
   the runtime counters have not advanced; its initial estimate uses process totals.
   These standard-library runtime metrics exclude native-library memory and are not OS
   process CPU/RSS measurements. Selected text takes precedence until deselection.
+  Right-click the debug counters and choose **Save memory report…** to export a
+  ZIP directly into the folder opened by **Help → Open logs folder**, without a
+  destination prompt. Names use fixed-width local date and time through seconds
+  (`memory-report-YYYYMMDD-HHMMSS.zip`) so they sort by date. An existing report
+  from the same second is preserved. Log rotation does not remove these reports.
+  The archive has a sampled live Go heap profile and a JSON summary. The summary records
+  process resident memory, Go memory before and after an explicit garbage
+  collection, and per-window document format, PDF page cache and Markdown image
+  counts without document names.
+  Native-library, GPU and subprocess allocations are not attributed in the heap
+  profile. Capture two reports to compare memory before and after growth.
   Right-click the file information to copy its filename or absolute local path;
   the full-path action is disabled for unsaved content.
 - **Text** stays active after placement. The entry is cleared immediately after a

@@ -203,6 +203,7 @@ type Gui struct {
 	debugTimer                        *time.Timer
 	debugGeneration                   uint64
 	debugCPU                          debugCPUSample
+	memoryReportPreparing             bool
 	tipsEnabled                       bool
 	tipsItem                          *fyne.MenuItem
 	tipsMenu                          *fyne.Menu
@@ -382,9 +383,11 @@ func (g *Gui) RunWithOptions(paths []string, options OpenOptions) {
 	// Showing the first window runs the native macOS launch event loop.
 	// Capture document requests before AppKit starts processing them.
 	registerOpenFilesHandler(nil)
-	paths = g.launchPaths(paths)
-	g.prepareWindowOpening(paths)
-	g.openStartupFiles(paths)
+	if !g.deferSessionRestoreForFinder(paths) {
+		paths = g.launchPaths(paths)
+		g.prepareWindowOpening(paths)
+		g.openStartupFiles(paths)
+	}
 	registerOpenFilesHandler(g.openFilesFromFinder)
 	g.app.Run()
 }

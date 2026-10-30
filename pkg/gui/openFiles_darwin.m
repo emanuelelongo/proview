@@ -4,10 +4,12 @@
 #include <string.h>
 
 extern void goProviewOpenFiles(char **paths, int count);
+extern void goProviewDidFinishLaunching(void);
 
 @interface ProviewOpenDocumentsHandler : NSObject
 - (void)installHandler;
 - (void)willFinishLaunching:(NSNotification *)notification;
+- (void)didFinishLaunching:(NSNotification *)notification;
 - (void)openDocuments:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent;
 @end
 
@@ -24,6 +26,10 @@ extern void goProviewOpenFiles(char **paths, int count);
     // AppKit installs its default handlers during initialization. Reinstall
     // before launch documents arrive without replacing GLFW's app delegate.
     [self installHandler];
+}
+
+- (void)didFinishLaunching:(NSNotification *)notification {
+    goProviewDidFinishLaunching();
 }
 
 - (void)openDocuments:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent {
@@ -77,6 +83,11 @@ void proviewRegisterOpenDocumentsHandler(void) {
             addObserver:handler
             selector:@selector(willFinishLaunching:)
             name:NSApplicationWillFinishLaunchingNotification
+            object:nil];
+        [[NSNotificationCenter defaultCenter]
+            addObserver:handler
+            selector:@selector(didFinishLaunching:)
+            name:NSApplicationDidFinishLaunchingNotification
             object:nil];
     }
     [handler installHandler];

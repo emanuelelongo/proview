@@ -138,7 +138,11 @@ PDF page combination/reordering/deletion and blank pages.
   the separate-window policy. Normal executable launches detach from the terminal;
   `--foreground` retains synchronous diagnostics (`task run` uses it). A window automatically
   saves its local file paths on close (last writer wins, including empty sets).
-  Launching without file arguments restores that set; explicit files skip restore.
+  Restore that set only when a launch has neither file arguments nor Finder
+  launch documents. Wait until macOS finishes delivering its initial
+  Finder documents before deciding whether restoration applies. Finder can send
+  one selection as separate Apple Events by file type; group nearby events before
+  routing them so mixed non-PDF files share the receiving window.
   There are no session menu commands or serialized edits/history. See docs/document-workspace.md.
 - Desktop launches with paths use `internal/openfiles` to forward to an existing
   process through a private authenticated loopback endpoint and OS file lock.

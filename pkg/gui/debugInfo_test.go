@@ -116,7 +116,7 @@ func TestDebugTooltip(t *testing.T) {
 	g.window.Show()
 	surface := g.window.Content().(*tooltipSurface)
 	g.tipSurface.MouseIn(&desktop.MouseEvent{})
-	if !surface.bubble.Visible() || surface.label.Text != debugInfoTooltip {
+	if !surface.bubble.Visible() || surface.label.Text != "CPU - RAM - Routines" {
 		t.Fatal("missing debug labels on hover")
 	}
 	if g.window.Canvas().Overlays().Top() != nil {

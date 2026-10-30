@@ -170,7 +170,13 @@ for framework preferences and cache locations.
 
 Closing a window automatically remembers its local file paths in sidebar order.
 Starting Proview without file arguments reopens that set through the normal
-opening queue. Explicit file arguments take priority and skip restoration.
+opening queue. Explicit file arguments take priority and skip restoration. On
+macOS, Finder launch documents are collected before the restore decision; opening
+a file with Proview starts with that file alone. A Finder selection of several
+files is queued together in one workspace, subject to the PDF window rules.
+Finder may deliver mixed file types in separate events; events arriving within a
+short opening interval are grouped before routing. Later Finder requests keep
+their normal separate-window behavior.
 There are no session menu commands, names or confirmation dialogs.
 
 Each window writes its own file set: the last window to save on closing wins,
@@ -197,6 +203,9 @@ unchanged. Without a saved session, a no-file launch shows an empty window.
 - `pkg/gui/sessions_test.go`: automatic no-file restore, explicit-file precedence,
   last-window-wins persistence, empty-session clearing, exclusion of unsaved generated
   files and queued CLI reuse of occupied windows.
+- `pkg/gui/openFiles_darwin_test.go`: Finder launch documents take priority over
+  the saved session; closely spaced mixed-file events share a workspace; later
+  requests remain separate.
 - `cmd/gui/detach_test.go`: child continuation after launcher exit, disconnected
   output and preserved working directory.
 - Run `go test ./...` and `go vet ./...`.

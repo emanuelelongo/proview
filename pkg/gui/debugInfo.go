@@ -11,7 +11,7 @@ import (
 
 const debugPreferenceKey = "debug.enabled"
 const debugSampleInterval = 5 * time.Second
-const debugInfoTooltip = "Go CPU (estimated capacity usage) · Go RAM · Goroutines"
+const debugInfoTooltip = "CPU - RAM - Routines"
 
 type debugCPUSample struct{ total, idle, percent float64 }
 

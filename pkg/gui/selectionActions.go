@@ -45,7 +45,16 @@ func (s *statusTextSurface) Tapped(*fyne.PointEvent) {
 	}
 }
 func (s *statusTextSurface) TappedSecondary(event *fyne.PointEvent) {
-	s.editor.showSelectionCopyMenu(event.AbsolutePosition)
+	g := s.editor
+	if g.closed {
+		return
+	}
+	if g.debugEnabled && !g.selectionStatusActive {
+		menu := widget.NewPopUpMenu(fyne.NewMenu("", fyne.NewMenuItem("Save memory report…", g.saveMemoryReport)), g.window.Canvas())
+		menu.ShowAtPosition(event.AbsolutePosition)
+		return
+	}
+	g.showSelectionCopyMenu(event.AbsolutePosition)
 }
 
 func (s *statusTextSurface) MouseIn(*desktop.MouseEvent) {
