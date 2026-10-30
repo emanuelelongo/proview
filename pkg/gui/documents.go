@@ -10,7 +10,6 @@ import (
 	"image/color"
 	"image/draw"
 	"math"
-	"runtime/debug"
 	"slices"
 
 	"fyne.io/fyne/v2"
@@ -26,6 +25,7 @@ import (
 // Each retained document owns its history, save destination and view state.
 type editorDocument struct {
 	thumbnail       image.Image
+	thumbnailSource image.Image
 	thumbnailCancel context.CancelFunc
 	thumbnailFailed bool
 	markdown        *markdown.Document
@@ -76,6 +76,17 @@ func downsampleImageThumbnail(src image.Image) image.Image {
 	return dst
 }
 
+// thumbnailFor reuses a sidebar thumbnail while the source image identity is
+// unchanged. Edited documents replace their preview image instead of mutating it.
+func (e *editorDocument) thumbnailFor(src image.Image) image.Image {
+	if e.thumbnail != nil && e.thumbnailSource == src {
+		return e.thumbnail
+	}
+	e.thumbnailSource = src
+	e.thumbnail = downsampleImageThumbnail(src)
+	return e.thumbnail
+}
+
 func (g *Gui) captureDocument() {
 	if !g.hasOpenContent() {
 		return
@@ -87,7 +98,7 @@ func (g *Gui) captureDocument() {
 		g.activeDocument = entry
 	}
 	if g.document != nil && g.document.Format() != document.FormatPDF {
-		entry.thumbnail = downsampleImageThumbnail(g.image.Image)
+		entry.thumbnailFor(g.image.Image)
 	}
 	entry.doc = g.document
 	if !g.showingMarkdown() && !g.showingModel() {
@@ -99,6 +110,7 @@ func (g *Gui) captureDocument() {
 	if g.document != nil && g.document.Format() == document.FormatPDF {
 		entry.offset = g.pdfScroll.Offset
 	}
+	previousMarkdown := entry.markdown
 	entry.markdown = nil
 	if g.showingMarkdown() {
 		entry.markdown = g.markdownView.doc
@@ -110,6 +122,9 @@ func (g *Gui) captureDocument() {
 		if g.markdownView.pendingReadingOffset != nil {
 			entry.offset = *g.markdownView.pendingReadingOffset
 		}
+	}
+	if previousMarkdown != nil && previousMarkdown != entry.markdown {
+		previousMarkdown.Close()
 	}
 	entry.mesh = nil
 	if g.showingModel() {
@@ -133,6 +148,15 @@ func (g *Gui) prepareDocumentSwitch() {
 	g.captureDocument()
 	if g.activeDocument != nil && g.activeDocument.doc != nil {
 		g.activeDocument.doc.TrimInactive()
+	}
+	if g.activeDocument != nil && g.activeDocument.markdown != nil {
+		md := g.activeDocument.markdown
+		if md.HasDecodedImages() {
+			if g.activeDocument.markdownView != nil {
+				g.activeDocument.markdownView.suspend()
+			}
+			md.TrimImages()
+		}
 	}
 }
 
@@ -163,6 +187,34 @@ func (g *Gui) selectDocument(entry *editorDocument) {
 }
 
 func (g *Gui) activateDocument(entry *editorDocument) {
+	if entry.markdown != nil && entry.markdown.ImagesTrimmed() {
+		g.working = true
+		g.clearMarkdown()
+		g.markdownPanel.Add(widget.NewLabel("Restoring Markdown images…"))
+		g.markdownPanel.Show()
+		doc := entry.markdown
+		go func() {
+			doc.RestoreImages()
+			fyne.Do(func() {
+				if g.closed {
+					return
+				}
+				g.working = false
+				if !slices.Contains(g.documents, entry) || entry.markdown != doc {
+					g.markdownPanel.RemoveAll()
+					g.markdownPanel.Hide()
+					return
+				}
+				g.markdownPanel.RemoveAll()
+				g.activateDocumentReady(entry)
+			})
+		}()
+		return
+	}
+	g.activateDocumentReady(entry)
+}
+
+func (g *Gui) activateDocumentReady(entry *editorDocument) {
 	g.activeDocument = entry
 	g.document = nil
 	if entry.markdown != nil {
@@ -204,7 +256,7 @@ func (g *Gui) refreshDocumentSidebar() {
 	g.documentThumbs = nil
 	g.normalizeDocumentSelection()
 	if g.activeDocument != nil && g.document != nil && g.document.Format() != document.FormatPDF {
-		g.activeDocument.thumbnail = downsampleImageThumbnail(g.image.Image)
+		g.activeDocument.thumbnailFor(g.image.Image)
 	}
 	for _, entry := range g.documents {
 		g.ensureMarkdownThumbnail(entry)
@@ -411,6 +463,11 @@ func (g *Gui) removeActiveDocument() {
 	for i, entry := range g.documents {
 		if entry == g.activeDocument {
 			entry.markdownView = nil
+			if entry.markdown != nil {
+				entry.markdown.Close()
+				entry.markdown = nil
+			}
+			entry.thumbnail, entry.thumbnailSource = nil, nil
 			if entry.thumbnailCancel != nil {
 				entry.thumbnailCancel()
 			}
@@ -430,6 +487,11 @@ func (g *Gui) restoreRemainingDocument() {
 func (g *Gui) closeRetainedDocuments() {
 	for _, entry := range g.documents {
 		entry.markdownView = nil
+		if entry.markdown != nil {
+			entry.markdown.Close()
+			entry.markdown = nil
+		}
+		entry.thumbnail, entry.thumbnailSource = nil, nil
 		if entry.thumbnailCancel != nil {
 			entry.thumbnailCancel()
 		}
@@ -437,7 +499,7 @@ func (g *Gui) closeRetainedDocuments() {
 			doc := entry.doc
 			go func() {
 				doc.Close()
-				debug.FreeOSMemory()
+				requestMemoryRelease()
 			}()
 		}
 	}

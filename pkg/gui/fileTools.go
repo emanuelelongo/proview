@@ -8,7 +8,6 @@ import (
 	"image/color"
 	"io"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -321,7 +320,7 @@ func (g *Gui) choosePDFCollection(appendPages bool) {
 				g.showDocument(loaded)
 				g.saveTarget = nil
 			}
-			go debug.FreeOSMemory()
+			requestMemoryRelease()
 		})
 	})
 	scroll := container.NewGridWrap(fyne.NewSize(520, 280), list)
@@ -401,7 +400,7 @@ func (g *Gui) rebuildPDFWithCompletion(active int, done func()) {
 		if done != nil {
 			done()
 		}
-		go debug.FreeOSMemory()
+		requestMemoryRelease()
 	})
 }
 

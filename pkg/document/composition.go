@@ -239,7 +239,7 @@ func (d *Document) renderLens(id OverlayID, dpi float64, cache *PreviewRenderer)
 	var base image.Image
 	var e error
 	if cache != nil {
-		base, e = cache.lens.render(under, s.Page, sampleDPI, true)
+		base, e = cache.lens.render(under, s.Page, sampleDPI, true, &cache.retainedBytes)
 	} else {
 		base, e = under.SafeRenderPage(s.Page, sampleDPI)
 	}

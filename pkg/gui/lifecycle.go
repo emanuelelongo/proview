@@ -3,7 +3,6 @@ package gui
 import (
 	"fmt"
 	"image"
-	"runtime/debug"
 	"slices"
 
 	"fyne.io/fyne/v2"
@@ -133,10 +132,10 @@ func (g *Gui) closeDocument() {
 	if doc != nil {
 		go func() {
 			doc.Close()
-			debug.FreeOSMemory()
+			requestMemoryRelease()
 		}()
 	} else {
-		go debug.FreeOSMemory()
+		requestMemoryRelease()
 	}
 	g.restoreRemainingDocument()
 }
@@ -190,7 +189,7 @@ func (g *Gui) closeWindow() {
 		g.document = nil
 		go func() {
 			doc.Close()
-			debug.FreeOSMemory()
+			requestMemoryRelease()
 		}()
 	}
 	if g.annotationJobs != nil {

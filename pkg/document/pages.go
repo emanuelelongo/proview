@@ -36,7 +36,7 @@ func (d *Document) BlankPageAfter(page int) (*Document, error) {
 	}
 	ctx := context.Background()
 	var selected, inserted, blank bytes.Buffer
-	if err := collectPDFPages(ctx, source.Original(), &selected, []string{strconv.Itoa(index + 1)}); err != nil {
+	if err := collectPDFPages(ctx, source.originalBytes(), &selected, []string{strconv.Itoa(index + 1)}); err != nil {
 		return nil, err
 	}
 	boxes, err := api.Boxes(ctx, bytes.NewReader(selected.Bytes()), nil, nil)

@@ -85,11 +85,17 @@ func TestPreviewRendererReusesLensSampleAndInvalidatesContent(t *testing.T) {
 	}
 	check()
 	sample := renderer.lens.image
+	if got, want := renderer.RetainedRasterBytes(), rasterBytes(sample); got != want {
+		t.Fatalf("lens cache bytes = %d, want %d", got, want)
+	}
 	// A lens move changes the sampled rectangle, not the underlying page.
 	doc.signatures[0].Rect.X += .1
 	check()
 	if renderer.lens.image != sample {
 		t.Fatal("lens movement rerendered the page")
+	}
+	if got := renderer.RetainedRasterBytes(); got != rasterBytes(sample) {
+		t.Fatalf("reused lens cache bytes = %d, want %d", got, rasterBytes(sample))
 	}
 	mark, err := doc.AddRedaction(0, []TextQuad{{UL: TextPoint{X: .35, Y: .2}, UR: TextPoint{X: .45, Y: .2}, LL: TextPoint{X: .35, Y: .3}, LR: TextPoint{X: .45, Y: .3}}})
 	if err != nil {
@@ -148,6 +154,9 @@ func TestHighlightPreviewsSkipLaterObjectsAndReuseBase(t *testing.T) {
 	}
 	if renderer.base.image != base || !reflect.DeepEqual(first, second) {
 		t.Fatal("later object changed highlight fragments or rerendered base")
+	}
+	if got, want := renderer.RetainedRasterBytes(), rasterBytes(base)+fragmentBytes(first); got != want {
+		t.Fatalf("preview cache bytes = %d, want %d", got, want)
 	}
 	// A different page transform changes source pixels.
 	doc.pages[0].turns = 1

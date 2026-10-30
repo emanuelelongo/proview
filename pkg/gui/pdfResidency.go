@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"runtime/debug"
 	"sort"
 
 	"emanuelelongo/proview/pkg/document"
@@ -115,7 +114,7 @@ func (g *Gui) retainPDFPages(first, end int) {
 		}
 	}
 	if evictedOversized {
-		go debug.FreeOSMemory()
+		requestMemoryRelease()
 	}
 }
 

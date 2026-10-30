@@ -252,13 +252,14 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 		progress = dialog.NewCustomWithoutButtons("Opening", widget.NewProgressBarInfinite(), g.window)
 		progress.Show()
 	}
+	markdownImageBytes, markdownAnimationBytes := g.markdownLoadBudgets()
 	go func() {
 		var doc *document.Document
 		var mesh *model3d.Mesh
 		var md *markdown.Document
 		var err error
 		if markdown.IsFile(target.Name()) {
-			md, err = loadMarkdownReader(uri)
+			md, err = loadMarkdownReader(uri, markdownImageBytes, markdownAnimationBytes)
 		} else if isModelFile(target.Name()) {
 			mesh, err = loadModelReader(uri)
 		} else {

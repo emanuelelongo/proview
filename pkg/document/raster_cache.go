@@ -1,10 +1,60 @@
 package document
 
-import "image"
+import (
+	"image"
+	"sync/atomic"
+)
 
 // Source rasters are disposable. History, export and page dimensions retain the
 // immutable PDF bytes and page references, never depend on raster residency.
-const maxSourceRasterBytes int64 = 64 << 20
+//
+// The per-source limit is capped, while the shared limit is divided between all
+// live PDF sources. This keeps one long document well cached without letting a
+// workspace full of sources multiply the same budget.
+const (
+	maxSourceRasterBytes int64 = 64 << 20
+	minSourceRasterBytes int64 = 16 << 20
+	maxSharedRasterBytes int64 = 128 << 20
+)
+
+var rasterSourceCount atomic.Int64
+
+// sourceRasterLimit derives the current per-source share. It is approximate:
+// limits only shrink when another source registers, and existing caches are
+// trimmed on their next raster access.
+func sourceRasterLimit() int64 {
+	count := rasterSourceCount.Load()
+	if count < 1 {
+		count = 1
+	}
+	shared := maxSharedRasterBytes / count
+	return min(maxSourceRasterBytes, max(minSourceRasterBytes, shared))
+}
+
+func (s *Source) registerRasterSource() {
+	if s == nil || s.format != FormatPDF {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.registerRasterSourceLocked()
+}
+
+func (s *Source) registerRasterSourceLocked() {
+	if s.rasterRegistered {
+		return
+	}
+	s.rasterRegistered = true
+	rasterSourceCount.Add(1)
+}
+
+func (s *Source) unregisterRasterSourceLocked() {
+	if !s.rasterRegistered {
+		return
+	}
+	s.rasterRegistered = false
+	rasterSourceCount.Add(-1)
+}
 
 func rasterBytes(p image.Image) int64 {
 	if p == nil {
@@ -31,11 +81,11 @@ func (s *Source) touchRaster(page int, thumbnail bool) {
 	} else {
 		s.pages[page].previewUsed = s.rasterClock
 	}
-	s.trimRasters(maxSourceRasterBytes)
+	s.trimRasters(sourceRasterLimit())
 }
 
 func (s *Source) trimRasters(limit int64) {
-	for s.rasterBytes > limit {
+	for s.rasterBytes.Load() > limit {
 		oldest, index, thumbnail := ^uint64(0), -1, false
 		for i, page := range s.pages {
 			if page.preview != nil && page.previewUsed < oldest {
@@ -50,30 +100,36 @@ func (s *Source) trimRasters(limit int64) {
 		}
 		page := &s.pages[index]
 		if thumbnail {
-			s.rasterBytes -= rasterBytes(page.thumbnail)
+			s.rasterBytes.Add(-rasterBytes(page.thumbnail))
 			page.thumbnail = nil
 		} else {
-			s.rasterBytes -= rasterBytes(page.preview)
+			s.rasterBytes.Add(-rasterBytes(page.preview))
 			page.preview = nil
 		}
 	}
 }
 
-// TrimPreviews releases cached full-size page previews while retaining thumbnails.
+// TrimPreviews releases cached full-size page previews while retaining
+// thumbnails. Inactive image and GIF documents release their decoded raster and
+// animation; both are rebuilt lazily from the immutable encoded bytes.
 func (s *Source) TrimPreviews() {
-	if s == nil || s.format != FormatPDF {
+	if s == nil {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for i := range s.pages {
 		if s.pages[i].preview != nil {
-			s.rasterBytes -= rasterBytes(s.pages[i].preview)
+			s.rasterBytes.Add(-rasterBytes(s.pages[i].preview))
 			s.pages[i].preview = nil
 		}
 	}
-	if s.rasterBytes < 0 {
-		s.rasterBytes = 0
+	if s.rasterBytes.Load() < 0 {
+		s.rasterBytes.Store(0)
+	}
+	s.mu.Unlock()
+	s.trimAnimation()
+	if s.annotationBase != nil {
+		s.annotationBase.TrimPreviews()
 	}
 }
 
@@ -88,10 +144,19 @@ func (s *Source) TrimPagePreview(page int) {
 		return
 	}
 	if s.pages[page].preview != nil {
-		s.rasterBytes -= rasterBytes(s.pages[page].preview)
+		s.rasterBytes.Add(-rasterBytes(s.pages[page].preview))
 		s.pages[page].preview = nil
 	}
-	if s.rasterBytes < 0 {
-		s.rasterBytes = 0
+	if s.rasterBytes.Load() < 0 {
+		s.rasterBytes.Store(0)
 	}
+}
+
+// rasterByteCount reports retained preview/thumbnail bytes for diagnostics
+// without waiting for a native render that holds source.mu.
+func (s *Source) rasterByteCount() int64 {
+	if s == nil {
+		return 0
+	}
+	return s.rasterBytes.Load()
 }

@@ -165,7 +165,7 @@ func (d *Document) redactExport(input []byte) ([]byte, error) {
 		for _, page := range d.pages {
 			if !seen[page.source] {
 				seen[page.source] = true
-				sources = append(sources, page.source.Original())
+				sources = append(sources, page.source.originalBytes())
 			}
 		}
 		output, err = pdfengine.RedactComposedPDF(input, regions, sources)

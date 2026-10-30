@@ -6,12 +6,28 @@ import (
 	"path/filepath"
 	"testing"
 
+	"emanuelelongo/proview/internal/markdown"
 	"emanuelelongo/proview/internal/model3d"
 	"emanuelelongo/proview/pkg/document"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/storage"
 	fyneTest "fyne.io/fyne/v2/test"
 )
+
+func TestMarkdownLoadBudgetsShareOpenDocuments(t *testing.T) {
+	g := &Gui{}
+	imageBytes, animationBytes := g.markdownLoadBudgets()
+	if imageBytes != markdown.MaxDocumentImageBytes || animationBytes != markdown.MaxDocumentAnimationBytes {
+		t.Fatalf("single document budgets = %d/%d", imageBytes, animationBytes)
+	}
+	for range 7 {
+		g.documents = append(g.documents, &editorDocument{markdown: &markdown.Document{}})
+	}
+	imageBytes, animationBytes = g.markdownLoadBudgets()
+	if imageBytes != minDocumentMarkdownImageBytes || animationBytes != minDocumentMarkdownAnimationBytes {
+		t.Fatalf("shared budgets = %d/%d, want minimums", imageBytes, animationBytes)
+	}
+}
 
 func workspacePDF(t *testing.T, pages int) *document.Document {
 	t.Helper()

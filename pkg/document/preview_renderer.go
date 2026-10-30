@@ -4,6 +4,7 @@ import (
 	"image"
 	"maps"
 	"sync"
+	"sync/atomic"
 )
 
 // PreviewRenderer retains one base page and one safe lens sampling page across
@@ -14,6 +15,28 @@ type PreviewRenderer struct {
 	base, lens                  previewPage
 	highlights                  previewPage
 	fragments                   map[OverlayID]image.Image
+	retainedBytes               atomic.Int64
+}
+
+// RetainedRasterBytes reports base, lens-sampling and highlight-fragment cache
+// bytes without waiting for a render in progress.
+func (r *PreviewRenderer) RetainedRasterBytes() int64 {
+	if r == nil {
+		return 0
+	}
+	return r.retainedBytes.Load()
+}
+
+func (r *PreviewRenderer) replaceRaster(old, next image.Image) {
+	r.retainedBytes.Add(rasterBytes(next) - rasterBytes(old))
+}
+
+func fragmentBytes(fragments map[OverlayID]image.Image) int64 {
+	var total int64
+	for _, fragment := range fragments {
+		total += rasterBytes(fragment)
+	}
+	return total
 }
 
 type previewPage struct {
@@ -28,7 +51,7 @@ func (p *previewPage) matches(d *Document, page int, dpi float64) bool {
 	return p.doc != nil && p.page == page && p.dpi == dpi && p.doc.source == d.source && d.stateEquals(p.doc.stateView(), false)
 }
 
-func (p *previewPage) render(d *Document, page int, dpi float64, safe bool) (image.Image, error) {
+func (p *previewPage) render(d *Document, page int, dpi float64, safe bool, retained *atomic.Int64) (image.Image, error) {
 	if p.matches(d, page, dpi) {
 		return p.image, nil
 	}
@@ -40,7 +63,11 @@ func (p *previewPage) render(d *Document, page int, dpi float64, safe bool) (ima
 		picture, err = d.RenderBasePageDPI(page, dpi)
 	}
 	if err == nil {
+		pImage := p.image
 		*p = previewPage{doc: d.RenderingSnapshot(), page: page, dpi: dpi, image: picture}
+		if retained != nil {
+			retained.Add(rasterBytes(p.image) - rasterBytes(pImage))
+		}
 	}
 	return picture, err
 }
@@ -81,6 +108,7 @@ func (r *PreviewRenderer) HighlightPreviews(d *Document, page int, dpi float64) 
 	previews := map[OverlayID]image.Image{}
 	_, err = prefix.composePage(page, dpi, true, previews, base)
 	if err == nil {
+		r.retainedBytes.Add(fragmentBytes(previews) - fragmentBytes(r.fragments))
 		r.highlights = previewPage{doc: prefix, page: page, dpi: dpi}
 		r.fragments = maps.Clone(previews)
 	}
@@ -103,6 +131,7 @@ func (r *PreviewRenderer) renderBase(d *Document, page int, dpi float64) (image.
 		}
 		picture, err := d.RenderBasePageDPI(page, dpi)
 		if err == nil {
+			r.replaceRaster(r.base.image, picture)
 			r.base = previewPage{page: page, dpi: dpi, image: picture, content: key}
 		}
 		return picture, err
@@ -110,5 +139,5 @@ func (r *PreviewRenderer) renderBase(d *Document, page int, dpi float64) (image.
 	baseDoc := d.RenderingSnapshot()
 	baseDoc.signatures = nil
 	baseDoc.redactions = nil
-	return r.base.render(baseDoc, page, dpi, false)
+	return r.base.render(baseDoc, page, dpi, false, &r.retainedBytes)
 }

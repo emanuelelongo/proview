@@ -287,3 +287,59 @@ software-driver test.
 
 Regression tests cover image identity reuse, cross-document replacement, cleared
 references on close, zoom/pan/fit/focus handling and animated image playback.
+
+## Retained-memory review (2026-10-30)
+
+Code review changes without new RSS measurements. Verify on real documents with
+**Help → Save memory report** before treating any figure as a regression or a
+guarantee. The report now also lists retained source bytes, PDF raster bytes and
+decoded Markdown image/animation bytes per window. `preview_cache_bytes` reports
+the base page, lens-sampling page and highlight fragments retained by each window's
+`PreviewRenderer`; it is not a count of every image reachable through canvas widgets.
+
+- Each `Source` opens its own MuPDF context. The library-wide `fitz.MaxStore`
+  limit is now 32 MiB instead of 256 MiB, bounding native font/image caches on
+  multi-source documents and annotated sources (including the annotation base).
+  Trade-off: image-heavy PDFs may re-decode resources more often.
+- PDF raster caches now share a 128 MiB allowance: each live PDF source receives
+  `clamp(128 MiB / sources, 16 MiB, 64 MiB)`. One long document still gets its
+  previous 64 MiB; several open sources no longer multiply the same budget. The
+  limit is approximate and applies on the next raster access, without cross-source
+  locks or eviction scans.
+- `debug.FreeOSMemory` is coalesced behind one delayed request instead of running
+  on every oversized-page eviction, document close, collection rebuild and save.
+  This removes repeated full collections with scavenging from scroll paths.
+- Inactive image and GIF documents release their decoded raster and animation on
+  document switch. Reopening decodes from the immutable encoded bytes; page size,
+  history and imports are unchanged. GIF animations are re-decoded lazily outside
+  the source render lock so playback ticks never queue behind a native render.
+- Sidebar thumbnails for image documents are reused while the preview image
+  identity is unchanged, avoiding a new RGBA allocation and texture identity on
+  every sidebar refresh.
+- Accepted native text edits keep one full edited source for Undo. Sources that
+  history eviction or a cleared redo stack makes unreachable are closed instead of
+  accumulating for the rest of the session.
+- The PDF bridge no longer copies the whole source file into C for layout, print,
+  form and text-edit calls: immutable Go bytes are passed for the duration of the
+  call and dropped by the bridge before returning. Form/annotation page previews
+  return raw RGBA rows instead of an encoded PNG, removing encode/decode buffers
+  on every preview and thumbnail render.
+- Open Markdown documents within each editor workspace share a 128 MiB image and
+  animation allowance,
+  `clamp(128 MiB / open documents, 16 MiB, default per-document limit)`. Closing a
+  retained workspace entry releases its decoded images and animations.
+- `Source.Close` now also clears disposable previews, thumbnails, glyph layouts
+  and animations while keeping original bytes and imported overlay metadata, so a
+  closed source can still be reopened. Export and page collection read the
+  immutable source buffer without cloning the entire PDF.
+
+Inactive Markdown entries now release decoded local images, animations and their
+canvas tree while retaining the parsed document and reading state. Images are
+restored off the UI thread when the entry is activated again. Text-only Markdown
+views stay retained to preserve the measured workspace font/view reuse.
+
+Remaining, intentionally deferred: enforcing one process-wide budget across all
+widget-bound and transient rasters (including lens outputs, selection/highlight
+rasters and Fyne texture residency). The report exposes source, PDF source-cache,
+Markdown-resource and `PreviewRenderer` cache bytes per window, but is not a
+complete native/GPU allocation ledger or an RSS cap.

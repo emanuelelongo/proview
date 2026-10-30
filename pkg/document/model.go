@@ -185,7 +185,9 @@ func (d *Document) Original() []byte {
 	return d.source.Original()
 }
 
-func (d *Document) Close() {
+// collectSources returns every source still reachable from the current state,
+// saved state and history. Callers own the returned map.
+func (d *Document) collectSources() map[*Source]bool {
 	sources := map[*Source]bool{d.source: true}
 	for _, source := range d.textSources {
 		sources[source] = true
@@ -206,22 +208,84 @@ func (d *Document) Close() {
 		collect(entry.after.pages)
 	}
 	for source := range sources {
-		source.Close()
+		for base := source.annotationBase; base != nil; base = base.annotationBase {
+			sources[base] = true
+		}
 	}
+	return sources
 }
 
-// TrimInactive releases disposable page previews from inactive sources.
+func (d *Document) Close() {
+	for source := range d.collectSources() {
+		source.Close()
+	}
+	d.textSources = nil
+}
+
+// TrimInactive releases disposable page previews and image/GIF rasters from an
+// inactive document. Layout sizes, history and original bytes are retained.
 func (d *Document) TrimInactive() {
-	if d == nil || d.Format() != FormatPDF {
+	if d == nil {
 		return
 	}
 	sources := map[*Source]bool{d.source: true}
 	for _, page := range d.pages {
 		sources[page.source] = true
 	}
+	for _, source := range d.textSources {
+		sources[source] = true
+	}
 	for source := range sources {
 		source.TrimPreviews()
 	}
+}
+
+// MemoryUsage reports retained source bytes and disposable raster bytes for
+// every source reachable from the document. Each source is counted once.
+func (d *Document) MemoryUsage() (sourceBytes, rasterBytes int64) {
+	if d == nil {
+		return 0, 0
+	}
+	for source := range d.collectSources() {
+		sourceBytes += int64(len(source.original))
+		rasterBytes += source.rasterByteCount() + source.animationBytes.Load()
+	}
+	return sourceBytes, rasterBytes
+}
+
+// pruneTextSources closes edited sources that are no longer reachable from the
+// current, saved, undo or redo state. Older full-document copies would otherwise
+// stay alive for the rest of the session after history eviction.
+func (d *Document) pruneTextSources() {
+	if len(d.textSources) == 0 {
+		return
+	}
+	keep := map[*Source]bool{d.source: true}
+	collect := func(pages []pageRef) {
+		for _, page := range pages {
+			keep[page.source] = true
+		}
+	}
+	collect(d.pages)
+	collect(d.saved.pages)
+	for _, entry := range d.undoStack {
+		collect(entry.before.pages)
+		collect(entry.after.pages)
+	}
+	for _, entry := range d.redoStack {
+		collect(entry.before.pages)
+		collect(entry.after.pages)
+	}
+	kept := d.textSources[:0]
+	for _, source := range d.textSources {
+		if keep[source] {
+			kept = append(kept, source)
+			continue
+		}
+		source.Close()
+	}
+	clear(d.textSources[len(kept):])
+	d.textSources = kept
 }
 
 // TrimPagePreview releases the cached full-size preview for a single page in its source.
@@ -801,11 +865,16 @@ func (d *Document) record(before editorState) {
 	}
 	after := d.snapshot()
 	d.undoStack = append(d.undoStack, historyEntry{before: before, after: after})
-	if len(d.undoStack) > maxHistoryEntries {
+	trimmed := len(d.undoStack) > maxHistoryEntries
+	if trimmed {
 		copy(d.undoStack, d.undoStack[len(d.undoStack)-maxHistoryEntries:])
 		d.undoStack = d.undoStack[:maxHistoryEntries]
 	}
+	hadRedo := len(d.redoStack) > 0
 	d.redoStack = nil
+	if trimmed || hadRedo {
+		d.pruneTextSources()
+	}
 	d.advanceRevision(before, after)
 }
 

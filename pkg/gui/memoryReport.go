@@ -29,6 +29,11 @@ type memoryWindowSummary struct {
 	MarkdownLoadedImages   int            `json:"markdown_loaded_images"`
 	MarkdownAnimatedImages int            `json:"markdown_animated_images"`
 	MarkdownGIFPlayers     int            `json:"markdown_gif_players"`
+	SourceBytes            int64          `json:"source_bytes"`
+	RasterBytes            int64          `json:"raster_bytes"`
+	MarkdownImageBytes     int64          `json:"markdown_image_bytes"`
+	MarkdownAnimationBytes int64          `json:"markdown_animation_bytes"`
+	PreviewCacheBytes      int64          `json:"preview_cache_bytes"`
 	PendingFiles           int            `json:"pending_files"`
 }
 
@@ -72,11 +77,14 @@ func (g *Gui) memoryReportContext() memoryReportContext {
 			PDFResidentPages: len(window.pdfResident), PDFResidentThumbnails: len(window.pdfThumbResident),
 			PDFPageJobs: len(window.pdfPageJobs), PDFThumbnailJobs: len(window.pdfThumbJobs),
 			PendingFiles: len(window.pendingFiles)}
+		if window.previewRenderer != nil {
+			entry.PreviewCacheBytes = window.previewRenderer.RetainedRasterBytes()
+		}
 		for _, document := range window.documents {
 			switch {
 			case document.markdown != nil:
 				entry.DocumentFormats["markdown"]++
-				entry.MarkdownLoadedImages += len(document.markdown.Images)
+				entry.MarkdownLoadedImages += document.markdown.ImageCount()
 				view := document.markdownView
 				if document == window.activeDocument && window.markdownView != nil {
 					view = window.markdownView
@@ -89,6 +97,15 @@ func (g *Gui) memoryReportContext() memoryReportContext {
 				entry.DocumentFormats["stl"]++
 			case document.doc != nil:
 				entry.DocumentFormats[string(document.doc.Format())]++
+			}
+			if document.markdown != nil {
+				entry.MarkdownImageBytes += document.markdown.ImageBytes()
+				entry.MarkdownAnimationBytes += document.markdown.AnimationBytes()
+			}
+			if document.doc != nil {
+				sourceBytes, rasterBytes := document.doc.MemoryUsage()
+				entry.SourceBytes += sourceBytes
+				entry.RasterBytes += rasterBytes
 			}
 		}
 		result.Windows = append(result.Windows, entry)

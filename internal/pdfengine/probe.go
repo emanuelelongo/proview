@@ -48,8 +48,7 @@ func TextLayout(data []byte, page int) (Layout, error) {
 	if len(data) == 0 || page < 0 || page > math.MaxInt32 {
 		return Layout{}, errors.New("pdfengine: empty PDF or invalid page")
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	var result C.pv_result
 	defer C.pv_free_result(&result)
 	C.pv_layout((*C.uchar)(input), C.size_t(len(data)), C.int(page), &result)
@@ -94,8 +93,7 @@ func apply(data []byte, regions []Region, mode int) ([]byte, error) {
 		}
 		native[i] = C.pv_region{page: C.int(region.Page), quad: cQuad(region.Quad)}
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	var result C.pv_result
 	defer C.pv_free_result(&result)
 	if mode == 2 {
@@ -147,8 +145,7 @@ func checkSource(data []byte) error {
 	if len(data) == 0 {
 		return errors.New("pdfengine: empty source")
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	var result C.pv_result
 	defer C.pv_free_result(&result)
 	C.pv_check_source((*C.uchar)(input), C.size_t(len(data)), &result)

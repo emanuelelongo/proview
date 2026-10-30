@@ -1,10 +1,13 @@
 # Desktop profiling and possible follow-up work
 
-Status: deferred plan, 2026-10-19. Profiling and the changes below have not been
-performed. Start from [current performance behavior](performance.md), which
-records the optimizations already implemented and their synthetic measurements.
-Do not repeat that work or interpret these hypotheses as confirmed bottlenecks.
-No release or packaging is part of this plan.
+Status: partially implemented, 2026-10-30. The retained-memory review recorded in
+[performance.md](performance.md) implements a first pass of Phase 3 B: a shared
+PDF raster allowance, MuPDF store bounds, coalesced memory release, inactive
+image/GIF trimming, text-source pruning, fewer bridge copies and Markdown
+workspace budgets. Desktop RSS profiling, end-to-end measurements and full
+cross-window accounting are still pending; treat the remaining options as
+hypotheses, not confirmed bottlenecks. No release or packaging is part of this
+plan.
 
 ## Questions to answer
 

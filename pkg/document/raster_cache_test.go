@@ -12,9 +12,9 @@ func TestSourceRastersAreBoundedAndUseLRU(t *testing.T) {
 	for page := range source.pages {
 		picture := image.NewRGBA(image.Rect(0, 0, 1024, 1024))
 		source.pages[page].preview = picture
-		source.rasterBytes += rasterBytes(picture)
+		source.rasterBytes.Add(rasterBytes(picture))
 		source.touchRaster(page, false)
-		if source.rasterBytes > maxSourceRasterBytes {
+		if source.rasterBytes.Load() > maxSourceRasterBytes {
 			t.Fatal("source cache exceeded its byte budget")
 		}
 	}
@@ -23,7 +23,7 @@ func TestSourceRastersAreBoundedAndUseLRU(t *testing.T) {
 	}
 	source.touchRaster(4, false)
 	source.pages[0].thumbnail = image.NewRGBA(image.Rect(0, 0, 1024, 1024))
-	source.rasterBytes += rasterBytes(source.pages[0].thumbnail)
+	source.rasterBytes.Add(rasterBytes(source.pages[0].thumbnail))
 	source.touchRaster(0, true)
 	if source.pages[4].preview == nil || source.pages[5].preview != nil {
 		t.Fatal("recently used raster was not retained")
@@ -63,11 +63,32 @@ func TestEvictedPDFPreviewReloadsWithoutChangingSourceOrHistory(t *testing.T) {
 	}
 }
 
+func TestSharedRasterLimitScalesWithLiveSources(t *testing.T) {
+	previous := rasterSourceCount.Load()
+	defer rasterSourceCount.Store(previous)
+	cases := []struct {
+		count int64
+		want  int64
+	}{
+		{0, maxSourceRasterBytes},
+		{1, maxSourceRasterBytes},
+		{2, 64 << 20},
+		{4, maxSharedRasterBytes / 4},
+		{100, minSourceRasterBytes},
+	}
+	for _, tc := range cases {
+		rasterSourceCount.Store(tc.count)
+		if got := sourceRasterLimit(); got != tc.want {
+			t.Fatalf("sourceRasterLimit with %d sources = %d, want %d", tc.count, got, tc.want)
+		}
+	}
+}
+
 func TestSourceTrimPreviews(t *testing.T) {
 	source := &Source{format: FormatPDF, pages: make([]pageData, 3)}
 	source.pages[0].preview = image.NewRGBA(image.Rect(0, 0, 100, 100))
 	source.pages[0].thumbnail = image.NewRGBA(image.Rect(0, 0, 20, 20))
-	source.rasterBytes = rasterBytes(source.pages[0].preview) + rasterBytes(source.pages[0].thumbnail)
+	source.rasterBytes.Store(rasterBytes(source.pages[0].preview) + rasterBytes(source.pages[0].thumbnail))
 
 	source.TrimPreviews()
 	if source.pages[0].preview != nil {
@@ -76,8 +97,8 @@ func TestSourceTrimPreviews(t *testing.T) {
 	if source.pages[0].thumbnail == nil {
 		t.Fatal("thumbnail was trimmed")
 	}
-	if source.rasterBytes != rasterBytes(source.pages[0].thumbnail) {
-		t.Fatalf("unexpected rasterBytes: %d", source.rasterBytes)
+	if source.rasterBytes.Load() != rasterBytes(source.pages[0].thumbnail) {
+		t.Fatalf("unexpected rasterBytes: %d", source.rasterBytes.Load())
 	}
 
 	doc, err := New(source)
@@ -85,7 +106,7 @@ func TestSourceTrimPreviews(t *testing.T) {
 		t.Fatal(err)
 	}
 	source.pages[0].preview = image.NewRGBA(image.Rect(0, 0, 100, 100))
-	source.rasterBytes += rasterBytes(source.pages[0].preview)
+	source.rasterBytes.Add(rasterBytes(source.pages[0].preview))
 	doc.TrimInactive()
 	if source.pages[0].preview != nil {
 		t.Fatal("document TrimInactive did not trim preview")
@@ -93,7 +114,7 @@ func TestSourceTrimPreviews(t *testing.T) {
 
 	source.pages[0].preview = image.NewRGBA(image.Rect(0, 0, 100, 100))
 	source.pages[1].preview = image.NewRGBA(image.Rect(0, 0, 100, 100))
-	source.rasterBytes += rasterBytes(source.pages[0].preview) + rasterBytes(source.pages[1].preview)
+	source.rasterBytes.Add(rasterBytes(source.pages[0].preview) + rasterBytes(source.pages[1].preview))
 
 	doc.TrimPagePreview(0)
 	if source.pages[0].preview != nil {

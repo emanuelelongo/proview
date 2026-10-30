@@ -24,8 +24,7 @@ func RenderPrintPage(data []byte, page int, dpi float64) (image.Image, error) {
 	if len(data) == 0 || page < 0 || page > math.MaxInt32 || math.IsNaN(dpi) || dpi <= 0 || dpi > 600 {
 		return nil, errors.New("pdfengine: invalid print page")
 	}
-	input := C.CBytes(data)
-	defer C.free(input)
+	input := cBytes(data)
 	var result C.pv_result
 	defer C.pv_free_result(&result)
 	C.pv_render_print((*C.uchar)(input), C.size_t(len(data)), C.int(page), C.float(dpi), &result)

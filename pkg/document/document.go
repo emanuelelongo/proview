@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"emanuelelongo/proview/internal/gifplay"
 	"emanuelelongo/proview/internal/pdfengine"
@@ -28,6 +29,13 @@ const (
 	pdfPreviewDPI   = 144
 	pdfThumbnailDPI = 72
 )
+
+// Each Source opens its own MuPDF context, so the library-wide store limit is
+// per source. Keep native resource caching bounded; Go-side raster caches are
+// bounded separately in raster_cache.go.
+func init() {
+	fitz.MaxStore = 32 << 20
+}
 
 type Format string
 
@@ -59,6 +67,7 @@ type Source struct {
 	formsErr          error
 	mu                sync.Mutex
 	sizeMu            sync.RWMutex
+	animationMu       sync.Mutex
 	name              string
 	location          string
 	format            Format
@@ -67,7 +76,9 @@ type Source struct {
 	pdf               *fitz.Document
 	textLayouts       textLayoutCache
 	rasterClock       uint64
-	rasterBytes       int64
+	rasterBytes       atomic.Int64
+	animationBytes    atomic.Int64
+	rasterRegistered  bool
 }
 
 func Load(name string, reader io.Reader) (*Source, error) {
@@ -114,9 +125,17 @@ func loadSource(name, location string, reader io.Reader, importAnnotations bool)
 	}
 	if format == FormatGIF {
 		// Keep oversized animations usable as static images.
-		if animation, e := gifplay.Decode(data, gifplay.MaxBytes); e == nil && animation.Animated() {
-			source.animation = animation
+		source.ensureAnimation()
+		source.animationMu.Lock()
+		animation := source.animation
+		source.animationMu.Unlock()
+		if animation != nil {
 			source.pages[0].preview = animation.NewPlayer().Image()
+		}
+	}
+	if format != FormatPDF {
+		for i := range source.pages {
+			source.rasterBytes.Add(rasterBytes(source.pages[i].preview))
 		}
 	}
 	if pdf != nil {
@@ -134,16 +153,19 @@ func loadSource(name, location string, reader io.Reader, importAnnotations bool)
 					pdf.Close()
 					return nil, e
 				}
+				// The base source owns its own PDF context and raster budget share.
 				// Retained unsupported annotations still need their standard appearances.
 				source.annotationBase.hasPDFAnnotations = hasAnnots
 			}
 		}
 		runtime.SetFinalizer(source, (*Source).Close)
 	}
+	source.registerRasterSource()
 	return source, nil
 }
 
-// Close releases the PDF renderer. Cached page previews remain available.
+// Close releases the PDF renderer, disposable rasters and glyph caches. Original
+// bytes remain available, so a closed source can still be reopened if needed.
 func (s *Source) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,6 +176,17 @@ func (s *Source) Close() {
 		_ = s.pdf.Close()
 		s.pdf = nil
 	}
+	for i := range s.pages {
+		s.pages[i].preview = nil
+		s.pages[i].thumbnail = nil
+	}
+	s.rasterBytes.Store(0)
+	s.textLayouts = textLayoutCache{}
+	s.unregisterRasterSourceLocked()
+	s.animationMu.Lock()
+	s.animation = nil
+	s.animationBytes.Store(0)
+	s.animationMu.Unlock()
 }
 
 func (s *Source) Name() string {
@@ -172,6 +205,12 @@ func (s *Source) Original() []byte {
 	return bytes.Clone(s.original)
 }
 
+// originalBytes exposes the immutable source buffer to internal readers that
+// never mutate it. Avoids a full-file copy for export and page collection.
+func (s *Source) originalBytes() []byte {
+	return s.original
+}
+
 func (s *Source) PageCount() int {
 	return len(s.pages)
 }
@@ -186,22 +225,34 @@ func (s *Source) Preview(page int) (image.Image, error) {
 	if page < 0 || page >= len(s.pages) {
 		return nil, fmt.Errorf("document: page %d out of range", page)
 	}
-	if s.pages[page].preview == nil && s.format == FormatPDF {
-		if err := s.openPDF(); err != nil {
-			return nil, err
-		}
+	if s.pages[page].preview == nil {
 		var preview image.Image
 		var err error
-		if len(fields) > 0 || s.hasPDFAnnotations {
-			preview, err = renderPDFPage(s.original, page, pdfPreviewDPI)
+		if s.format == FormatPDF {
+			if err = s.openPDF(); err != nil {
+				return nil, err
+			}
+			if len(fields) > 0 || s.hasPDFAnnotations {
+				preview, err = renderPDFPage(s.original, page, pdfPreviewDPI)
+			} else {
+				preview, err = s.pdf.ImageDPI(page, pdfPreviewDPI)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("render PDF page %d: %w", page+1, err)
+			}
+			s.rasterBytes.Add(rasterBytes(preview))
 		} else {
-			preview, err = s.pdf.ImageDPI(page, pdfPreviewDPI)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("render PDF page %d: %w", page+1, err)
+			// Inactive image documents release their decoded raster; reopen it
+			// lazily from the immutable encoded bytes.
+			var pages []pageData
+			pages, err = loadImage(s.original)
+			if err != nil {
+				return nil, fmt.Errorf("render image page %d: %w", page+1, err)
+			}
+			preview = pages[0].preview
+			s.rasterBytes.Add(rasterBytes(preview))
 		}
 		s.pages[page].preview = preview
-		s.rasterBytes += rasterBytes(preview)
 		s.sizeMu.Lock()
 		s.pages[page].size = preview.Bounds().Size()
 		s.sizeMu.Unlock()
@@ -212,17 +263,14 @@ func (s *Source) Preview(page int) (image.Image, error) {
 }
 
 func (s *Source) Thumbnail(page int) (image.Image, error) {
-	var fields []pdfengine.FormField
-	if s.format == FormatPDF {
-		fields, _ = s.formFields()
+	if s.format != FormatPDF {
+		return s.Preview(page)
 	}
+	fields, _ := s.formFields()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if page < 0 || page >= len(s.pages) {
 		return nil, fmt.Errorf("document: page %d out of range", page)
-	}
-	if s.format != FormatPDF {
-		return s.pages[page].preview, nil
 	}
 	if s.pages[page].thumbnail == nil {
 		if err := s.openPDF(); err != nil {
@@ -239,7 +287,7 @@ func (s *Source) Thumbnail(page int) (image.Image, error) {
 			return nil, fmt.Errorf("render PDF thumbnail %d: %w", page+1, err)
 		}
 		s.pages[page].thumbnail = thumbnail
-		s.rasterBytes += rasterBytes(thumbnail)
+		s.rasterBytes.Add(rasterBytes(thumbnail))
 	}
 	thumbnail := s.pages[page].thumbnail
 	s.touchRaster(page, true)
