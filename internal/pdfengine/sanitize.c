@@ -56,6 +56,78 @@ void pv_clean_page_tags(fz_context *ctx, pdf_document *doc, pdf_page *page)
     fz_catch(ctx) { fz_rethrow(ctx); }
 }
 
+static void pv_clean_resource_forms(fz_context *ctx, pdf_document *doc, pdf_obj *resources, int depth);
+
+/* Same rules as pv_clean_resource_tags, applied to one reachable Form. */
+static void pv_clean_form(fz_context *ctx, pdf_document *doc, pdf_obj *xobj, int depth)
+{
+    if (!pdf_is_stream(ctx, xobj) || pdf_dict_get(ctx, xobj, PDF_NAME(Subtype)) != PDF_NAME(Form))
+        return;
+    if (pdf_mark_obj(ctx, xobj))
+        return;
+    fz_buffer *buffer = NULL;
+    fz_var(buffer);
+    fz_try(ctx) {
+        pdf_obj *form_resources = pdf_dict_get(ctx, xobj, PDF_NAME(Resources));
+        if (!form_resources)
+            fz_throw(ctx, FZ_ERROR_ARGUMENT, "Redaction of inherited Form resources is not supported");
+        pv_clean_resource_forms(ctx, doc, form_resources, depth + 1);
+        buffer = pv_without_tags(ctx, doc, xobj, form_resources);
+        pdf_update_stream(ctx, doc, xobj, buffer, 0);
+    }
+    fz_always(ctx) {
+        fz_drop_buffer(ctx, buffer);
+        pdf_unmark_obj(ctx, xobj);
+    }
+    fz_catch(ctx) {
+        fz_rethrow(ctx);
+    }
+}
+
+static void pv_clean_resource_forms(fz_context *ctx, pdf_document *doc, pdf_obj *resources, int depth)
+{
+    if (!resources) return;
+    if (depth > 64)
+        fz_throw(ctx, FZ_ERROR_ARGUMENT, "PDF resource nesting is not supported for redaction");
+    if (pdf_mark_obj(ctx, resources)) return;
+    fz_try(ctx) {
+        pdf_obj *xobjects = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
+        int count = pdf_dict_len(ctx, xobjects);
+        for (int i = 0; i < count; ++i)
+            pv_clean_form(ctx, doc, pdf_dict_get_val(ctx, xobjects, i), depth);
+    }
+    fz_always(ctx) {
+        pdf_unmark_obj(ctx, resources);
+    }
+    fz_catch(ctx) {
+        fz_rethrow(ctx);
+    }
+}
+
+/* Text layout needs only the Forms its page can draw: page resources and
+ * annotation appearances. pv_clean_document still walks every xref object. */
+void pv_clean_page_resource_tags(fz_context *ctx, pdf_document *doc, int page_number)
+{
+    pdf_obj *page = pdf_lookup_page_obj(ctx, doc, page_number);
+    pv_clean_resource_forms(ctx, doc, pdf_dict_get_inheritable(ctx, page, PDF_NAME(Resources)), 0);
+    pdf_obj *annots = pdf_dict_get(ctx, page, PDF_NAME(Annots));
+    int count = pdf_array_len(ctx, annots);
+    for (int i = 0; i < count; ++i) {
+        pdf_obj *ap = pdf_dict_get(ctx, pdf_array_get(ctx, annots, i), PDF_NAME(AP));
+        int kinds = pdf_dict_len(ctx, ap);
+        for (int k = 0; k < kinds; ++k) {
+            pdf_obj *appearance = pdf_dict_get_val(ctx, ap, k);
+            if (pdf_is_stream(ctx, appearance)) {
+                pv_clean_form(ctx, doc, appearance, 0);
+                continue;
+            }
+            int states = pdf_dict_len(ctx, appearance);
+            for (int s = 0; s < states; ++s)
+                pv_clean_form(ctx, doc, pdf_dict_get_val(ctx, appearance, s), 0);
+        }
+    }
+}
+
 /* Indirect objects are handled by the outer xref loop. Avoid following cycles
  * and remove hidden-data keys even in directly nested resource dictionaries. */
 static void pv_clean_dict(fz_context *ctx, pdf_obj *object, int depth)

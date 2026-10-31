@@ -188,7 +188,9 @@ func TestDesktopFileRequestsReuseEmptyWindowThenOpenSeparateWorkspace(t *testing
 	}
 	before := len(driver.AllWindows())
 	g.OpenFiles([]string{path})
-	driver.runNext(t)
+	for g.document == nil {
+		driver.runNext(t)
+	}
 	for g.openingFiles {
 		driver.runNext(t)
 	}

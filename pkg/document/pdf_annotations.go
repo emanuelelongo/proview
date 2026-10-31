@@ -331,38 +331,55 @@ func annotationName(d types.Dict, k string) string {
 	return *n
 }
 
+type pdfAnnotationScan struct {
+	base              []byte
+	overlays          []Overlay
+	annotPages        map[int]bool
+	retainedPages     map[int]bool
+	hasPDFAnnotations bool
+	noForms           bool
+}
+
 // Unsupported or malformed objects stay in the immutable source, with their
 // original appearance/actions/resources. Only successfully prepared objects are
 // detached, so opening never destroys content that the editor cannot represent.
-func readPDFAnnotations(data []byte) ([]byte, []Overlay, bool, error) {
+func readPDFAnnotations(data []byte) (pdfAnnotationScan, error) {
+	info, err := pdfengine.InspectPDF(data)
+	if err != nil {
+		log.Printf("event=pdf_annotations_unavailable level=WARN error=%q", err)
+		return pdfAnnotationScan{hasPDFAnnotations: true}, nil
+	}
+	if !info.HasImportable {
+		return pdfAnnotationScan{
+			annotPages: info.AnnotPages,
+			noForms:    !info.HasForms,
+		}, nil
+	}
 	ctx, e := readPDFObjects(data)
 	if e != nil {
 		log.Printf("event=pdf_annotations_unavailable level=WARN error=%q", e)
-		return nil, nil, true, nil
+		return pdfAnnotationScan{hasPDFAnnotations: true, noForms: !info.HasForms}, nil
 	}
 	var previewPixels int64
 	var overlays []Overlay
-	hasAnnots := false
+	var retainedPages map[int]bool
 	for page := 1; page <= ctx.PageCount; page++ {
 		p, _, attrs, e := ctx.PageDict(context.Background(), page, false)
 		if e != nil {
 			log.Printf("event=pdf_annotations_unavailable level=WARN error=%q", e)
-			return nil, nil, true, nil
+			return pdfAnnotationScan{hasPDFAnnotations: true, noForms: !info.HasForms}, nil
 		}
 		list, e := ctx.DereferenceArray(p["Annots"])
 		if e != nil {
 			log.Printf("event=pdf_annotations_unavailable level=WARN error=%q", e)
-			return nil, nil, true, nil
-		}
-		if len(list) > 0 {
-			hasAnnots = true
+			return pdfAnnotationScan{hasPDFAnnotations: true, noForms: !info.HasForms}, nil
 		}
 		retained := types.Array{}
 		for _, ref := range list {
 			a, e := ctx.DereferenceDict(ref)
 			if e != nil {
 				log.Printf("event=pdf_annotations_unavailable level=WARN error=%q", e)
-				return nil, nil, true, nil
+				return pdfAnnotationScan{hasPDFAnnotations: true, noForms: !info.HasForms}, nil
 			}
 			if len(overlays) >= 1024 || previewPixels >= 64*1024*1024 {
 				retained = append(retained, ref)
@@ -379,20 +396,33 @@ func readPDFAnnotations(data []byte) ([]byte, []Overlay, bool, error) {
 		}
 		if len(retained) > 0 {
 			p["Annots"] = retained
+			if retainedPages == nil {
+				retainedPages = make(map[int]bool)
+			}
+			retainedPages[page-1] = true
 		} else {
 			delete(p, "Annots")
 		}
 	}
 	if len(overlays) == 0 {
-		return nil, nil, hasAnnots, nil
+		return pdfAnnotationScan{
+			annotPages: info.AnnotPages,
+			noForms:    !info.HasForms,
+		}, nil
 	}
 	clean, e := writePDFContext(ctx)
 	if e != nil {
 		log.Printf("event=pdf_annotations_unavailable level=WARN error=%q", e)
-		return nil, nil, true, nil
+		return pdfAnnotationScan{hasPDFAnnotations: true, noForms: !info.HasForms}, nil
 	}
 	log.Printf("event=pdf_annotations_loaded objects=%d", len(overlays))
-	return clean, overlays, hasAnnots, nil
+	return pdfAnnotationScan{
+		base:          clean,
+		overlays:      overlays,
+		annotPages:    info.AnnotPages,
+		retainedPages: retainedPages,
+		noForms:       !info.HasForms,
+	}, nil
 }
 func importPDFAnnotation(ctx *model.Context, a types.Dict, g pdfGeometry) (Overlay, bool) {
 	s := Overlay{}

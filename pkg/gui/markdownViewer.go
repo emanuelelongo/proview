@@ -194,6 +194,7 @@ func (v *markdownView) rebuild() {
 				v.pendingReadingOffset = nil
 			}
 			v.updateOutlinePosition()
+			v.editor.ensureGIFPlayback()
 		}
 	} else {
 		v.scroll.Content = v.page
@@ -832,12 +833,14 @@ func (v *markdownView) code(n ast.Node, language string) fyne.CanvasObject {
 	if strings.EqualFold(language, "mermaid") {
 		return v.mermaidBlock(source)
 	}
-	tokens := v.doc.Tokens[n]
+	tokens := v.doc.TokensFor(n)
 	if len(tokens) == 0 {
 		return v.plainCode(source, language)
 	}
 	var segments []widget.RichTextSegment
 	var lastSeg *widget.TextSegment
+	var lastText strings.Builder
+	lastHasNewline := false
 	var lastColors [2]chroma.Colour
 	var lastHasColor bool
 	for _, token := range tokens {
@@ -854,30 +857,42 @@ func (v *markdownView) code(n ast.Node, language string) fyne.CanvasObject {
 			colorName = fyne.ThemeColorName("markdown-token-" + strconv.Itoa(int(token.Type)))
 		}
 		singleLine := !strings.Contains(strings.TrimSuffix(token.Value, "\n"), "\n")
-		if lastSeg != nil && !strings.Contains(lastSeg.Text, "\n") && singleLine {
+		if lastSeg != nil && !lastHasNewline && singleLine {
 			if pureSpace {
-				lastSeg.Text += token.Value
+				lastText.WriteString(token.Value)
+				lastHasNewline = lastHasNewline || strings.Contains(token.Value, "\n")
 				continue
 			}
 			if !lastHasColor {
-				lastSeg.Text += token.Value
+				lastText.WriteString(token.Value)
+				lastHasNewline = lastHasNewline || strings.Contains(token.Value, "\n")
 				lastSeg.Style.ColorName = colorName
 				lastColors = colors
 				lastHasColor = true
 				continue
 			}
 			if colors == lastColors {
-				lastSeg.Text += token.Value
+				lastText.WriteString(token.Value)
+				lastHasNewline = lastHasNewline || strings.Contains(token.Value, "\n")
 				continue
 			}
 		}
+		if lastSeg != nil {
+			lastSeg.Text = lastText.String()
+		}
 		st := widget.RichTextStyleCodeInline
 		st.ColorName = colorName
-		seg := &widget.TextSegment{Text: token.Value, Style: st}
+		seg := &widget.TextSegment{Style: st}
 		segments = append(segments, seg)
 		lastSeg = seg
+		lastText.Reset()
+		lastText.WriteString(token.Value)
+		lastHasNewline = strings.Contains(token.Value, "\n")
 		lastColors = colors
 		lastHasColor = !pureSpace
+	}
+	if lastSeg != nil {
+		lastSeg.Text = lastText.String()
 	}
 	text := v.selectable(segments...)
 	text.Wrapping = fyne.TextWrapOff

@@ -32,7 +32,7 @@ func Load(name string, reader io.Reader) (*Mesh, error) {
 		if count > MaxTriangles {
 			return nil, errors.New("STL: too many triangles")
 		}
-		m.Triangles = make([]Triangle, 0, count)
+		m.triangles = make([]Triangle, 0, count)
 		for i := range count {
 			record := data[84+i*50 : 84+(i+1)*50]
 			var t Triangle
@@ -49,11 +49,11 @@ func Load(name string, reader io.Reader) (*Mesh, error) {
 			return nil, err
 		}
 	}
-	if len(m.Triangles) == 0 {
+	if len(m.triangles) == 0 {
 		return nil, errors.New("STL: no non-degenerate triangles")
 	}
-	m.Min, m.Max = m.Triangles[0].Vertices[0], m.Triangles[0].Vertices[0]
-	for _, t := range m.Triangles {
+	m.Min, m.Max = m.triangles[0].Vertices[0], m.triangles[0].Vertices[0]
+	for _, t := range m.triangles {
 		for _, v := range t.Vertices {
 			m.Min = Vector{math.Min(m.Min.X, v.X), math.Min(m.Min.Y, v.Y), math.Min(m.Min.Z, v.Z)}
 			m.Max = Vector{math.Max(m.Max.X, v.X), math.Max(m.Max.Y, v.Y), math.Max(m.Max.Z, v.Z)}
@@ -79,10 +79,10 @@ func (m *Mesh) add(t Triangle) error {
 	if a.Unit().Cross(b.Unit()).Dot(a.Unit().Cross(b.Unit())) < 1e-24 {
 		return nil
 	}
-	if len(m.Triangles) >= MaxTriangles {
+	if len(m.triangles) >= MaxTriangles {
 		return errors.New("STL: too many triangles")
 	}
-	m.Triangles = append(m.Triangles, t)
+	m.triangles = append(m.triangles, t)
 	return nil
 }
 func parseVector(fields []string) (Vector, error) {

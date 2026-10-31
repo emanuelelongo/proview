@@ -2,7 +2,9 @@ package document
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"image"
 	"image/color"
 	"image/draw"
@@ -29,12 +31,23 @@ func (d *Document) TextSelectionKey(page int) string {
 	}
 	security := ""
 	if d.HasRedactions() {
-		var b strings.Builder
-		fmt.Fprintf(&b, "%d", d.SourceRevision())
+		h := fnv.New64a()
+		var data [8]byte
+		binary.LittleEndian.PutUint64(data[:], d.SourceRevision())
+		_, _ = h.Write(data[:])
 		for _, r := range d.redactions {
-			fmt.Fprintf(&b, ";%d:%d:%v", r.ID, r.PageID, r.Quads)
+			binary.LittleEndian.PutUint64(data[:], uint64(r.ID))
+			_, _ = h.Write(data[:])
+			binary.LittleEndian.PutUint64(data[:], r.PageID)
+			_, _ = h.Write(data[:])
+			for _, q := range r.Quads {
+				for _, p := range [...]float64{q.UL.X, q.UL.Y, q.UR.X, q.UR.Y, q.LL.X, q.LL.Y, q.LR.X, q.LR.Y} {
+					binary.LittleEndian.PutUint64(data[:], math.Float64bits(p))
+					_, _ = h.Write(data[:])
+				}
+			}
 		}
-		security = b.String()
+		security = fmt.Sprintf("%x", h.Sum64())
 	}
 	if d.Format() == FormatPDF {
 		p := d.pages[page]
@@ -63,7 +76,7 @@ func (d *Document) SelectableText(ctx context.Context, page int, engine ocr.Engi
 		if err = ctx.Err(); err != nil {
 			return textselect.Layout{}, err
 		}
-		source, err := LoadBytes("ocr-sanitized.pdf", "ocr-sanitized.pdf", data)
+		source, err := loadSource("ocr-sanitized.pdf", "ocr-sanitized.pdf", data, false)
 		if err != nil {
 			return textselect.Layout{}, err
 		}
@@ -78,7 +91,7 @@ func (d *Document) SelectableText(ctx context.Context, page int, engine ocr.Engi
 	var err error
 	transform := d.imageTransform
 	if d.Format() == FormatPDF {
-		geometry, e := d.TextGeometry(page)
+		geometry, e := d.textGeometry(page, false)
 		if e != nil {
 			return textselect.Layout{}, e
 		}

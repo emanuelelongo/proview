@@ -28,14 +28,21 @@ type ocrState struct {
 	cache     map[string]*ocrEntry
 	requested []int
 	running   *ocrJob
+	timer     *time.Timer
 	clock     uint64
 }
 
 var ocrSetupWarningShown bool // Accessed only on the Fyne event thread.
 
+const recognitionDebounce = 140 * time.Millisecond
+
 func (g *Gui) stopOCR() {
 	g.stopQRCodes()
 	if g.ocr != nil {
+		if g.ocr.timer != nil {
+			g.ocr.timer.Stop()
+			g.ocr.timer = nil
+		}
 		if g.ocr.running != nil {
 			g.ocr.running.cancel()
 		}
@@ -73,20 +80,79 @@ func (g *Gui) syncOCR() {
 	// Undo, but the bounded LRU never serves them to a different content key.
 
 	pages := g.recognitionPages()
-	s.requested = pages
+	g.setOCRRequests(pages)
 	if job := s.running; job != nil {
-		wanted := false
-		for _, p := range pages {
-			if p == job.page {
-				wanted = true
-			}
-		}
-		if job.doc != g.document || g.document.TextSelectionKey(job.page) != job.key || !wanted {
+		if job.doc != g.document || g.document.TextSelectionKey(job.page) != job.key || !containsPage(s.requested, job.page) {
 			job.cancel()
 		}
+	}
+	g.scheduleOCRDispatch(s)
+}
+
+func containsPage(pages []int, page int) bool {
+	for _, candidate := range pages {
+		if candidate == page {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Gui) setOCRRequests(pages []int) {
+	if g.ocr == nil {
 		return
 	}
-	g.dispatchOCR()
+	g.ocr.requested = append(g.ocr.requested[:0], pages...)
+}
+
+func (g *Gui) scheduleOCRDispatch(s *ocrState) {
+	if s == nil || s.timer != nil || len(s.requested) == 0 {
+		return
+	}
+	pending := false
+	for _, page := range s.requested {
+		if g.document == nil || page < 0 || page >= g.document.PageCount() || s.cache[g.document.TextSelectionKey(page)] == nil {
+			pending = true
+			break
+		}
+	}
+	if !pending {
+		return
+	}
+	s.timer = time.AfterFunc(recognitionDebounce, func() {
+		fyne.Do(func() {
+			if g.ocr != s {
+				return
+			}
+			s.timer = nil
+			g.dispatchOCR()
+		})
+	})
+}
+
+func (g *Gui) requestOCRPage(page int) {
+	if g.document == nil || !ocr.Enabled() {
+		return
+	}
+	if g.ocr == nil {
+		g.ocr = &ocrState{engine: ocr.NewEngine(), doc: g.document, cache: map[string]*ocrEntry{}}
+	}
+	s := g.ocr
+	if s.doc != g.document {
+		g.stopOCR()
+		s.doc = g.document
+	}
+	if page < 0 || page >= g.document.PageCount() || containsPage(s.requested, page) {
+		return
+	}
+	if s.cache[g.document.TextSelectionKey(page)] != nil {
+		return
+	}
+	s.requested = append([]int{page}, s.requested...)
+	if s.running != nil && (s.running.page != page || s.running.doc != g.document) {
+		s.running.cancel()
+	}
+	g.scheduleOCRDispatch(s)
 }
 func (g *Gui) dispatchOCR() {
 	s := g.ocr
@@ -107,9 +173,15 @@ func (g *Gui) dispatchOCR() {
 		job := &ocrJob{doc: g.document, page: page, key: key, cancel: cancel}
 		s.running = job
 		snapshot := g.document.RenderingSnapshot()
+		slots := g.pdfRenderSlots()
 		started := time.Now()
 		go func() {
-			layout, err := snapshot.SelectableText(ctx, page, s.engine)
+			var layout textselect.Layout
+			err := withPDFRenderSlot(ctx, slots, func() error {
+				var err error
+				layout, err = snapshot.SelectableText(ctx, page, s.engine)
+				return err
+			})
 			// Do not log recognized text or file paths.
 			elapsed := time.Since(started)
 			canceled := errors.Is(ctx.Err(), context.Canceled)
@@ -170,28 +242,31 @@ func (g *Gui) completeOCR(job *ocrJob, layout textselect.Layout, err error, canc
 		}
 		delete(s.cache, oldest)
 	}
-	g.dispatchOCR()
+	g.scheduleOCRDispatch(s)
 }
 
 func (g *Gui) recognitionPages() []int {
 	pages := []int{0}
 	if g.document.Format() == document.FormatPDF {
-		pages = nil
 		if g.activePDFPage >= 0 && g.activePDFPage < g.document.PageCount() {
-			pages = append(pages, g.activePDFPage)
+			pages[0] = g.activePDFPage
+		} else {
+			pages = nil
 		}
-		if g.pdfScroll != nil {
-			top, bottom := g.pdfScroll.Offset.Y, g.pdfScroll.Offset.Y+g.pdfScroll.Size().Height
-			first, end := g.visiblePDFPageRange(top, bottom)
-			for page := first; page < end; page++ {
-				if page != g.activePDFPage {
-					pages = append(pages, page)
-				}
-			}
-		}
-	}
-	if len(pages) > 20 {
-		pages = pages[:20]
 	}
 	return pages
+}
+
+func (g *Gui) recognitionEngine() ocr.Engine {
+	if !ocr.Enabled() || g.closed || g.document == nil {
+		return nil
+	}
+	if g.ocr == nil {
+		g.ocr = &ocrState{engine: ocr.NewEngine(), doc: g.document, cache: map[string]*ocrEntry{}}
+	} else if g.ocr.doc != g.document {
+		engine := g.ocr.engine
+		g.stopOCR()
+		g.ocr.doc, g.ocr.engine = g.document, engine
+	}
+	return g.ocr.engine
 }

@@ -39,7 +39,9 @@ func TestThumbnailViewportStartsLoadingAfterLayoutAndOnResize(t *testing.T) {
 	}
 	// Opening with no usable sidebar size must recover without any scrolling.
 	g.sidebar.viewport.Resize(fyne.NewSize(140, 110))
-	driver.runNext(t)
+	for !g.pdfThumbLoading[0] || !g.pdfThumbLoading[1] || !g.pdfThumbLoading[2] {
+		driver.runNext(t)
+	}
 	if !g.pdfThumbLoading[0] || !g.pdfThumbLoading[1] || !g.pdfThumbLoading[2] || g.pdfThumbLoading[3] {
 		t.Fatal("first layout did not load visible pages plus one lookahead")
 	}

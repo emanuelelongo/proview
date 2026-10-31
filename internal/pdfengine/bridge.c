@@ -19,14 +19,19 @@ static void pv_silent_message(void *opaque, const char *message)
     (void)message;
 }
 
-static fz_context *pv_context(void)
+static fz_context *pv_context_with_store(size_t max_store)
 {
-    fz_context *ctx = fz_new_context(NULL, NULL, FZ_STORE_DEFAULT);
+    fz_context *ctx = fz_new_context(NULL, NULL, max_store);
     if (ctx) {
         fz_set_error_callback(ctx, pv_silent_message, NULL);
         fz_set_warning_callback(ctx, pv_silent_message, NULL);
     }
     return ctx;
+}
+
+static fz_context *pv_context(void)
+{
+    return pv_context_with_store(FZ_STORE_DEFAULT);
 }
 
 static pdf_document *pv_open(fz_context *ctx, const unsigned char *data, size_t length)
@@ -59,7 +64,7 @@ static pv_point pv_normalize(fz_point p, fz_rect bounds)
 
 void pv_layout(const unsigned char *data, size_t length, int page_number, pv_result *result)
 {
-    fz_context *ctx = pv_context();
+    fz_context *ctx = pv_context_with_store(16 << 20);
     pdf_document *doc = NULL;
     pdf_page *page = NULL;
     fz_stext_page *text = NULL;
@@ -69,7 +74,7 @@ void pv_layout(const unsigned char *data, size_t length, int page_number, pv_res
     if (!ctx) { pv_error(result, "Cannot create MuPDF context"); return; }
     fz_try(ctx) {
         doc = pv_open(ctx, data, length);
-        pv_clean_resource_tags(ctx, doc);
+        pv_clean_page_resource_tags(ctx, doc, page_number);
         page = pdf_load_page(ctx, doc, page_number);
         pv_clean_page_tags(ctx, doc, page);
         fz_rect bounds = fz_bound_page(ctx, &page->super);
@@ -307,9 +312,100 @@ static pdf_obj *pv_reset_action(fz_context *ctx, pdf_obj *obj)
     return action;
 }
 
+static int pv_page_has_widget(fz_context *ctx, pdf_obj *page_obj)
+{
+    pdf_obj *annots = pdf_dict_get(ctx, page_obj, PDF_NAME(Annots));
+    int count = pdf_array_len(ctx, annots);
+    for (int i = 0; i < count; ++i) {
+        pdf_obj *annot = pdf_array_get(ctx, annots, i);
+        if (pdf_name_eq(ctx, pdf_dict_get(ctx, annot, PDF_NAME(Subtype)), PDF_NAME(Widget)))
+            return 1;
+    }
+    return 0;
+}
+
+static int pv_annot_is_importable(fz_context *ctx, pdf_obj *annot)
+{
+    pdf_obj *subtype = pdf_dict_get(ctx, annot, PDF_NAME(Subtype));
+    return pdf_name_eq(ctx, subtype, PDF_NAME(FreeText)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Ink)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Highlight)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Square)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Circle)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Line)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Polygon)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Stamp));
+}
+
+static int pv_annot_is_visual(fz_context *ctx, pdf_obj *annot)
+{
+    int flags = pdf_dict_get_int(ctx, annot, PDF_NAME(F));
+    if (flags & (PDF_ANNOT_IS_INVISIBLE | PDF_ANNOT_IS_HIDDEN | PDF_ANNOT_IS_NO_VIEW))
+        return 0;
+    pdf_obj *subtype = pdf_dict_get(ctx, annot, PDF_NAME(Subtype));
+    if (pdf_name_eq(ctx, subtype, PDF_NAME(Popup)))
+        return 0;
+    if (pdf_name_eq(ctx, subtype, PDF_NAME(Link))) {
+        if (pdf_dict_get(ctx, annot, PDF_NAME(AP)))
+            return 1;
+        pdf_obj *bs = pdf_dict_get(ctx, annot, PDF_NAME(BS));
+        if (bs)
+            return pdf_dict_get_real(ctx, bs, PDF_NAME(W)) > 0;
+        pdf_obj *border = pdf_dict_get(ctx, annot, PDF_NAME(Border));
+        if (pdf_is_array(ctx, border) && pdf_array_len(ctx, border) >= 3)
+            return pdf_array_get_real(ctx, border, 2) > 0;
+        return 0;
+    }
+    return 1;
+}
+
+void pv_free_pdf_info(pv_pdf_info *result)
+{
+    free(result->annot_pages);
+}
+
+void pv_inspect_pdf(const unsigned char *data, size_t length, pv_pdf_info *result)
+{
+    fz_context *ctx = pv_context_with_store(16 << 20);
+    pdf_document *doc = NULL;
+    fz_var(doc);
+    if (!ctx) { snprintf(result->error, sizeof(result->error), "Cannot create MuPDF context"); return; }
+    fz_try(ctx) {
+        doc = pv_open(ctx, data, length);
+        pdf_obj *form = pdf_dict_get(ctx, pdf_dict_get(ctx, pdf_trailer(ctx, doc), PDF_NAME(Root)), PDF_NAME(AcroForm));
+        if (pdf_dict_get(ctx, form, PDF_NAME(XFA)) ||
+            pdf_array_len(ctx, pdf_dict_get(ctx, form, PDF_NAME(Fields))) > 0)
+            result->has_forms = 1;
+        int pages = pdf_count_pages(ctx, doc);
+        for (int n = 0; n < pages; ++n) {
+            pdf_obj *page_obj = pdf_lookup_page_obj(ctx, doc, n);
+            pdf_obj *annots = pdf_dict_get(ctx, page_obj, PDF_NAME(Annots));
+            int count = pdf_array_len(ctx, annots);
+            if (!count) continue;
+            int has_visual = 0;
+            for (int i = 0; i < count; ++i) {
+                pdf_obj *annot = pdf_array_get(ctx, annots, i);
+                if (!result->has_importable && pv_annot_is_importable(ctx, annot))
+                    result->has_importable = 1;
+                if (!has_visual && pv_annot_is_visual(ctx, annot))
+                    has_visual = 1;
+            }
+            if (has_visual) {
+                int *list = realloc(result->annot_pages, (result->annot_page_count + 1) * sizeof(int));
+                if (!list) fz_throw(ctx, FZ_ERROR_SYSTEM, "Cannot allocate annotation page list");
+                result->annot_pages = list;
+                result->annot_pages[result->annot_page_count++] = n;
+            }
+        }
+    }
+    fz_always(ctx) { pdf_drop_document(ctx, doc); }
+    fz_catch(ctx) { snprintf(result->error, sizeof(result->error), "%s", fz_caught_message(ctx)); fz_report_error(ctx); }
+    fz_drop_context(ctx);
+}
+
 void pv_read_forms(const unsigned char *data, size_t length, pv_form_result *result)
 {
-    fz_context *ctx = pv_context();
+    fz_context *ctx = pv_context_with_store(16 << 20);
     pdf_document *doc = NULL;
     pdf_page *page = NULL;
     fz_var(doc); fz_var(page);
@@ -321,6 +417,8 @@ void pv_read_forms(const unsigned char *data, size_t length, pv_form_result *res
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "XFA forms are not supported");
         int pages = pdf_array_len(ctx, pdf_dict_get(ctx, form, PDF_NAME(Fields))) ? pdf_count_pages(ctx, doc) : 0;
         for (int n = 0; n < pages; ++n) {
+            if (!pv_page_has_widget(ctx, pdf_lookup_page_obj(ctx, doc, n)))
+                continue;
             page = pdf_load_page(ctx, doc, n);
             fz_rect bounds = fz_bound_page(ctx, &page->super);
             for (pdf_annot *w = pdf_first_widget(ctx, page); w; w = pdf_next_widget(ctx, w)) {
@@ -687,4 +785,134 @@ void pv_render_forms(const unsigned char *data, size_t length, int number, float
     }
     fz_catch(ctx) { pv_error(result, fz_caught_message(ctx)); }
     fz_drop_context(ctx);
+}
+
+struct pv_form_renderer {
+    fz_context *ctx;
+    pdf_document *doc;
+    fz_pixmap *pending_pixmap;
+    unsigned char *data;
+    size_t length;
+};
+
+pv_form_renderer *pv_form_renderer_new(const unsigned char *data, size_t length, pv_result *result)
+{
+    pv_form_renderer *renderer = calloc(1, sizeof(*renderer));
+    if (!renderer) { pv_error(result, "Cannot allocate form renderer"); return NULL; }
+    renderer->data = malloc(length);
+    if (!renderer->data) {
+        free(renderer);
+        pv_error(result, "Cannot allocate form document bytes");
+        return NULL;
+    }
+    memcpy(renderer->data, data, length);
+    renderer->length = length;
+    /* Persistent renderers should not inherit MuPDF's much larger default store. */
+    renderer->ctx = pv_context_with_store(16 << 20);
+    if (!renderer->ctx) {
+        free(renderer->data);
+        free(renderer);
+        pv_error(result, "Cannot create MuPDF context");
+        return NULL;
+    }
+    fz_try(renderer->ctx) {
+        renderer->doc = pv_open(renderer->ctx, renderer->data, renderer->length);
+    }
+    fz_catch(renderer->ctx) {
+        pv_error(result, fz_caught_message(renderer->ctx));
+        pdf_drop_document(renderer->ctx, renderer->doc);
+        fz_drop_context(renderer->ctx);
+        free(renderer->data);
+        free(renderer);
+        return NULL;
+    }
+    return renderer;
+}
+
+void pv_form_renderer_drop(pv_form_renderer *renderer)
+{
+    if (!renderer) return;
+    fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+    pdf_drop_document(renderer->ctx, renderer->doc);
+    fz_drop_context(renderer->ctx);
+    free(renderer->data);
+    free(renderer);
+}
+
+void pv_form_renderer_prepare(pv_form_renderer *renderer, int number, float dpi, pv_result *result)
+{
+    if (!renderer) {
+        pv_error(result, "Invalid form renderer");
+        return;
+    }
+    pdf_page *page = NULL;
+    fz_pixmap *pixmap = NULL;
+    fz_var(page); fz_var(pixmap);
+    fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+    renderer->pending_pixmap = NULL;
+    fz_try(renderer->ctx) {
+        pv_prepare_signature_previews(renderer->ctx, renderer->doc, number);
+        page = pdf_load_page(renderer->ctx, renderer->doc, number);
+        pv_update_form_page(renderer->ctx, renderer->doc, page);
+        pixmap = fz_new_pixmap_from_page(renderer->ctx, &page->super,
+            fz_scale(dpi/72, dpi/72), fz_device_rgb(renderer->ctx), 1);
+        int components = fz_pixmap_components(renderer->ctx, pixmap);
+        int source_stride = fz_pixmap_stride(renderer->ctx, pixmap);
+        if ((components != 3 && components != 4) ||
+            source_stride < fz_pixmap_width(renderer->ctx, pixmap) * components)
+            fz_throw(renderer->ctx, FZ_ERROR_ARGUMENT, "Invalid form preview raster");
+        result->raster_width = fz_pixmap_width(renderer->ctx, pixmap);
+        result->raster_height = fz_pixmap_height(renderer->ctx, pixmap);
+    }
+    fz_always(renderer->ctx) {
+        fz_drop_page(renderer->ctx, (fz_page *)page);
+    }
+    fz_catch(renderer->ctx) {
+        pv_error(result, fz_caught_message(renderer->ctx));
+        fz_drop_pixmap(renderer->ctx, pixmap);
+        return;
+    }
+    renderer->pending_pixmap = pixmap;
+}
+
+void pv_form_renderer_discard(pv_form_renderer *renderer)
+{
+    if (!renderer) return;
+    fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+    renderer->pending_pixmap = NULL;
+}
+
+void pv_form_renderer_copy(pv_form_renderer *renderer, unsigned char *pixels,
+    int width, int height, int stride, pv_result *result)
+{
+    if (!renderer || !renderer->pending_pixmap || !pixels || width <= 0 || height <= 0 ||
+        stride < width * 4) {
+        pv_error(result, "Invalid form renderer output raster");
+        return;
+    }
+    int actual_width = fz_pixmap_width(renderer->ctx, renderer->pending_pixmap);
+    int actual_height = fz_pixmap_height(renderer->ctx, renderer->pending_pixmap);
+    int components = fz_pixmap_components(renderer->ctx, renderer->pending_pixmap);
+    int source_stride = fz_pixmap_stride(renderer->ctx, renderer->pending_pixmap);
+    unsigned char *samples = fz_pixmap_samples(renderer->ctx, renderer->pending_pixmap);
+    if (actual_width != width || actual_height != height ||
+        (components != 3 && components != 4) || source_stride < actual_width * components) {
+        pv_error(result, "Form preview raster dimensions changed");
+        fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+        renderer->pending_pixmap = NULL;
+        return;
+    }
+    for (int y = 0; y < actual_height; ++y) {
+        unsigned char *src = samples + (size_t)y * source_stride;
+        unsigned char *dst = pixels + (size_t)y * stride;
+        if (components == 4) memcpy(dst, src, (size_t)actual_width * 4);
+        else for (int x = 0; x < actual_width; ++x) {
+            dst[x*4+0] = src[x*3+0];
+            dst[x*4+1] = src[x*3+1];
+            dst[x*4+2] = src[x*3+2];
+            dst[x*4+3] = 0xff;
+        }
+    }
+    fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+    renderer->pending_pixmap = NULL;
 }

@@ -255,7 +255,15 @@ func (g *Gui) refreshDocumentSidebar() {
 	if g.documentList == nil {
 		return
 	}
-	g.cancelDocumentDrag()
+	oldThumbs := make(map[*editorDocument]documentThumbnail, len(g.documentThumbs))
+	oldOrder := make([]*editorDocument, 0, len(g.documentThumbs))
+	for _, thumb := range g.documentThumbs {
+		oldThumbs[thumb.entry] = thumb
+		oldOrder = append(oldOrder, thumb.entry)
+	}
+	if !slices.Equal(oldOrder, g.documents) || g.documentDrag != nil || g.documentPress != nil {
+		g.cancelDocumentDrag()
+	}
 	g.documentThumbs = nil
 	g.normalizeDocumentSelection()
 	if g.activeDocument != nil && g.document != nil && g.document.Format() != document.FormatPDF {
@@ -265,14 +273,22 @@ func (g *Gui) refreshDocumentSidebar() {
 		g.ensureMarkdownThumbnail(entry)
 		g.ensureModelThumbnail(entry)
 	}
-	// Reuse immutable image/model previews; switching never renders on the UI thread.
-	g.documentList.RemoveAll()
+	// Reuse cards and their input widgets across edits. Rebuilding the entire
+	// list on every revision discarded focus, drag targets and widget state.
+	objects := make([]fyne.CanvasObject, 0, max(0, len(g.documents)*2-1))
 	if len(g.documents) > 1 {
 		for index, entry := range g.documents {
 			if index > 0 {
 				divider := canvas.NewRectangle(theme.Color(theme.ColorNameSeparator))
 				divider.SetMinSize(fyne.NewSize(0, 2))
-				g.documentList.Add(divider)
+				objects = append(objects, divider)
+			}
+			previewCard := entry.thumbnail != nil && (entry.markdown != nil || entry.mesh != nil || entry.doc != nil && entry.doc.Format() != document.FormatPDF)
+			if existing, ok := oldThumbs[entry]; ok && existing.preview != nil == previewCard {
+				g.updateDocumentThumbnail(existing, entry, previewCard)
+				objects = append(objects, existing.card)
+				g.documentThumbs = append(g.documentThumbs, existing)
+				continue
 			}
 			if entry.thumbnail != nil && (entry.markdown != nil || entry.mesh != nil || entry.doc != nil && entry.doc.Format() != document.FormatPDF) {
 				preview := canvas.NewImageFromImage(entry.thumbnail)
@@ -294,7 +310,7 @@ func (g *Gui) refreshDocumentSidebar() {
 				tap.onSecondary = func(event *fyne.PointEvent) { g.documentContextMenu(entry, event) }
 				card := container.NewStack(preview, border, tap)
 				g.configureDocumentDrag(entry, card, tap, preview)
-				g.documentList.Add(card)
+				objects = append(objects, card)
 				continue
 			}
 			name := ""
@@ -321,9 +337,11 @@ func (g *Gui) refreshDocumentSidebar() {
 			tap.onSecondary = func(event *fyne.PointEvent) { g.documentContextMenu(entry, event) }
 			card := container.NewStack(button, tap)
 			g.configureDocumentDrag(entry, card, tap, nil)
-			g.documentList.Add(card)
+			objects = append(objects, card)
 		}
 	}
+	g.documentList.Objects = objects
+	g.documentList.Refresh()
 	if g.document != nil && g.document.Format() == document.FormatPDF {
 		g.thumbList.Show()
 	} else {
@@ -356,6 +374,50 @@ func (g *Gui) refreshDocumentSidebar() {
 		g.sidebarSplit.relayout()
 	}
 	g.updateSelectionActions()
+}
+
+func (g *Gui) updateDocumentThumbnail(thumb documentThumbnail, entry *editorDocument, previewCard bool) {
+	if previewCard {
+		thumb.preview.Image = entry.thumbnail
+		thumb.preview.FillMode = canvas.ImageFillContain
+		thumb.preview.ScaleMode = canvas.ImageScaleFastest
+		width := defaultSidebarWidth
+		if g.sidebarSplit != nil {
+			width = g.sidebarSplit.width
+		}
+		thumb.preview.SetMinSize(thumbnailSizeForSidebar(entry.thumbnail.Bounds().Size(), width))
+		thumb.preview.Refresh()
+		if border, ok := thumb.card.Objects[1].(*canvas.Rectangle); ok {
+			border.Show()
+			if !g.documentSelection[entry] {
+				border.Hide()
+			}
+			border.Refresh()
+		}
+		return
+	}
+	if button, ok := thumb.card.Objects[0].(*widget.Button); ok {
+		name := ""
+		if entry.doc != nil {
+			name = entry.doc.Name()
+			if entry.doc.Dirty() {
+				name = "• " + name
+			}
+		} else if entry.markdown != nil {
+			name = entry.markdown.Name
+		} else if entry.mesh != nil {
+			name = "Loading…"
+			if entry.thumbnailFailed {
+				name = "Preview unavailable"
+			}
+		}
+		button.SetText(name)
+		button.Importance = widget.LowImportance
+		if g.documentSelection[entry] {
+			button.Importance = widget.HighImportance
+		}
+		button.Refresh()
+	}
 }
 
 func (g *Gui) documentContextMenu(entry *editorDocument, event *fyne.PointEvent) {

@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -95,6 +96,7 @@ type Gui struct {
 	pdfResident, pdfThumbResident     map[int]bool
 	pdfBaseKeys                       map[int]document.PageBaseKey
 	pdfLoadSlots                      chan struct{}
+	pdfLoadSlotsOnce                  sync.Once
 	pdfPageJobs, pdfThumbJobs         map[int]*pdfRasterJob
 	pdfCrops                          map[int]*cropOverlay
 	app                               fyne.App

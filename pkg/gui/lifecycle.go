@@ -135,6 +135,16 @@ func (g *Gui) detachDocumentView() {
 	g.pdfCrops = nil
 	g.pdfPageIDs = nil
 	g.pdfThumbDropIndicators = nil
+	for _, img := range g.pdfThumbImages {
+		if img != nil {
+			img.Image = nil
+		}
+	}
+	for _, img := range g.pdfPageImages {
+		if img != nil {
+			img.Image = nil
+		}
+	}
 	g.pdfThumbImages, g.pdfPageImages = nil, nil
 	g.pdfThumbPlaceholders = nil
 	g.pdfThumbBorders, g.pdfPageBorders = nil, nil

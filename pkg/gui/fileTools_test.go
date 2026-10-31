@@ -75,7 +75,13 @@ func TestImageWindowsShareAppAndCloseIndependently(t *testing.T) {
 
 func TestEscapeCancelsPDFCrop(t *testing.T) {
 	crop := newCropOverlay()
+	if crop.controlsInitialized || crop.rect != nil || len(crop.handles) != 0 {
+		t.Fatal("inactive crop overlay eagerly created its controls")
+	}
 	crop.Activate(image.Rect(0, 0, 100, 100), nil)
+	if !crop.controlsInitialized || len(crop.handles) != 4 {
+		t.Fatal("activating crop did not initialize its controls")
+	}
 	g := &Gui{pdfCrops: map[int]*cropOverlay{1: crop}}
 	if !g.cancelCurrentOperation() || crop.active {
 		t.Fatal("Escape did not cancel PDF crop")

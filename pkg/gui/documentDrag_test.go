@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/storage"
 )
@@ -49,6 +50,31 @@ func TestDocumentThumbnailDragPreservesStateAndSessionOrder(t *testing.T) {
 	want := []string{filepath.Join(directory, "second.png"), filepath.Join(directory, "third.png"), filepath.Join(directory, "first.png")}
 	if !slices.Equal(paths, want) {
 		t.Fatalf("session paths = %v, want %v", paths, want)
+	}
+}
+
+func TestDocumentSidebarRetainsWidgetsAcrossDocumentEdits(t *testing.T) {
+	g, _ := newDropTestGui(t)
+	g.addDocument(testDocument(t, 40, 30), nil, nil)
+	g.addDocument(testDocument(t, 40, 30), nil, nil)
+	entry := g.documents[0]
+	before := g.documentThumbs[0]
+	tap := before.card.Objects[2]
+	entry.doc.MarkUnsaved()
+	g.refreshDocumentSidebar()
+	after := g.documentThumbs[0]
+	if before.card != after.card || before.preview != after.preview || before.marker != after.marker {
+		t.Fatal("document edit recreated its persistent sidebar card")
+	}
+	if after.card.Objects[2] != tap {
+		t.Fatal("document edit replaced the card's input widget")
+	}
+	if button, ok := after.card.Objects[0].(*canvas.Image); ok {
+		if button.Image != entry.thumbnail {
+			t.Fatal("sidebar preview does not use the retained document thumbnail")
+		}
+	} else {
+		t.Fatalf("preview card starts with %T", after.card.Objects[0])
 	}
 }
 

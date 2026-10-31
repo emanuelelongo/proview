@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"image"
+	"image/color"
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
@@ -62,6 +64,68 @@ func TestFillFormsPreservesWidgetsAndAppearances(t *testing.T) {
 	}
 	if reflect.DeepEqual(preview, second) {
 		t.Fatal("second edit did not update rendered appearance")
+	}
+}
+
+func TestPersistentFormRendererMatchesOneShotAcrossStridesAndDPI(t *testing.T) {
+	input, err := os.ReadFile("testdata/forms.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewFormRenderer(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Close()
+	baseline, err := renderer.RenderPage(0, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dpi := range []float64{72, 144, 216, 288} {
+		got, err := renderer.RenderPage(0, dpi)
+		if err != nil {
+			t.Fatalf("persistent render at %g DPI: %v", dpi, err)
+		}
+		want, err := RenderFormPage(input, 0, dpi)
+		if err != nil {
+			t.Fatalf("one-shot render at %g DPI: %v", dpi, err)
+		}
+		if got.Bounds() != want.Bounds() {
+			t.Fatalf("persistent render at %g DPI bounds = %v, want %v", dpi, got.Bounds(), want.Bounds())
+		}
+		for y := got.Bounds().Min.Y; y < got.Bounds().Max.Y; y++ {
+			for x := got.Bounds().Min.X; x < got.Bounds().Max.X; x++ {
+				if got.RGBAAt(x, y) != color.RGBAModel.Convert(want.At(x, y)).(color.RGBA) {
+					t.Fatalf("persistent render at %g DPI differs at (%d,%d)", dpi, x, y)
+				}
+			}
+		}
+	}
+	if !hasFormInk(baseline, image.Rect(20, 35, 180, 60)) {
+		t.Fatal("persistent form renderer omitted widget appearance")
+	}
+	var workers sync.WaitGroup
+	errs := make(chan error, 4)
+	for range 4 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for range 2 {
+				if _, err := renderer.RenderPage(0, 72); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	workers.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	renderer.Close()
+	if _, err := renderer.RenderPage(0, 72); err == nil {
+		t.Fatal("render after Close succeeded")
 	}
 }
 

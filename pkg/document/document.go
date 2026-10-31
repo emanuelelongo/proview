@@ -61,10 +61,15 @@ type Source struct {
 	annotationBase    *Source
 	importedOverlays  []Overlay
 	hasPDFAnnotations bool
+	annotPages        map[int]bool
+	noForms           bool
 	formsOnce         sync.Once
 	forms             []pdfengine.FormField
 	formsByPage       map[int][]pdfengine.FormField
 	formsErr          error
+	formRendererMu    sync.Mutex
+	formRenderer      *pdfengine.FormRenderer
+	formRendererKey   uint64
 	mu                sync.Mutex
 	sizeMu            sync.RWMutex
 	animationMu       sync.Mutex
@@ -152,21 +157,25 @@ func loadSource(name, location string, data []byte, importAnnotations bool) (*So
 	}
 	if pdf != nil {
 		if importAnnotations {
-			clean, overlays, hasAnnots, e := readPDFAnnotations(data)
+			scan, e := readPDFAnnotations(data)
 			if e != nil {
 				pdf.Close()
 				return nil, fmt.Errorf("document: read PDF annotations: %w", e)
 			}
-			source.hasPDFAnnotations = hasAnnots
-			source.importedOverlays = overlays
-			if len(overlays) > 0 {
-				source.annotationBase, e = loadSource(name, location, clean, false)
+			source.hasPDFAnnotations = scan.hasPDFAnnotations
+			source.annotPages = scan.annotPages
+			source.noForms = scan.noForms
+			source.importedOverlays = scan.overlays
+			if len(scan.overlays) > 0 {
+				source.annotationBase, e = loadSource(name, location, scan.base, false)
 				if e != nil {
 					pdf.Close()
 					return nil, e
 				}
 				// Retained unsupported annotations still need their standard appearances.
-				source.annotationBase.hasPDFAnnotations = hasAnnots
+				source.annotationBase.hasPDFAnnotations = scan.hasPDFAnnotations
+				source.annotationBase.annotPages = scan.retainedPages
+				source.annotationBase.noForms = scan.noForms
 				// Pages render from the base; the outer source keeps only its
 				// bytes and reopens lazily if ever asked to render, so it neither
 				// holds a second MuPDF context nor halves the shared raster budget.
@@ -194,6 +203,13 @@ func (s *Source) Close() {
 		_ = s.pdf.Close()
 		s.pdf = nil
 	}
+	s.formRendererMu.Lock()
+	if s.formRenderer != nil {
+		s.formRenderer.Close()
+		s.formRenderer = nil
+		s.formRendererKey = 0
+	}
+	s.formRendererMu.Unlock()
 	for i := range s.pages {
 		s.pages[i].preview = nil
 		s.pages[i].thumbnail = nil
@@ -233,10 +249,13 @@ func (s *Source) PageCount() int {
 	return len(s.pages)
 }
 
+func (s *Source) hasPageAnnotations(page int) bool {
+	return s.hasPDFAnnotations || s.annotPages[page]
+}
+
 func (s *Source) Preview(page int) (image.Image, error) {
-	var fields []pdfengine.FormField
 	if s.format == FormatPDF {
-		fields, _ = s.formFields()
+		_, _ = s.formFields()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -250,8 +269,8 @@ func (s *Source) Preview(page int) (image.Image, error) {
 			if err = s.openPDF(); err != nil {
 				return nil, err
 			}
-			if len(fields) > 0 || s.hasPDFAnnotations {
-				preview, err = renderPDFPage(s.original, page, pdfPreviewDPI)
+			if len(s.formsByPage[page]) > 0 || s.hasPageAnnotations(page) {
+				preview, err = s.renderFormPage(s.original, page, pdfPreviewDPI, 0)
 			} else {
 				preview, err = s.pdf.ImageDPI(page, pdfPreviewDPI)
 			}
@@ -293,7 +312,7 @@ func (s *Source) Thumbnail(page int) (image.Image, error) {
 	if s.format != FormatPDF {
 		return s.Preview(page)
 	}
-	fields, _ := s.formFields()
+	_, _ = s.formFields()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if page < 0 || page >= len(s.pages) {
@@ -305,8 +324,8 @@ func (s *Source) Thumbnail(page int) (image.Image, error) {
 		}
 		var thumbnail image.Image
 		var err error
-		if len(fields) > 0 || s.hasPDFAnnotations {
-			thumbnail, err = renderPDFPage(s.original, page, pdfThumbnailDPI)
+		if len(s.formsByPage[page]) > 0 || s.hasPageAnnotations(page) {
+			thumbnail, err = s.renderFormPage(s.original, page, pdfThumbnailDPI, 0)
 		} else {
 			thumbnail, err = s.pdf.ImageDPI(page, pdfThumbnailDPI)
 		}
@@ -319,6 +338,33 @@ func (s *Source) Thumbnail(page int) (image.Image, error) {
 	thumbnail := s.pages[page].thumbnail
 	s.touchRaster(page, true)
 	return thumbnail, nil
+}
+
+func (s *Source) renderFormPage(data []byte, page int, dpi float64, key uint64) (image.Image, error) {
+	if page < 0 || page >= len(s.pages) {
+		return nil, fmt.Errorf("document: page %d out of range", page+1)
+	}
+	s.formRendererMu.Lock()
+	defer s.formRendererMu.Unlock()
+	if s.formRenderer == nil || s.formRendererKey != key {
+		if s.formRenderer != nil {
+			s.formRenderer.Close()
+		}
+		var err error
+		s.formRenderer, err = pdfengine.NewFormRenderer(data)
+		if err != nil {
+			s.formRenderer = nil
+			s.formRendererKey = 0
+			return nil, err
+		}
+		s.formRendererKey = key
+	}
+	preview, err := s.formRenderer.RenderPage(page, dpi)
+	if err != nil {
+		return nil, err
+	}
+	flattenOnWhite(preview)
+	return preview, nil
 }
 
 // openPDF must be called with s.mu held.

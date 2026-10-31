@@ -95,6 +95,16 @@ func TestPDFQRCodesWithNativeTextAndSharedRedaction(t *testing.T) {
 			t.Fatalf("page %d: %+v %v", page, layout, err)
 		}
 	}
+	if err = d.TransformPDFPage(0, "right"); err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := d.RenderingSnapshot().SelectableQRCodes(context.Background(), 0)
+	if err != nil || rotated.WordAt(textselect.Point{X: .71, Y: .16}, false) < 0 {
+		t.Fatalf("rotated PDF QR: %+v %v", rotated, err)
+	}
+	if !d.Undo() {
+		t.Fatal("could not restore page rotation")
+	}
 	// Cover the entire QR in the first reuse; actual sanitation must protect both.
 	q := TextQuad{UL: TextPoint{X: 0, Y: 0}, UR: TextPoint{X: .4, Y: 0}, LR: TextPoint{X: .4, Y: .6}, LL: TextPoint{X: 0, Y: .6}}
 	if _, err = d.AddRedaction(0, []TextQuad{q}); err != nil {

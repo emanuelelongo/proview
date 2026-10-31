@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"context"
+	"image"
 	"time"
 
 	"emanuelelongo/proview/pkg/document"
@@ -17,12 +19,16 @@ type thumbnailRefreshState struct {
 	pending    map[int]struct{}
 	after      time.Time
 	timer      *time.Timer
+	cancel     context.CancelFunc
 	running    bool
 }
 
 func (g *Gui) clearThumbnailRefresh() {
 	if s := g.thumbnailRefresh; s != nil && s.timer != nil {
 		s.timer.Stop()
+	}
+	if s := g.thumbnailRefresh; s != nil && s.cancel != nil {
+		s.cancel()
 	}
 	g.thumbnailRefresh = nil
 }
@@ -102,9 +108,19 @@ func (g *Gui) renderThumbnailRefresh(s *thumbnailRefreshState) {
 	delete(s.pending, page)
 	snapshot, revision := s.doc.RenderingSnapshot(), s.doc.Revision()
 	s.running = true
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	slots := g.pdfRenderSlots()
 	go func() {
-		preview, err := snapshot.RenderThumbnail(page)
+		var preview image.Image
+		err := withPDFRenderSlot(ctx, slots, func() error {
+			var renderErr error
+			preview, renderErr = snapshot.RenderThumbnail(page)
+			return renderErr
+		})
 		fyne.Do(func() {
+			cancel()
+			s.cancel = nil
 			s.running = false
 			if g.closed || g.thumbnailRefresh != s || g.document != s.doc || g.pdfGeneration != s.generation {
 				return

@@ -106,10 +106,17 @@ func (a *Animation) NewPlayer() *Player {
 type Player struct {
 	animation        *Animation
 	canvas, previous *image.NRGBA
+	published        *frameImage
 	index, loops     int
 	deadline         time.Time
 	finished         bool
 }
+
+type frameImage struct{ pixels *image.NRGBA }
+
+func (i *frameImage) ColorModel() color.Model { return color.NRGBAModel }
+func (i *frameImage) Bounds() image.Rectangle { return i.pixels.Bounds() }
+func (i *frameImage) At(x, y int) color.Color { return i.pixels.At(x, y) }
 
 func (p *Player) background() image.Image {
 	g := p.animation.data
@@ -128,6 +135,7 @@ func (p *Player) background() image.Image {
 func (p *Player) reset() {
 	draw.Draw(p.canvas, p.canvas.Bounds(), p.background(), image.Point{}, draw.Src)
 	p.index = 0
+	p.published = nil
 	p.paint()
 }
 func (p *Player) disposal() byte {
@@ -150,7 +158,12 @@ func clone(src *image.NRGBA) *image.NRGBA {
 	copy(out.Pix, src.Pix)
 	return out
 }
-func (p *Player) Image() image.Image { return clone(p.canvas) }
+func (p *Player) Image() image.Image {
+	if p.published == nil {
+		p.published = &frameImage{pixels: clone(p.canvas)}
+	}
+	return p.published
+}
 func (p *Player) delay() time.Duration {
 	d := p.animation.data.Delay[p.index]
 	if d < 2 {
@@ -160,7 +173,8 @@ func (p *Player) delay() time.Duration {
 }
 
 // Pause retains the current frame and restarts its delay on resumption.
-func (p *Player) Pause() { p.deadline = time.Time{} }
+func (p *Player) Pause()         { p.deadline = time.Time{} }
+func (p *Player) Finished() bool { return p.finished }
 func (p *Player) Advance(now time.Time) bool {
 	if p.finished {
 		return false
@@ -172,6 +186,9 @@ func (p *Player) Advance(now time.Time) bool {
 	if now.Before(p.deadline) {
 		return false
 	}
+	// Published snapshots are independent of the compositing canvas. Invalidate
+	// the reusable snapshot only when the next frame is actually changed.
+	p.published = nil
 	g := p.animation.data
 	if p.index+1 == len(g.Image) {
 		if g.LoopCount == -1 || (g.LoopCount > 0 && p.loops >= g.LoopCount) {

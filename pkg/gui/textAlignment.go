@@ -118,13 +118,21 @@ func (g *Gui) refreshTextMoveAlignment() {
 	l.selectionRect = rect
 	l.Refresh()
 }
-func (l *textCorrectionLayer) hideMoveGuides() { l.horizontalGuide.Hide(); l.verticalGuide.Hide() }
+func (l *textCorrectionLayer) hideMoveGuides() {
+	if l.horizontalGuide != nil {
+		l.horizontalGuide.Hide()
+	}
+	if l.verticalGuide != nil {
+		l.verticalGuide.Hide()
+	}
+}
 func (l *textCorrectionLayer) layoutMoveGuides(size fyne.Size) {
 	m := l.editor.textMove
 	if m == nil || m.layer != l || !m.dragging {
 		l.hideMoveGuides()
 		return
 	}
+	l.ensureVisuals()
 	q := l.selectionRect
 	if m.horizontal.active {
 		ref := m.references[m.horizontal.reference]

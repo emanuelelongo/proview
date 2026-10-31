@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"image"
 	"math"
 	"time"
@@ -23,6 +24,7 @@ type pdfDetailState struct {
 	target, rendered, failed pdfDetailKey
 	image, fallback          image.Image
 	timer                    *time.Timer
+	cancel                   context.CancelFunc
 	running                  bool
 }
 
@@ -56,6 +58,9 @@ func (g *Gui) clearPDFDetail() {
 	if s := g.pdfDetail; s != nil {
 		if s.timer != nil {
 			s.timer.Stop()
+		}
+		if s.cancel != nil {
+			s.cancel()
 		}
 		g.releasePDFDetail(s)
 	}
@@ -108,9 +113,19 @@ func (g *Gui) renderPDFDetail(s *pdfDetailState) {
 	}
 	renderer := g.previewRenderer
 	s.running = true
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	slots := g.pdfRenderSlots()
 	go func() {
-		picture, err := renderer.RenderBasePageDPI(snapshot, key.page, key.dpi)
+		var picture image.Image
+		err := withPDFRenderSlot(ctx, slots, func() error {
+			var renderErr error
+			picture, renderErr = renderer.RenderBasePageDPI(snapshot, key.page, key.dpi)
+			return renderErr
+		})
 		fyne.Do(func() {
+			cancel()
+			s.cancel = nil
 			s.running = false
 			if g.closed || g.pdfDetail != s {
 				return

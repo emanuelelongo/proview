@@ -123,7 +123,7 @@ func TestModelLoaderClosesReadersOnSuccessAndFailure(t *testing.T) {
 		if !r.closed {
 			t.Fatal("reader leaked")
 		}
-		if bytes.Equal(input, data) && (err != nil || len(m.Triangles) != 12) {
+		if bytes.Equal(input, data) && (err != nil || m.TriangleCount() != 12) {
 			t.Fatalf("valid STL: %v", err)
 		}
 		if !bytes.Equal(input, data) && err == nil {

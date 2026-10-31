@@ -167,12 +167,31 @@ func TestOCRLRUEvictionAndCacheReuse(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		g.ocr.cache[string(rune('a'+i))] = &ocrEntry{used: uint64(i + 1)}
 	}
+
 	g.ocr.clock = 30
 	job := &ocrJob{doc: g.document, page: 0, key: key, cancel: func() {}}
 	g.ocr.running = job
 	g.completeOCR(job, layout, nil, false, time.Millisecond)
 	if len(g.ocr.cache) != 20 || g.ocr.cache["a"] != nil || g.ocr.cache[key] == nil {
 		t.Fatal("LRU cache limit failed")
+	}
+}
+
+func TestPDFRecognitionIsDebouncedAndTargetsOnlyTheActivePage(t *testing.T) {
+	t.Setenv("PROVIEW_OCR", "1")
+	doc := workspacePDF(t, 12)
+	defer doc.Close()
+	g := &Gui{document: doc, activePDFPage: 7}
+	g.syncOCR()
+	defer g.stopOCR()
+	if g.ocr == nil || g.qr == nil {
+		t.Fatal("recognition state was not initialized")
+	}
+	if len(g.ocr.requested) != 1 || g.ocr.requested[0] != 7 || len(g.qr.requested) != 1 || g.qr.requested[0] != 7 {
+		t.Fatalf("automatic recognition scheduled non-active pages: OCR=%v QR=%v", g.ocr.requested, g.qr.requested)
+	}
+	if g.ocr.running != nil || g.qr.running != nil || g.ocr.timer == nil || g.qr.timer == nil {
+		t.Fatal("active-page recognition was not deferred behind a debounce")
 	}
 }
 

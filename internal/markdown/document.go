@@ -47,6 +47,8 @@ type Document struct {
 	imageLimit     int64
 	animationLimit int64
 	imagesTrimmed  bool
+	tokensMu       sync.Mutex
+	tokenized      map[ast.Node]bool
 }
 
 func IsFile(name string) bool {
@@ -96,7 +98,7 @@ func load(name, path string, r io.Reader, imageLimit, animationLimit int64) (*Do
 	reader.Advance(frontMatterEnd(source))
 	d := &Document{
 		Name: name, Source: source, Root: md.Parser().Parse(reader), Images: map[string]image.Image{},
-		Tokens: map[ast.Node][]chroma.Token{}, Diagrams: mermaid.NewRenderer(),
+		Tokens: map[ast.Node][]chroma.Token{}, tokenized: make(map[ast.Node]bool), Diagrams: mermaid.NewRenderer(),
 		imageLimit: imageLimit, animationLimit: animationLimit,
 	}
 	expandHTML(d.Root, source)
@@ -125,14 +127,47 @@ func load(name, path string, r io.Reader, imageLimit, animationLimit int64) (*Do
 					}
 				}
 			}
-		case *ast.FencedCodeBlock:
-			if tokens := highlight(Code(source, n), string(n.Language(source))); len(tokens) > 0 {
-				d.Tokens[n] = tokens
-			}
 		}
 		return ast.WalkContinue, nil
 	})
 	return d, nil
+}
+
+// TokensFor lazily highlights a code block and caches only blocks actually
+// displayed or printed. The cache is disposable; a trimmed document regenerates
+// tokens from its immutable source on demand.
+func (d *Document) TokensFor(n ast.Node) []chroma.Token {
+	if d == nil || n == nil {
+		return nil
+	}
+	d.tokensMu.Lock()
+	defer d.tokensMu.Unlock()
+	if tokens, ok := d.Tokens[n]; ok {
+		return tokens
+	}
+	if d.tokenized[n] {
+		return nil
+	}
+	if d.Tokens == nil {
+		return nil
+	}
+	d.tokenized[n] = true
+	block, ok := n.(*ast.FencedCodeBlock)
+	if !ok {
+		return nil
+	}
+	tokens := highlight(Code(d.Source, block), string(block.Language(d.Source)))
+	if len(tokens) > 0 {
+		d.Tokens[n] = tokens
+	}
+	return tokens
+}
+
+func (d *Document) trimTokens() {
+	d.tokensMu.Lock()
+	d.Tokens = make(map[ast.Node][]chroma.Token)
+	d.tokenized = make(map[ast.Node]bool)
+	d.tokensMu.Unlock()
 }
 
 // Charge retained buffers at their actual representation; the pre-decode check
@@ -270,6 +305,10 @@ func (d *Document) Close() {
 	d.closed = true
 	d.Images = nil
 	d.Animations = nil
+	d.tokensMu.Lock()
+	d.Tokens = nil
+	d.tokenized = nil
+	d.tokensMu.Unlock()
 	d.imagesTrimmed = false
 	d.Diagrams.Clear()
 }
@@ -342,6 +381,7 @@ func (d *Document) TrimImages() {
 	}
 	d.Images = nil
 	d.Animations = nil
+	d.trimTokens()
 	d.Diagrams.Clear()
 }
 
@@ -362,7 +402,8 @@ func (d *Document) resourceSnapshot() *Document {
 		Name:           d.Name,
 		Source:         d.Source,
 		Root:           d.Root,
-		Tokens:         d.Tokens,
+		Tokens:         make(map[ast.Node][]chroma.Token),
+		tokenized:      make(map[ast.Node]bool),
 		directory:      d.directory,
 		imageLimit:     d.imageLimit,
 		animationLimit: 0,
@@ -469,7 +510,13 @@ func (d *Document) HasDecodedImages() bool {
 // HasReleasableResources reports decoded images, animations or cached diagram
 // rasters that TrimImages would release.
 func (d *Document) HasReleasableResources() bool {
-	return d.HasDecodedImages() || d != nil && d.Diagrams.CachedPixels() > 0
+	return d.HasDecodedImages() || d != nil && (d.Diagrams.CachedPixels() > 0 || d.hasCachedTokens())
+}
+
+func (d *Document) hasCachedTokens() bool {
+	d.tokensMu.Lock()
+	defer d.tokensMu.Unlock()
+	return len(d.Tokens) > 0
 }
 
 func (d *Document) Info() string {

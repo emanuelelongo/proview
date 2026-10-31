@@ -15,6 +15,7 @@ type qrState struct {
 	cache     map[string]*ocrEntry
 	requested []int
 	running   *ocrJob
+	timer     *time.Timer
 	clock     uint64
 }
 
@@ -24,6 +25,10 @@ func (g *Gui) stopQRCodes() {
 	}
 	if g.qr.running != nil {
 		g.qr.running.cancel()
+	}
+	if g.qr.timer != nil {
+		g.qr.timer.Stop()
+		g.qr.timer = nil
 	}
 	g.qr.doc = nil
 	clear(g.qr.cache)
@@ -51,20 +56,63 @@ func (g *Gui) syncQRCodes() {
 	// Undo, but the bounded LRU never serves them to a different content key.
 
 	pages := g.recognitionPages()
-	s.requested = pages
+	s.requested = append(s.requested[:0], pages...)
 	if job := s.running; job != nil {
-		wanted := false
-		for _, p := range pages {
-			if p == job.page {
-				wanted = true
-			}
-		}
-		if job.doc != g.document || g.document.TextSelectionKey(job.page) != job.key || !wanted {
+		if job.doc != g.document || g.document.TextSelectionKey(job.page) != job.key || !containsPage(s.requested, job.page) {
 			job.cancel()
 		}
+	}
+	g.scheduleQRDispatch(s)
+}
+
+func (g *Gui) scheduleQRDispatch(s *qrState) {
+	if s == nil || s.timer != nil || len(s.requested) == 0 {
 		return
 	}
-	g.dispatchQRCodes()
+	pending := false
+	for _, page := range s.requested {
+		if g.document == nil || page < 0 || page >= g.document.PageCount() || s.cache[g.document.TextSelectionKey(page)] == nil {
+			pending = true
+			break
+		}
+	}
+	if !pending {
+		return
+	}
+	s.timer = time.AfterFunc(recognitionDebounce, func() {
+		fyne.Do(func() {
+			if g.qr != s {
+				return
+			}
+			s.timer = nil
+			g.dispatchQRCodes()
+		})
+	})
+}
+
+func (g *Gui) requestQRCodePage(page int) {
+	if g.document == nil || g.closed {
+		return
+	}
+	if g.qr == nil {
+		g.qr = &qrState{doc: g.document, cache: map[string]*ocrEntry{}}
+	}
+	s := g.qr
+	if s.doc != g.document {
+		g.stopQRCodes()
+		s.doc = g.document
+	}
+	if page < 0 || page >= g.document.PageCount() || containsPage(s.requested, page) {
+		return
+	}
+	if s.cache[g.document.TextSelectionKey(page)] != nil {
+		return
+	}
+	s.requested = append([]int{page}, s.requested...)
+	if s.running != nil && (s.running.page != page || s.running.doc != g.document) {
+		s.running.cancel()
+	}
+	g.scheduleQRDispatch(s)
 }
 func (g *Gui) dispatchQRCodes() {
 	s := g.qr
@@ -85,8 +133,14 @@ func (g *Gui) dispatchQRCodes() {
 		job := &ocrJob{doc: g.document, page: page, key: key, cancel: cancel}
 		s.running = job
 		snapshot := g.document.RenderingSnapshot()
+		slots := g.pdfRenderSlots()
 		go func() {
-			layout, err := snapshot.SelectableQRCodes(ctx, page)
+			var layout textselect.Layout
+			err := withPDFRenderSlot(ctx, slots, func() error {
+				var err error
+				layout, err = snapshot.SelectableQRCodes(ctx, page)
+				return err
+			})
 			// Do not log recognized text or file paths.
 			canceled := errors.Is(ctx.Err(), context.Canceled)
 			cancel()
@@ -137,5 +191,5 @@ func (g *Gui) completeQRCodes(job *ocrJob, layout textselect.Layout, err error, 
 		}
 		delete(s.cache, oldest)
 	}
-	g.dispatchQRCodes()
+	g.scheduleQRDispatch(s)
 }

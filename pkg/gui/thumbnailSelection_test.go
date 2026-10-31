@@ -54,6 +54,21 @@ func TestThumbnailSelectionSupportsToggleRangeAndStablePageIDs(t *testing.T) {
 	}
 }
 
+func TestThumbnailSelectionUpdatesOnlyChangedBorders(t *testing.T) {
+	g := thumbnailDragTestGui(t, 3)
+	g.pdfThumbBorders = make([]*canvas.Rectangle, 3)
+	for index := range g.pdfThumbBorders {
+		g.pdfThumbBorders[index] = canvas.NewRectangle(color.Transparent)
+	}
+	g.pdfPageIDs = g.document.PageIDs()
+	g.setThumbnailSelection([]int{0})
+	g.pdfThumbBorders[2].Show()
+	g.setThumbnailSelection([]int{1})
+	if g.pdfThumbBorders[0].Visible() || !g.pdfThumbBorders[1].Visible() || !g.pdfThumbBorders[2].Visible() {
+		t.Fatal("selection refresh changed a thumbnail outside the old/new selection")
+	}
+}
+
 func TestThumbnailGroupDragPreservesOrderSelectionAndOneUndo(t *testing.T) {
 	g := thumbnailDragTestGui(t, 6)
 	ids := g.document.PageIDs()

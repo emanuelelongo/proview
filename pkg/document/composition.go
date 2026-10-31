@@ -81,13 +81,14 @@ func (d *Document) basePageDPI(page int, dpi float64) (image.Image, error) {
 	if !changed && dpi == pdfThumbnailDPI {
 		preview, e = source.Thumbnail(index)
 	} else if !changed {
+		_, _ = source.formFields()
 		source.mu.Lock()
 		if source.pdf == nil {
 			source.mu.Unlock()
 			return nil, fmt.Errorf("The PDF is closed")
 		}
-		if source.hasPDFAnnotations {
-			preview, e = renderPDFPage(source.original, index, dpi)
+		if len(source.formsByPage[index]) > 0 || source.hasPageAnnotations(index) {
+			preview, e = source.renderFormPage(source.original, index, dpi, 0)
 		} else {
 			preview, e = source.pdf.ImageDPI(index, dpi)
 		}
@@ -120,7 +121,7 @@ func (d *Document) renderPageWithHighlights(page int, dpi float64, lenses bool, 
 
 func (d *Document) composePage(page int, dpi float64, lenses bool, previews map[OverlayID]image.Image, base image.Image) (image.Image, error) {
 	var e error
-	var out *image.NRGBA
+	var out draw.Image
 	overlays := d.signatures
 	if previews != nil {
 		// Objects above the final highlight cannot affect any collected fragment.
@@ -169,7 +170,11 @@ func (d *Document) composePage(page int, dpi float64, lenses bool, previews map[
 			return nil, e
 		}
 		if out == nil {
-			out = image.NewNRGBA(base.Bounds())
+			if rgba, ok := base.(*image.RGBA); ok && rgba.Opaque() {
+				out = image.NewRGBA(base.Bounds())
+			} else {
+				out = image.NewNRGBA(base.Bounds())
+			}
 			draw.Draw(out, out.Bounds(), base, base.Bounds().Min, draw.Src)
 			base = out
 		}
@@ -199,7 +204,7 @@ func (d *Document) SafeRenderPage(page int, dpi float64) (image.Image, error) {
 	if e != nil {
 		return nil, e
 	}
-	source, e := LoadBytes("redacted.pdf", "redacted.pdf", data)
+	source, e := loadSource("redacted.pdf", "redacted.pdf", data, false)
 	if e != nil {
 		return nil, e
 	}
@@ -258,28 +263,32 @@ func (d *Document) renderLens(id OverlayID, dpi float64, cache *PreviewRenderer)
 	if w < 1 || h < 1 || int64(w)*int64(h) > 128_000_000 {
 		return nil, fmt.Errorf("The lens is too large")
 	}
-	out := image.NewNRGBA(image.Rect(0, 0, w, h))
 	cx, cy := float64(target.Min.X)+float64(target.Dx())/2, float64(target.Min.Y)+float64(target.Dy())/2
 	// A bounded sample is scaled once, then only visible disk pixels are retained.
 	sample := image.Rect(int(math.Floor(cx-float64(target.Dx())/2/zoom)), int(math.Floor(cy-float64(target.Dy())/2/zoom)), int(math.Ceil(cx+float64(target.Dx())/2/zoom)), int(math.Ceil(cy+float64(target.Dy())/2/zoom)))
 	sampled := image.NewNRGBA(image.Rect(0, 0, w, h))
 	xdraw.CatmullRom.Scale(sampled, sampled.Bounds(), base, sample, draw.Src, nil)
+	radius := float64(min(w, h)) / 2
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			distance := math.Hypot((float64(x)+.5-float64(w)/2)/float64(w/2), (float64(y)+.5-float64(h)/2)/float64(h/2))
-			coverage := math.Min(1, math.Max(0, (1-distance)*float64(min(w, h))/2))
+			dx := (float64(x) + .5 - float64(w)/2) / float64(w/2)
+			dy := (float64(y) + .5 - float64(h)/2) / float64(h/2)
+			distance := math.Sqrt(dx*dx + dy*dy)
+			edge := (1 - distance) * radius
+			coverage := math.Min(1, math.Max(0, edge))
 			if coverage == 0 {
+				sampled.SetNRGBA(x, y, color.NRGBA{})
 				continue
 			}
 			c := sampled.NRGBAAt(x, y)
-			if (1-distance)*float64(min(w, h))/2 < 1.5 {
+			if edge < 1.5 {
 				c = color.NRGBA{A: 255}
 			}
 			c.A = uint8(float64(c.A) * coverage)
-			out.SetNRGBA(x, y, c)
+			sampled.SetNRGBA(x, y, c)
 		}
 	}
-	return s.Transform.Apply(out), nil
+	return s.Transform.Apply(sampled), nil
 }
 
 // Enlarge vector text before sampling, bounded to 16 million source pixels and

@@ -112,12 +112,18 @@ func TestPruneTextSourcesDropsUnreachableEdits(t *testing.T) {
 
 	stale := &Source{format: FormatPDF, original: []byte("%PDF-1.4"), pages: []pageData{{preview: image.NewRGBA(image.Rect(0, 0, 4, 4))}}}
 	doc.textSources = append(doc.textSources, stale)
+	key := derivedKey{source: stale, index: 0}
+	doc.derived.put(key, image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	_, _ = doc.derived.filledPDF(stale, 1, func() ([]byte, error) { return []byte{1}, nil })
 	doc.pruneTextSources()
 	if slices.Contains(doc.textSources, stale) {
 		t.Fatal("unreachable edited source was not pruned")
 	}
 	if stale.pages[0].preview != nil {
 		t.Fatal("pruned source was not closed")
+	}
+	if doc.derived.get(key) != nil || len(doc.derived.filled) != 0 {
+		t.Fatal("pruned source remained in derived caches")
 	}
 
 	// The main source and current page sources must survive pruning.
@@ -169,5 +175,22 @@ func TestDocumentMemoryUsageCountsEachSourceOnce(t *testing.T) {
 	}
 	if rasterBytes == 0 {
 		t.Fatal("raster bytes were not reported")
+	}
+}
+
+func TestPlainPDFSkipsAnnotationAndFormRenderers(t *testing.T) {
+	source, err := Load("plain.pdf", bytes.NewReader(minimalPDF(t, 2)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	if !source.noForms || len(source.annotPages) != 0 || source.hasPDFAnnotations || source.annotationBase != nil {
+		t.Fatalf("plain PDF classified as annotated: forms=%v pages=%v", !source.noForms, source.annotPages)
+	}
+	if _, err := source.Preview(1); err != nil {
+		t.Fatal(err)
+	}
+	if source.formRenderer != nil {
+		t.Fatal("plain PDF opened a second native renderer")
 	}
 }

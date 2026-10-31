@@ -21,7 +21,7 @@ func TestFrontMatterHiddenWithoutChangingSourceOrCodeOffsets(t *testing.T) {
 		t.Fatal("metadata became visible content")
 	}
 	code, ok := heading.NextSibling().(*ast.FencedCodeBlock)
-	if !ok || Code(doc.Source, code) != "var x = 1\n" || len(doc.Tokens[code]) == 0 {
+	if !ok || Code(doc.Source, code) != "var x = 1\n" || len(doc.TokensFor(code)) == 0 {
 		t.Fatal("source offsets or highlighting lost")
 	}
 	for _, source := range []string{"---\nunclosed metadata\n", "Before\n\n---\nbody\n---\n"} {
@@ -76,7 +76,7 @@ func TestGitHubAlertsRetainMarkdownAndSourceOffsets(t *testing.T) {
 				if entering {
 					counts[node.Kind().String()]++
 					if code, ok := node.(*ast.FencedCodeBlock); ok {
-						if Code(doc.Source, code) != "var x = 1\n" || len(doc.Tokens[code]) == 0 {
+						if Code(doc.Source, code) != "var x = 1\n" || len(doc.TokensFor(code)) == 0 {
 							t.Fatal("code offsets or highlighting lost")
 						}
 					}

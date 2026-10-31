@@ -111,12 +111,12 @@ func TestHighQualityAntialiasingAndLimits(t *testing.T) {
 	}
 }
 func TestSmoothNormalsPreserveSharpEdges(t *testing.T) {
-	m := &Mesh{Min: Vector{-1, -1, -1}, Max: Vector{1, 1, 1}, Triangles: []Triangle{
+	m := &Mesh{Min: Vector{-1, -1, -1}, Max: Vector{1, 1, 1}, triangles: []Triangle{
 		{Vertices: [3]Vector{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}},
 		{Vertices: [3]Vector{{0, 0, 0}, {0, 1, 0}, {-1, 0, .2}}},
 	}}
 	m.prepareNormals()
-	n := m.normals[Vector{}]
+	n := Vector{float64(m.packed[9]), float64(m.packed[10]), float64(m.packed[11])}
 	if n.X <= 0 || n.Z <= 0 {
 		t.Fatalf("shallow facets did not share a smooth normal: %+v", n)
 	}
@@ -129,12 +129,33 @@ func TestSmoothNormalsPreserveSharpEdges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, triangle := range cube.Triangles {
-		face := triangle.Vertices[1].Sub(triangle.Vertices[0]).Cross(triangle.Vertices[2].Sub(triangle.Vertices[0])).Unit()
-		for _, v := range triangle.Vertices {
-			if math.Abs(face.Dot(cube.normals[v])) >= .8 {
+	for i := 0; i < cube.TriangleCount(); i++ {
+		offset := i * 21
+		face := Vector{float64(cube.packed[offset+18]), float64(cube.packed[offset+19]), float64(cube.packed[offset+20])}
+		for corner := range 3 {
+			n := Vector{float64(cube.packed[offset+9+corner*3]), float64(cube.packed[offset+10+corner*3]), float64(cube.packed[offset+11+corner*3])}
+			if face.Sub(n).Dot(face.Sub(n)) > 1e-8 {
 				t.Fatal("sharp cube corner would be smoothed")
 			}
+		}
+
+	}
+}
+
+func BenchmarkRenderCube(b *testing.B) {
+	data, err := os.ReadFile("testdata/cube.stl")
+	if err != nil {
+		b.Fatal(err)
+	}
+	mesh, err := Load("cube.stl", bytes.NewReader(data))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if _, err := Render(context.Background(), mesh, DefaultCamera(), 640, 480); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

@@ -32,11 +32,19 @@ func TestPrepareImageExports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(exports.data[document.FormatPNG]) == 0 || len(exports.data[document.FormatJPEG]) == 0 {
-		t.Fatal("Save As did not prepare both image formats")
+	if len(exports.data) != 0 {
+		t.Fatal("Save As eagerly encoded image formats before a destination was chosen")
 	}
-	if _, err := png.Decode(bytes.NewReader(exports.data[document.FormatPNG])); err != nil {
-		t.Fatalf("prepared PNG is invalid: %v", err)
+	for _, name := range []string{"image.png", "image.jpg"} {
+		data, err := g.exportForName(name)
+		if err != nil {
+			t.Fatalf("selected %s export failed: %v", name, err)
+		}
+		if name == "image.png" {
+			if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+				t.Fatalf("selected PNG is invalid: %v", err)
+			}
+		}
 	}
 	if _, err := g.exportForName("invalid.pdf"); err == nil {
 		t.Fatal("image export unexpectedly accepted a PDF target")
@@ -122,8 +130,8 @@ func TestImportedWebPExportsToWritableImageFormats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(exports.data) != 2 || len(exports.data[document.FormatPNG]) == 0 || len(exports.data[document.FormatJPEG]) == 0 {
-		t.Fatal("imported WebP did not offer PNG/JPEG export")
+	if len(exports.data) != 0 {
+		t.Fatal("imported WebP was eagerly encoded before a destination was chosen")
 	}
 	if _, err := g.exportForName("image.webp"); err == nil {
 		t.Fatal("export could overwrite import-only WebP")

@@ -7,7 +7,6 @@ import (
 
 	"emanuelelongo/proview/internal/qrscan"
 	"emanuelelongo/proview/internal/textselect"
-	img "emanuelelongo/proview/pkg/images"
 )
 
 // SelectableQRCodes recognizes the visible source on a rendering snapshot.
@@ -35,9 +34,6 @@ func (d *Document) SelectableQRCodes(ctx context.Context, page int) (textselect.
 			raster, err = safe.SafeRenderPage(page, dpi)
 		} else {
 			raster, err = d.basePageDPI(page, dpi)
-			if err == nil {
-				raster = (img.Transform{Turns: d.pages[page].turns}).Apply(raster)
-			}
 		}
 	} else {
 		raster, err = d.RenderBasePage(page)

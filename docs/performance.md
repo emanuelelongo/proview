@@ -407,3 +407,57 @@ widget-bound and transient rasters (including lens outputs and selection/highlig
 rasters). The report exposes source, PDF source-cache, derived-raster,
 Markdown-resource and `PreviewRenderer` cache bytes plus a texture estimate per
 window, but is not a complete native/GPU allocation ledger or an RSS cap.
+
+## Follow-up optimization pass (2026-10-31)
+
+This pass reduces avoidable allocation and repeat work in rendering, recognition,
+document switching and large-document UI. It is code- and regression-test
+verified; no new native RSS or end-to-end frame-time measurements were collected.
+The existing isolated 1,000-page GUI benchmark on an Apple A18 Pro (darwin/arm64,
+one-second runs) measured:
+
+| Operation | Legacy/eager | Indexed/current | Allocations legacy/eager → current |
+| --- | ---: | ---: | ---: |
+| Search/source key | 178.4 µs | 68.7 ns | 155,200 B / 2,506 → 16 B / 1 |
+| Viewport lookup | 25.8 µs | 255 ns | 0 / 0 → 0 / 0 |
+| Zoom layout | 923 µs | 459 µs | 108,096 B / 13,001 → 68,296 B / 8,026 |
+
+These are synthetic algorithm/component comparisons, not application-level
+latency or frame-rate guarantees.
+
+- Page composition now uses RGBA destinations where source and alpha semantics
+  permit typed copy/scale fast paths. Scratch renders of sanitized PDFs skip
+  annotation import when only pixels are needed. Closing/pruning text-edit
+  sources also removes their derived-cache entries; text geometry avoids an
+  unnecessary glyph copy and no longer holds the raster mutex during extraction.
+- Form/annotation pages reuse a serialized MuPDF document per source instead of
+  reopening the full PDF for every raster. Pages without page-local annotations
+  or fields stay on the ordinary cached renderer. Native samples are copied
+  directly into the Go raster one time, row by row to honor stride.
+- OCR and QR recognition no longer fan out over every visible page during
+  scrolling. Automatic recognition is debounced to the active PDF page, while
+  text selection and Find can request it on demand. Native background rendering
+  uses bounded admission; search progress callbacks are batched. Sidebar
+  thumbnail lookup uses a cached page-top index and the laid-out viewport size.
+- Document sidebar cards are reused across edits. Form controls and crop
+  controls are deferred, Undo refreshes resident form layers only, detached PDF
+  canvases release image references, and image Save As encoding waits until the
+  chosen format is known. Thumbnail selection updates only changed borders.
+- GIF frame snapshots are reused until the frame changes and idle/offscreen
+  playback stops its clock. STL geometry is packed into float32 positions and
+  precomputed normals after load. Markdown code tokens are highlighted lazily
+  and released when resources are trimmed. Signature preview generation is
+  bounded; entries may remain selectable without a preview once the aggregate
+  preview pixel budget is reached.
+
+This does not implement full PDF page-widget virtualization, a process-wide
+budget for every transient/widget/native allocation, or a hard RSS limit.
+Native GPU residency and end-to-end responsiveness still require measurement
+with representative desktop documents and backends.
+
+```sh
+go test ./...
+go vet ./...
+go test -race ./pkg/document -run 'TestSource|TestBasePage|TestEvictedPDF|TestPreviewRendererConcurrent|TestSourceTextCache|TestTextGeometry'
+go test -race ./pkg/gui -run 'TestBasePreviews|TestCanceledPDFLoads|TestPDFDetailSurvives|TestPDFResidency|TestSearchIndex|TestSearchTextCache|TestOCR|TestQR|TestTextSelection|TestLens|TestThumbnail'
+```

@@ -141,6 +141,14 @@ func (s *Source) TrimPreviews() {
 			s.dropPreviewLocked(i, clock)
 		}
 	})
+	if s.formRendererMu.TryLock() {
+		if s.formRenderer != nil {
+			s.formRenderer.Close()
+			s.formRenderer = nil
+			s.formRendererKey = 0
+		}
+		s.formRendererMu.Unlock()
+	}
 	s.trimAnimation()
 	if s.annotationBase != nil {
 		s.annotationBase.TrimPreviews()

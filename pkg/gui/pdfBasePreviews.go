@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"image"
 	"time"
 
@@ -12,6 +13,7 @@ type pdfBasePreviewState struct {
 	doc        *document.Document
 	generation uint64
 	timer      *time.Timer
+	cancel     context.CancelFunc
 	running    bool
 	failed     map[int]document.PageBaseKey
 }
@@ -19,6 +21,9 @@ type pdfBasePreviewState struct {
 func (g *Gui) clearPDFBasePreviews() {
 	if s := g.pdfBasePreviews; s != nil && s.timer != nil {
 		s.timer.Stop()
+	}
+	if s := g.pdfBasePreviews; s != nil && s.cancel != nil {
+		s.cancel()
 	}
 	g.pdfBasePreviews = nil
 }
@@ -72,17 +77,30 @@ func (g *Gui) renderPDFBasePreviews(s *pdfBasePreviewState) {
 	}
 	snapshot := s.doc.RenderingSnapshot()
 	s.running = true
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	slots := g.pdfRenderSlots()
 	go func() {
 		pictures, failures := map[int]image.Image{}, map[int]error{}
 		for page := range keys {
-			picture, err := snapshot.RenderBasePage(page)
+			var picture image.Image
+			err := withPDFRenderSlot(ctx, slots, func() error {
+				var renderErr error
+				picture, renderErr = snapshot.RenderBasePage(page)
+				return renderErr
+			})
 			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				failures[page] = err
 			} else {
 				pictures[page] = picture
 			}
 		}
 		fyne.Do(func() {
+			cancel()
+			s.cancel = nil
 			s.running = false
 			if g.closed || g.pdfBasePreviews != s || g.document != s.doc || g.pdfGeneration != s.generation {
 				return

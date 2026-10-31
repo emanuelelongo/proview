@@ -56,6 +56,38 @@ func TestFormTypographyTracksPageZoomWithoutReplacingFocusedEntry(t *testing.T) 
 	}
 }
 
+func TestDeferredFormLayerLoadsOnlyWhenPageIsResident(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	g := newGui(app)
+	data, err := os.ReadFile("../../internal/pdfengine/testdata/forms.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := document.Load("forms.pdf", bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := document.New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	g.document = doc
+	g.formsActive = true
+	g.pdfPageLoaded = []bool{false}
+	layer := newDeferredFormLayer(g, 0)
+	layer.reload()
+	if layer.loaded || len(layer.controls) != 0 {
+		t.Fatal("nonresident page eagerly created form controls")
+	}
+	g.pdfPageLoaded[0] = true
+	layer.reload()
+	if !layer.loaded || len(layer.controls) == 0 {
+		t.Fatal("resident page did not create its form controls")
+	}
+}
+
 func TestFormToolbarInlineEditingAndSave(t *testing.T) {
 	app := fyneTest.NewApp()
 	defer app.Quit()
