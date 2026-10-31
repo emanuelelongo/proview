@@ -15,6 +15,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
@@ -168,4 +169,71 @@ func RenderFormPage(data []byte, page int, dpi float64) (image.Image, error) {
 		}
 	}
 	return out, nil
+}
+
+// FormRenderer keeps a MuPDF document open for repeated page previews. Calls
+// and Close are serialized because a MuPDF context is not concurrently safe.
+type FormRenderer struct {
+	mu     sync.Mutex
+	handle *C.pv_form_renderer
+}
+
+func NewFormRenderer(data []byte) (*FormRenderer, error) {
+	if len(data) == 0 {
+		return nil, errors.New("pdfengine: empty PDF")
+	}
+	input := cBytes(data)
+	var result C.pv_result
+	handle := C.pv_form_renderer_new((*C.uchar)(input), C.size_t(len(data)), &result)
+	if err := resultError(&result); err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return nil, errors.New("pdfengine: cannot create form renderer")
+	}
+	return &FormRenderer{handle: handle}, nil
+}
+
+// RenderPage renders directly into one Go-owned raster. The context mutex is
+// held across native raster preparation and the copy into Go-owned memory.
+func (r *FormRenderer) RenderPage(page int, dpi float64) (*image.RGBA, error) {
+	if r == nil || page < 0 || page > math.MaxInt32 || math.IsNaN(dpi) || math.IsInf(dpi, 0) || dpi <= 0 || dpi > 600 {
+		return nil, errors.New("pdfengine: invalid form preview")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.handle == nil {
+		return nil, errors.New("pdfengine: form renderer is closed")
+	}
+	var result C.pv_result
+	C.pv_form_renderer_prepare(r.handle, C.int(page), C.float(dpi), &result)
+	if err := resultError(&result); err != nil {
+		return nil, err
+	}
+	width, height := int(result.raster_width), int(result.raster_height)
+	maxInt := int(^uint(0) >> 1)
+	if width <= 0 || height <= 0 || width > math.MaxInt32/4 || height > math.MaxInt32 ||
+		height > maxInt/(width*4) {
+		C.pv_form_renderer_discard(r.handle)
+		return nil, errors.New("pdfengine: invalid form preview raster")
+	}
+	out := image.NewRGBA(image.Rect(0, 0, width, height))
+	C.pv_form_renderer_copy(r.handle, (*C.uchar)(unsafe.Pointer(&out.Pix[0])),
+		C.int(width), C.int(height), C.int(out.Stride), &result)
+	if err := resultError(&result); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *FormRenderer) Close() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.handle != nil {
+		C.pv_form_renderer_drop(r.handle)
+		r.handle = nil
+	}
 }

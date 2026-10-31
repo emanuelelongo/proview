@@ -22,6 +22,7 @@ type formLayer struct {
 	fields   []document.FormField
 	controls []fyne.CanvasObject
 	updating bool
+	loaded   bool
 }
 
 func newFormLayer(g *Gui, page int) *formLayer {
@@ -31,17 +32,30 @@ func newFormLayer(g *Gui, page int) *formLayer {
 	return l
 }
 
+func newDeferredFormLayer(g *Gui, page int) *formLayer {
+	l := &formLayer{editor: g, page: page}
+	l.ExtendBaseWidget(l)
+	l.Hide()
+	return l
+}
+
 func (l *formLayer) reload() {
+	if !l.canLoad() {
+		l.Hide()
+		return
+	}
 	l.updating = true
 	defer func() { l.updating = false }()
 	l.fields = nil
 	l.controls = nil
 	if l.editor.document == nil {
+		l.loaded = true
 		return
 	}
 	fields, err := l.editor.document.FormFields(l.page)
 	if err != nil {
 		l.Hide()
+		l.loaded = true
 		return
 	}
 	l.fields = fields
@@ -153,12 +167,20 @@ func (l *formLayer) reload() {
 			}
 		}
 	}
+	l.loaded = true
 	l.Refresh()
 	if l.editor.formsActive {
 		l.Show()
 	} else {
 		l.Hide()
 	}
+}
+
+func (l *formLayer) canLoad() bool {
+	if l.editor.document == nil || l.editor.document.Format() != document.FormatPDF || len(l.editor.pdfPageLoaded) == 0 {
+		return true
+	}
+	return l.page >= 0 && l.page < len(l.editor.pdfPageLoaded) && l.editor.pdfPageLoaded[l.page]
 }
 
 func (l *formLayer) CreateRenderer() fyne.WidgetRenderer {
@@ -198,6 +220,9 @@ func (r *formLayerRenderer) Destroy()                     {}
 func (r *formLayerRenderer) MinSize() fyne.Size           { return fyne.NewSize(0, 0) }
 func (r *formLayerRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.themed} }
 func (r *formLayerRenderer) Layout(size fyne.Size) {
+	if !r.layer.loaded && r.layer.editor.formsActive && r.layer.canLoad() {
+		r.layer.reload()
+	}
 	if r.layer.editor.document != nil {
 		if pageSize, err := r.layer.editor.document.PageSize(r.layer.page); err == nil && pageSize.X > 0 && size.Width > 0 {
 			scale := size.Width / float32(pageSize.X)
@@ -224,6 +249,10 @@ func (r *formLayerRenderer) Layout(size fyne.Size) {
 	}
 }
 func (r *formLayerRenderer) Refresh() {
+	if !r.layer.loaded && r.layer.editor.formsActive && r.layer.canLoad() {
+		r.layer.reload()
+		return
+	}
 	// Hover and focus colors in Fyne can be translucent. Cover the PDF widget
 	// appearance before painting any interactive control, including checkboxes.
 	background := theme.ColorForWidget(theme.ColorNameBackground, r.layer)
@@ -238,7 +267,7 @@ func (r *formLayerRenderer) Refresh() {
 	r.content.Objects = nil
 	var fields []document.FormField
 	var err error
-	if r.layer.editor.document != nil {
+	if r.layer.loaded && r.layer.editor.document != nil {
 		fields, err = r.layer.editor.document.FormFields(r.layer.page)
 	}
 	for i, control := range r.layer.controls {
@@ -257,7 +286,14 @@ func (r *formLayerRenderer) Refresh() {
 }
 
 func (g *Gui) reloadFormLayers() {
-	for _, l := range g.formLayers {
+	if !g.formsActive {
+		return
+	}
+	for page, l := range g.formLayers {
+		l.Show()
+		if page < len(g.pdfPageLoaded) && !g.pdfPageLoaded[page] {
+			continue
+		}
 		l.reload()
 	}
 }
@@ -282,7 +318,13 @@ func (g *Gui) setFormsActive(active bool) {
 	if changed && g.window != nil {
 		g.window.Canvas().Focus(nil)
 	}
-	g.reloadFormLayers()
+	if active {
+		g.reloadFormLayers()
+	} else {
+		for _, layer := range g.formLayers {
+			layer.Hide()
+		}
+	}
 	if changed && !active && g.document != nil {
 		g.refreshFormPreviews()
 	}
@@ -295,6 +337,9 @@ func (g *Gui) refreshFormPreviews() { g.refreshPDFBasePreviews() }
 // synchronized without replacing the entry that currently has keyboard focus.
 func (g *Gui) syncFormValues() {
 	for _, l := range g.formLayers {
+		if !l.loaded || !l.canLoad() {
+			continue
+		}
 		fields, err := g.document.FormFields(l.page)
 		if err != nil || len(fields) != len(l.controls) {
 			continue

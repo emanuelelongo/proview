@@ -100,5 +100,5 @@ func main() {
 	if err = target.Close(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%s; %d triangles; load %s; %d frames %s (average %s); output %s\n", backend, len(mesh.Triangles), loaded, *frames, rendered, rendered/time.Duration(*frames), *output)
+	fmt.Printf("%s; %d triangles; load %s; %d frames %s (average %s); output %s\n", backend, mesh.TriangleCount(), loaded, *frames, rendered, rendered/time.Duration(*frames), *output)
 }

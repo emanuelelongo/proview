@@ -11,11 +11,12 @@ import (
 // One native animation clock per visible document. Decoded
 // sources and printing remain immutable; only canvas image references change.
 type gifPlayback struct {
-	clock  *fyne.Animation
-	doc    *document.Document
-	view   *markdownView
-	player *gifplay.Player
-	paused bool
+	clock    *fyne.Animation
+	doc      *document.Document
+	view     *markdownView
+	player   *gifplay.Player
+	paused   bool
+	sleeping bool
 }
 
 type markdownGIFGroup struct {
@@ -38,6 +39,9 @@ func (g *Gui) ensureGIFPlayback() {
 		if p.doc != nil && g.document == p.doc && g.document.Animation() == nil {
 			g.pauseGIFImage()
 			g.stopGIFPlayback()
+		} else if p.sleeping {
+			p.sleeping = false
+			p.clock.Start()
 		}
 		return
 	}
@@ -66,6 +70,8 @@ func (g *Gui) pauseGIFImage() {
 		return
 	}
 	p.paused = true
+	p.sleeping = true
+	p.clock.Stop()
 	p.player.Pause()
 	if base, err := g.document.RenderBasePage(0); err == nil {
 		g.image.Image = base
@@ -78,12 +84,18 @@ func (g *Gui) tickGIFPlayback(p *gifPlayback, now time.Time) {
 		if g.document != p.doc {
 			return
 		}
+		if p.player.Finished() {
+			p.sleeping = true
+			p.clock.Stop()
+			return
+		}
 		if g.working || g.cropOverlay.active || g.annotationTool != toolSelect || g.document.Animation() == nil || g.hasSelectedSignature || g.textSelection != nil {
 			g.pauseGIFImage()
 			return
 		}
 		if p.paused {
 			p.paused = false
+			p.sleeping = false
 			g.image.Image = p.player.Image()
 			g.image.Refresh()
 		}
@@ -97,6 +109,7 @@ func (g *Gui) tickGIFPlayback(p *gifPlayback, now time.Time) {
 	if g.markdownView != v || v.scroll == nil {
 		return
 	}
+	active := false
 	for _, group := range v.gifGroups {
 		preview := v.imagePreview
 		previewing := preview != nil && preview.animation == group.player
@@ -114,6 +127,10 @@ func (g *Gui) tickGIFPlayback(p *gifPlayback, now time.Time) {
 			group.player.Pause()
 			continue
 		}
+		if group.player.Finished() {
+			continue
+		}
+		active = true
 		if !group.player.Advance(now) {
 			continue
 		}
@@ -129,5 +146,9 @@ func (g *Gui) tickGIFPlayback(p *gifPlayback, now time.Time) {
 			preview.picture.Image = picture
 			preview.picture.Refresh()
 		}
+	}
+	if !active {
+		p.sleeping = true
+		p.clock.Stop()
 	}
 }

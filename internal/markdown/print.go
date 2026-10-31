@@ -733,7 +733,7 @@ func (p *markdownPrinter) code(n ast.Node, language string, x, width float64) er
 			return e
 		}
 	}
-	return p.codeText(source, p.doc.Tokens[n], x, width)
+	return p.codeText(source, p.doc.TokensFor(n), x, width)
 }
 
 func (p *markdownPrinter) codeText(source string, tokens []chroma.Token, x, width float64) error {

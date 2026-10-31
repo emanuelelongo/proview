@@ -29,6 +29,68 @@ func TestMultiplyHighlightPreservesBlackAndTransparentPixels(t *testing.T) {
 	}
 }
 
+func TestComposeRGBAFastPathMatchesNRGBA(t *testing.T) {
+	bounds := image.Rect(17, 29, 41, 49)
+	base := image.NewRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			base.SetRGBA(x, y, color.RGBA{R: uint8(x * 7), G: uint8(y * 5), B: uint8(x + y), A: uint8((x + y) * 3)})
+		}
+	}
+	target := NormalizedRect{X: .25, Y: .25, Width: .5, Height: .5}
+	raster := image.NewNRGBA(image.Rect(0, 0, 12, 10))
+	draw.Draw(raster, raster.Bounds(), image.NewUniform(color.NRGBA{R: 220, G: 30, B: 80, A: 111}), image.Point{}, draw.Src)
+	highlight := image.NewNRGBA(image.Rect(0, 0, 12, 10))
+	draw.Draw(highlight, highlight.Bounds(), image.NewUniform(color.NRGBA{R: 255, G: 235, A: 180}), image.Point{}, draw.Src)
+	doc := &Document{signatures: []SignatureOverlay{
+		{Page: 0, Rect: target, preview: raster},
+		{Page: 0, Rect: target, preview: highlight, annotation: &annotations.Data{Kind: annotations.Highlight}},
+	}}
+
+	actual, err := doc.composePage(0, 144, false, nil, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := image.NewNRGBA(bounds)
+	draw.Draw(expected, bounds, base, bounds.Min, draw.Src)
+	draw.Draw(expected, image.Rect(23, 34, 35, 44), raster, raster.Bounds().Min, draw.Over)
+	mask := MultiplyHighlight(expected, highlight, image.Rect(23, 34, 35, 44))
+	draw.Draw(expected, image.Rect(23, 34, 35, 44), mask, mask.Bounds().Min, draw.Over)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			got := color.NRGBAModel.Convert(actual.At(x, y)).(color.NRGBA)
+			want := expected.NRGBAAt(x, y)
+			if got != want {
+				t.Fatalf("pixel (%d,%d) = %v, want %v", x, y, got, want)
+			}
+		}
+	}
+
+	opaque := image.NewRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			opaque.SetRGBA(x, y, color.RGBA{R: uint8(x * 7), G: uint8(y * 5), B: uint8(x + y), A: 255})
+		}
+	}
+	actual, err = doc.composePage(0, 144, false, nil, opaque)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected = image.NewNRGBA(bounds)
+	draw.Draw(expected, bounds, opaque, bounds.Min, draw.Src)
+	draw.Draw(expected, image.Rect(23, 34, 35, 44), raster, raster.Bounds().Min, draw.Over)
+	mask = MultiplyHighlight(expected, highlight, image.Rect(23, 34, 35, 44))
+	draw.Draw(expected, image.Rect(23, 34, 35, 44), mask, mask.Bounds().Min, draw.Over)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			got := color.NRGBAModel.Convert(actual.At(x, y)).(color.NRGBA)
+			if want := expected.NRGBAAt(x, y); got != want {
+				t.Fatalf("opaque pixel (%d,%d) = %v, want %v", x, y, got, want)
+			}
+		}
+	}
+}
+
 func TestNativeHighlightFullColorAndBlackTextThroughPDFRoundtrip(t *testing.T) {
 	ctx, err := newAppearanceContext(100, 80)
 	if err != nil {

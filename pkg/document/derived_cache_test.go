@@ -93,6 +93,20 @@ func TestFilledFormPDFIsReusedForSameValues(t *testing.T) {
 	}
 }
 
+func TestDerivedCacheDropsClosedSource(t *testing.T) {
+	var cache derivedRasterCache
+	source := &Source{}
+	picture := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	cache.put(derivedKey{source: source, index: 1}, picture)
+	cache.put(derivedKey{source: source, index: 2, thumbnail: true}, picture)
+	cache.filledPDF(source, 1, func() ([]byte, error) { return []byte{1, 2, 3}, nil })
+
+	cache.dropSource(source)
+	if len(cache.entries) != 0 || len(cache.filled) != 0 || cache.retainedBytes() != 0 {
+		t.Fatal("derived cache retained data for a closed source")
+	}
+}
+
 func TestFilledFormPDFCacheIsByteBounded(t *testing.T) {
 	var cache derivedRasterCache
 	a, b, c := &Source{}, &Source{}, &Source{}

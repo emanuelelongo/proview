@@ -330,15 +330,25 @@ func (d *Document) formPreview(source *Source, index int, dpi float64, forms uin
 	if forms == 0 {
 		return nil, false, nil
 	}
-	fields, err := source.formFields()
+	fields, err := source.formFieldsForPage(index)
 	if err != nil || len(fields) == 0 {
+		return nil, false, nil
+	}
+	changed := false
+	for _, field := range fields {
+		if _, ok := d.formValues[formKey{source, field.ID}]; ok {
+			changed = true
+			break
+		}
+	}
+	if !changed {
 		return nil, false, nil
 	}
 	data, err := d.derived.filledPDF(source, forms, func() ([]byte, error) { return d.sourcePDF(source) })
 	if err != nil {
 		return nil, true, err
 	}
-	preview, err := renderPDFPage(data, index, dpi)
+	preview, err := source.renderFormPage(data, index, dpi, forms)
 	return preview, true, err
 }
 

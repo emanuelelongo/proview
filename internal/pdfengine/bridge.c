@@ -19,14 +19,19 @@ static void pv_silent_message(void *opaque, const char *message)
     (void)message;
 }
 
-static fz_context *pv_context(void)
+static fz_context *pv_context_with_store(size_t max_store)
 {
-    fz_context *ctx = fz_new_context(NULL, NULL, FZ_STORE_DEFAULT);
+    fz_context *ctx = fz_new_context(NULL, NULL, max_store);
     if (ctx) {
         fz_set_error_callback(ctx, pv_silent_message, NULL);
         fz_set_warning_callback(ctx, pv_silent_message, NULL);
     }
     return ctx;
+}
+
+static fz_context *pv_context(void)
+{
+    return pv_context_with_store(FZ_STORE_DEFAULT);
 }
 
 static pdf_document *pv_open(fz_context *ctx, const unsigned char *data, size_t length)
@@ -687,4 +692,134 @@ void pv_render_forms(const unsigned char *data, size_t length, int number, float
     }
     fz_catch(ctx) { pv_error(result, fz_caught_message(ctx)); }
     fz_drop_context(ctx);
+}
+
+struct pv_form_renderer {
+    fz_context *ctx;
+    pdf_document *doc;
+    fz_pixmap *pending_pixmap;
+    unsigned char *data;
+    size_t length;
+};
+
+pv_form_renderer *pv_form_renderer_new(const unsigned char *data, size_t length, pv_result *result)
+{
+    pv_form_renderer *renderer = calloc(1, sizeof(*renderer));
+    if (!renderer) { pv_error(result, "Cannot allocate form renderer"); return NULL; }
+    renderer->data = malloc(length);
+    if (!renderer->data) {
+        free(renderer);
+        pv_error(result, "Cannot allocate form document bytes");
+        return NULL;
+    }
+    memcpy(renderer->data, data, length);
+    renderer->length = length;
+    /* Persistent renderers should not inherit MuPDF's much larger default store. */
+    renderer->ctx = pv_context_with_store(16 << 20);
+    if (!renderer->ctx) {
+        free(renderer->data);
+        free(renderer);
+        pv_error(result, "Cannot create MuPDF context");
+        return NULL;
+    }
+    fz_try(renderer->ctx) {
+        renderer->doc = pv_open(renderer->ctx, renderer->data, renderer->length);
+    }
+    fz_catch(renderer->ctx) {
+        pv_error(result, fz_caught_message(renderer->ctx));
+        pdf_drop_document(renderer->ctx, renderer->doc);
+        fz_drop_context(renderer->ctx);
+        free(renderer->data);
+        free(renderer);
+        return NULL;
+    }
+    return renderer;
+}
+
+void pv_form_renderer_drop(pv_form_renderer *renderer)
+{
+    if (!renderer) return;
+    fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+    pdf_drop_document(renderer->ctx, renderer->doc);
+    fz_drop_context(renderer->ctx);
+    free(renderer->data);
+    free(renderer);
+}
+
+void pv_form_renderer_prepare(pv_form_renderer *renderer, int number, float dpi, pv_result *result)
+{
+    if (!renderer) {
+        pv_error(result, "Invalid form renderer");
+        return;
+    }
+    pdf_page *page = NULL;
+    fz_pixmap *pixmap = NULL;
+    fz_var(page); fz_var(pixmap);
+    fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+    renderer->pending_pixmap = NULL;
+    fz_try(renderer->ctx) {
+        pv_prepare_signature_previews(renderer->ctx, renderer->doc, number);
+        page = pdf_load_page(renderer->ctx, renderer->doc, number);
+        pv_update_form_page(renderer->ctx, renderer->doc, page);
+        pixmap = fz_new_pixmap_from_page(renderer->ctx, &page->super,
+            fz_scale(dpi/72, dpi/72), fz_device_rgb(renderer->ctx), 1);
+        int components = fz_pixmap_components(renderer->ctx, pixmap);
+        int source_stride = fz_pixmap_stride(renderer->ctx, pixmap);
+        if ((components != 3 && components != 4) ||
+            source_stride < fz_pixmap_width(renderer->ctx, pixmap) * components)
+            fz_throw(renderer->ctx, FZ_ERROR_ARGUMENT, "Invalid form preview raster");
+        result->raster_width = fz_pixmap_width(renderer->ctx, pixmap);
+        result->raster_height = fz_pixmap_height(renderer->ctx, pixmap);
+    }
+    fz_always(renderer->ctx) {
+        fz_drop_page(renderer->ctx, (fz_page *)page);
+    }
+    fz_catch(renderer->ctx) {
+        pv_error(result, fz_caught_message(renderer->ctx));
+        fz_drop_pixmap(renderer->ctx, pixmap);
+        return;
+    }
+    renderer->pending_pixmap = pixmap;
+}
+
+void pv_form_renderer_discard(pv_form_renderer *renderer)
+{
+    if (!renderer) return;
+    fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+    renderer->pending_pixmap = NULL;
+}
+
+void pv_form_renderer_copy(pv_form_renderer *renderer, unsigned char *pixels,
+    int width, int height, int stride, pv_result *result)
+{
+    if (!renderer || !renderer->pending_pixmap || !pixels || width <= 0 || height <= 0 ||
+        stride < width * 4) {
+        pv_error(result, "Invalid form renderer output raster");
+        return;
+    }
+    int actual_width = fz_pixmap_width(renderer->ctx, renderer->pending_pixmap);
+    int actual_height = fz_pixmap_height(renderer->ctx, renderer->pending_pixmap);
+    int components = fz_pixmap_components(renderer->ctx, renderer->pending_pixmap);
+    int source_stride = fz_pixmap_stride(renderer->ctx, renderer->pending_pixmap);
+    unsigned char *samples = fz_pixmap_samples(renderer->ctx, renderer->pending_pixmap);
+    if (actual_width != width || actual_height != height ||
+        (components != 3 && components != 4) || source_stride < actual_width * components) {
+        pv_error(result, "Form preview raster dimensions changed");
+        fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+        renderer->pending_pixmap = NULL;
+        return;
+    }
+    for (int y = 0; y < actual_height; ++y) {
+        unsigned char *src = samples + (size_t)y * source_stride;
+        unsigned char *dst = pixels + (size_t)y * stride;
+        if (components == 4) memcpy(dst, src, (size_t)actual_width * 4);
+        else for (int x = 0; x < actual_width; ++x) {
+            dst[x*4+0] = src[x*3+0];
+            dst[x*4+1] = src[x*3+1];
+            dst[x*4+2] = src[x*3+2];
+            dst[x*4+3] = 0xff;
+        }
+    }
+    fz_drop_pixmap(renderer->ctx, renderer->pending_pixmap);
+    renderer->pending_pixmap = NULL;
 }

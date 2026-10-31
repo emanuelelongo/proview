@@ -244,7 +244,7 @@ func isModelFile(name string) bool { return strings.HasSuffix(strings.ToLower(na
 func (g *Gui) modelInfo() string {
 	m := g.modelViewport.mesh
 	s := m.Size()
-	return fmt.Sprintf("%d triangles · %.3g × %.3g × %.3g units", len(m.Triangles), s.X, s.Y, s.Z)
+	return fmt.Sprintf("%d triangles · %.3g × %.3g × %.3g units", m.TriangleCount(), s.X, s.Y, s.Z)
 }
 
 var modelViews = []string{"Isometric", "Top", "Bottom", "Front", "Rear", "Left", "Right"}

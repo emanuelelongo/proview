@@ -100,6 +100,22 @@ func (c *derivedRasterCache) dropPreview(source *Source, index int) {
 	}
 }
 
+// dropSource releases all cached rasters and filled PDFs retaining a source.
+func (c *derivedRasterCache) dropSource(source *Source) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k, e := range c.entries {
+		if k.source == source {
+			c.bytes -= rasterBytes(e.image)
+			delete(c.entries, k)
+		}
+	}
+	if entry, ok := c.filled[source]; ok {
+		c.filledBytes -= int64(len(entry.data))
+		delete(c.filled, source)
+	}
+}
+
 // trim releases derived previews and filled-form PDFs; thumbnails are kept
 // when previewsOnly is set, matching Source.TrimPreviews.
 func (c *derivedRasterCache) trim(previewsOnly bool) {

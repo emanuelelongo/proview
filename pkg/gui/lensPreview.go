@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"emanuelelongo/proview/pkg/annotations"
 	"emanuelelongo/proview/pkg/document"
 	"fyne.io/fyne/v2"
@@ -17,9 +18,13 @@ func (g *Gui) scheduleLensPreviews(layer *signatureLayer) {
 	if g.document.Format() == document.FormatPDF && layer.page < len(g.pdfPageLoaded) && !g.pdfPageLoaded[layer.page] {
 		return
 	}
+	overlays, err := g.document.OverlaysForPage(layer.page)
+	if err != nil {
+		return
+	}
 	found := false
-	for _, o := range g.document.Overlays() {
-		if o.Page == layer.page && (o.IsLens() || o.IsHighlight()) {
+	for _, o := range overlays {
+		if o.IsLens() || o.IsHighlight() {
 			found = true
 			break
 		}
@@ -62,25 +67,39 @@ func (g *Gui) renderLensPreviews(layer *signatureLayer) {
 	page := layer.page
 	lensDPI := g.lensPreviewDPI()
 	highlightDPI := g.pdfOverlayPreviewDPI(page)
+	slots := g.pdfRenderSlots()
 	go func() {
 		previews := map[document.OverlayID]image.Image{}
 		var highlightErr error
 		hasHighlights := false
-		for _, o := range snapshot.Overlays() {
-			if o.Page == page && o.IsHighlight() {
+		overlays, overlayErr := snapshot.OverlaysForPage(page)
+		if overlayErr != nil {
+			highlightErr = overlayErr
+		}
+		for _, o := range overlays {
+			if o.IsHighlight() {
 				hasHighlights = true
 				break
 			}
 		}
 		if hasHighlights {
-			previews, highlightErr = renderer.HighlightPreviews(snapshot, page, highlightDPI)
+			highlightErr = withPDFRenderSlot(context.Background(), slots, func() error {
+				var err error
+				previews, err = renderer.HighlightPreviews(snapshot, page, highlightDPI)
+				return err
+			})
 			if previews == nil {
 				previews = map[document.OverlayID]image.Image{}
 			}
 		}
-		for _, o := range snapshot.Overlays() {
-			if o.Page == page && o.IsLens() {
-				p, e := renderer.RenderLens(snapshot, o.ID, lensDPI)
+		for _, o := range overlays {
+			if o.IsLens() {
+				var p image.Image
+				e := withPDFRenderSlot(context.Background(), slots, func() error {
+					var err error
+					p, err = renderer.RenderLens(snapshot, o.ID, lensDPI)
+					return err
+				})
 				if e == nil {
 					previews[o.ID] = p
 				}

@@ -6,6 +6,9 @@ import (
 
 	"emanuelelongo/proview/pkg/annotations"
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	fyneTest "fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 )
 
@@ -97,6 +100,7 @@ func TestPDFResidencyOversizedPages(t *testing.T) {
 			image.Pt(5000, 3000), // 15 MP (oversized)
 		},
 	}
+
 	if !g.isOversizedPDFPage(0) {
 		t.Fatal("expected page 0 to be oversized")
 	}
@@ -131,5 +135,58 @@ func TestPDFResidencyOversizedPages(t *testing.T) {
 	g.pdfVisibleStart, g.pdfVisibleEnd = 0, 1
 	if !g.pdfPageWanted(0) {
 		t.Fatal("expected visible oversized page 0 to be wanted")
+	}
+}
+
+func TestDetachDocumentViewClearsPDFImageReferences(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	g := newGui(app)
+	preview := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	page := canvas.NewImageFromImage(preview)
+	thumbnail := canvas.NewImageFromImage(preview)
+	g.pdfPageImages = []*canvas.Image{page}
+	g.pdfThumbImages = []*canvas.Image{thumbnail}
+	g.pdfPages.Add(page)
+	g.thumbList.Add(thumbnail)
+	g.detachDocumentView()
+	if page.Image != nil || thumbnail.Image != nil {
+		t.Fatal("detaching the PDF view retained raster pixels")
+	}
+}
+
+func TestSidebarThumbnailRangeUsesIndexedGeometry(t *testing.T) {
+	list := container.NewVBox()
+	heights := []float32{24, 48, 36, 60, 30}
+	for _, height := range heights {
+		card := canvas.NewRectangle(nil)
+		card.SetMinSize(fyne.NewSize(100, height))
+		list.Add(card)
+	}
+	scroll := container.NewVScroll(list)
+	scroll.Resize(fyne.NewSize(180, 90))
+	g := &Gui{pdfGeneration: 3, thumbList: list, sidebar: &Sidebar{container: scroll}}
+	defer g.clearSidebarThumbnailIndex()
+	for _, viewport := range [][2]float32{{0, 40}, {32, 90}, {120, 200}, {500, 600}} {
+		top := float32(0)
+		first, end := len(heights), len(heights)
+		for i, height := range heights {
+			next := top + height + theme.Padding()
+			if next-theme.Padding() > viewport[0] && first == len(heights) {
+				first = i
+			}
+			if top >= viewport[1] {
+				end = i
+				break
+			}
+			top = next
+		}
+		if end < first {
+			end = first
+		}
+		gotFirst, gotEnd := g.sidebarThumbnailRange(viewport[0], viewport[1])
+		if gotFirst != first || gotEnd != end {
+			t.Fatalf("range for %v = [%d,%d), want [%d,%d)", viewport, gotFirst, gotEnd, first, end)
+		}
 	}
 }

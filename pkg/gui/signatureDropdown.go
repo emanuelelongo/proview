@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"emanuelelongo/proview/pkg/signatures"
 	"image"
 	"image/color"
 
@@ -48,10 +49,7 @@ func (g *Gui) showSignatureDropdown() {
 	}
 	go func() {
 		entries, err := store.List()
-		previews := make([]image.Image, len(entries))
-		for i, entry := range entries {
-			previews[i], _ = entry.Asset.Render(300)
-		}
+		previews := renderSignaturePreviews(entries, 300, maxSignaturePreviewPixels)
 		fyne.Do(func() {
 			if g.closed || !popup.Visible() || g.signaturePopup != popup || g.document != doc {
 				return
@@ -93,6 +91,23 @@ func (g *Gui) showSignatureDropdown() {
 			popup.Resize(fyne.NewSize(width+padding, min(height, content.MinSize().Height+padding)))
 		})
 	}()
+}
+
+const maxSignaturePreviewPixels = 2_000_000
+
+// Keep preview rasters retained by a dialog bounded even when the archive has
+// many entries. Entries beyond the preview budget remain selectable.
+func renderSignaturePreviews(entries []signatures.Entry, maxSide, pixelBudget int) []image.Image {
+	previews := make([]image.Image, len(entries))
+	if maxSide < 1 || pixelBudget < 1 {
+		return previews
+	}
+	maxPerPreview := maxSide * maxSide
+	count := min(len(entries), pixelBudget/maxPerPreview)
+	for i := 0; i < count; i++ {
+		previews[i], _ = entries[i].Asset.Render(maxSide)
+	}
+	return previews
 }
 
 // A whole preview is clickable; dropdown choices contain no action buttons.

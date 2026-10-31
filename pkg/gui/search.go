@@ -191,12 +191,7 @@ func (g *Gui) startSearchAt(initialMatch int) {
 	}
 	serial, doc, key := s.serial, g.document, s.key
 	snapshot := doc.RenderingSnapshot()
-	var engine ocr.Engine
-	if g.ocr != nil {
-		engine = g.ocr.engine
-	} else if ocr.Enabled() {
-		engine = ocr.NewEngine()
-	}
+	engine := g.recognitionEngine()
 	cache := s.textCache
 	if g.ocr != nil {
 		for key, entry := range g.ocr.cache {
@@ -213,7 +208,19 @@ func (g *Gui) startSearchAt(initialMatch int) {
 			return
 		case <-timer.C:
 		}
-		walkSearchPages(ctx, snapshot, query, engine, nil, func(page int, hits []searchHit, err error, last, limited bool) {
+		slots := g.pdfRenderSlots()
+		batchHits := make([]searchHit, 0)
+		batchPages, batchFailures, batchErrPage := 0, 0, -1
+		batchLast, batchLimited := false, false
+		lastFlush := time.Now()
+		flush := func(page int, last bool, limited bool) {
+			hits := append([]searchHit(nil), batchHits...)
+			failed := batchFailures
+			errorPage := batchErrPage
+			batchHits = batchHits[:0]
+			batchPages, batchFailures, batchErrPage = 0, 0, -1
+			batchLast, batchLimited = false, false
+			lastFlush = time.Now()
 			fyne.Do(func() {
 				if g.closed || s.serial != serial || g.document != doc || !s.bar.Visible() {
 					return
@@ -224,11 +231,11 @@ func (g *Gui) startSearchAt(initialMatch int) {
 				}
 				s.hits = append(s.hits, hits...)
 				s.scanned = page + 1
-				if err != nil {
+				if failed > 0 {
 					if s.failed == 0 {
-						g.logEvent("search_page_failed", "level=WARN page=%d error=%q", page+1, err)
+						g.logEvent("search_page_failed", "level=WARN page=%d", errorPage+1)
 					}
-					s.failed++
+					s.failed += failed
 				}
 				if last {
 					g.logEvent("search_completed", "pages_scanned=%d pages_failed=%d matches=%d limited=%t", s.scanned, s.failed, len(s.hits), limited)
@@ -241,7 +248,21 @@ func (g *Gui) startSearchAt(initialMatch int) {
 					g.updateSearchStatus()
 				}
 			})
-		}, cache)
+		}
+		walkSearchPagesWithSlots(ctx, snapshot, query, engine, nil, func(page int, hits []searchHit, err error, last, limited bool) {
+			batchPages++
+			batchHits = append(batchHits, hits...)
+			if err != nil {
+				batchFailures++
+				if batchErrPage < 0 {
+					batchErrPage = page
+				}
+			}
+			batchLast, batchLimited = last, limited
+			if batchPages >= 8 || time.Since(lastFlush) >= 50*time.Millisecond || last {
+				flush(page, batchLast, batchLimited)
+			}
+		}, cache, slots)
 	}()
 }
 
@@ -252,6 +273,10 @@ func walkSearchPages(ctx context.Context, snapshot *document.Document, query str
 	if len(caches) > 0 {
 		index = caches[0]
 	}
+	walkSearchPagesWithSlots(ctx, snapshot, query, engine, cached, emit, index, nil)
+}
+
+func walkSearchPagesWithSlots(ctx context.Context, snapshot *document.Document, query string, engine ocr.Engine, cached map[int]textselect.Layout, emit func(int, []searchHit, error, bool, bool), index *searchTextCache, slots chan struct{}) {
 	total := 0
 	for page := 0; page < snapshot.PageCount(); page++ {
 		if ctx.Err() != nil {
@@ -265,7 +290,15 @@ func walkSearchPages(ctx context.Context, snapshot *document.Document, query str
 		var err error
 		if !ok {
 			pageCtx, stop := context.WithTimeout(ctx, 30*time.Second)
-			layout, err = snapshot.SelectableText(pageCtx, page, engine)
+			if slots == nil {
+				layout, err = snapshot.SelectableText(pageCtx, page, engine)
+			} else {
+				err = withPDFRenderSlot(pageCtx, slots, func() error {
+					var renderErr error
+					layout, renderErr = snapshot.SelectableText(pageCtx, page, engine)
+					return renderErr
+				})
+			}
 			stop()
 		}
 		if ctx.Err() != nil {

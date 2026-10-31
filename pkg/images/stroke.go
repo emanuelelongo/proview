@@ -16,6 +16,23 @@ func ThickenAlpha(src image.Image, strength int) image.Image {
 	if bounds.Empty() {
 		return dst
 	}
+	pixelAt := func(x, y int) color.NRGBA {
+		return color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
+	}
+	switch pixels := src.(type) {
+	case *image.NRGBA:
+		pixelAt = func(x, y int) color.NRGBA {
+			i := pixels.PixOffset(x, y)
+			return color.NRGBA{R: pixels.Pix[i], G: pixels.Pix[i+1], B: pixels.Pix[i+2], A: pixels.Pix[i+3]}
+		}
+	case *image.RGBA:
+		pixelAt = func(x, y int) color.NRGBA {
+			i := pixels.PixOffset(x, y)
+			return color.NRGBAModel.Convert(color.RGBA{
+				R: pixels.Pix[i], G: pixels.Pix[i+1], B: pixels.Pix[i+2], A: pixels.Pix[i+3],
+			}).(color.NRGBA)
+		}
+	}
 	radius := 0
 	if strength > 0 {
 		radius = max(1, strength*max(bounds.Dx(), bounds.Dy())/500)
@@ -23,7 +40,7 @@ func ThickenAlpha(src image.Image, strength int) image.Image {
 	}
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			pixel := color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
+			pixel := pixelAt(x, y)
 			if pixel.A == 0 {
 				continue
 			}

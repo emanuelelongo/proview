@@ -63,4 +63,11 @@ typedef struct { int id, count; char **values; } pv_form_edit;
 void pv_fill_form(const unsigned char *data, size_t length,
     const pv_form_edit *edits, size_t count, pv_result *result);
 void pv_render_forms(const unsigned char *data, size_t length, int page, float dpi, pv_result *result);
+typedef struct pv_form_renderer pv_form_renderer;
+pv_form_renderer *pv_form_renderer_new(const unsigned char *data, size_t length, pv_result *result);
+void pv_form_renderer_drop(pv_form_renderer *renderer);
+void pv_form_renderer_prepare(pv_form_renderer *renderer, int page, float dpi, pv_result *result);
+void pv_form_renderer_discard(pv_form_renderer *renderer);
+void pv_form_renderer_copy(pv_form_renderer *renderer, unsigned char *pixels,
+    int width, int height, int stride, pv_result *result);
 #endif

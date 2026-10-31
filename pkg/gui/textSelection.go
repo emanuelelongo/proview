@@ -58,6 +58,11 @@ func (l *signatureLayer) startSourceSelection(pos fyne.Position, mods fyne.KeyMo
 		return false
 	}
 	if layout == nil {
+		if qrCode {
+			g.requestQRCodePage(l.page)
+		} else {
+			g.requestOCRPage(l.page)
+		}
 		return false
 	}
 	word := layout.WordAt(l.textPoint(pos), false)

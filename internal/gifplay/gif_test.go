@@ -37,13 +37,18 @@ func TestGIFCompositionDisposalAndImmutableFrames(t *testing.T) {
 		}
 		p := a.NewPlayer()
 		first := p.Image()
+		if p.Image() != first {
+			t.Fatal("unchanged frame snapshot was cloned repeatedly")
+		}
 		now := time.Unix(1, 0)
 		if p.Advance(now) || p.Advance(now.Add(19*time.Millisecond)) {
 			t.Fatal("advanced before delay")
 		}
+
 		if !p.Advance(now.Add(20 * time.Millisecond)) {
 			t.Fatal("second frame missing")
 		}
+
 		second := p.Image()
 		if color.NRGBAModel.Convert(second.At(1, 0)).(color.NRGBA).G != 255 {
 			t.Fatal("offset frame not composed")
@@ -126,5 +131,24 @@ func TestGIFRepositoryAnimationsFitSharedBudget(t *testing.T) {
 		if !a.Animated() {
 			t.Fatalf("%s not animated", path)
 		}
+	}
+}
+
+func BenchmarkPlayerImage(b *testing.B) {
+	palette := color.Palette{color.Transparent, color.RGBA{R: 255, A: 255}}
+	frame := image.NewPaletted(image.Rect(0, 0, 64, 64), palette)
+	var buffer bytes.Buffer
+	if err := gif.EncodeAll(&buffer, &gif.GIF{Image: []*image.Paletted{frame, frame}, Delay: []int{2, 2}, LoopCount: -1, Config: image.Config{ColorModel: palette, Width: 64, Height: 64}}); err != nil {
+		b.Fatal(err)
+	}
+	animation, err := Decode(buffer.Bytes(), MaxBytes)
+	if err != nil {
+		b.Fatal(err)
+	}
+	player := animation.NewPlayer()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		_ = player.Image()
 	}
 }

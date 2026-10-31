@@ -2,12 +2,74 @@ package gui
 
 import (
 	"sort"
+	"sync"
 
 	"emanuelelongo/proview/pkg/document"
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 )
 
 const maxRetainedPagePixels = 8_000_000
+
+type sidebarThumbnailIndex struct {
+	generation uint64
+	width      float32
+	list       *fyne.Container
+	first      fyne.CanvasObject
+	last       fyne.CanvasObject
+	tops       []float32
+}
+
+var sidebarThumbnailIndexes = struct {
+	sync.Mutex
+	byGui map[*Gui]sidebarThumbnailIndex
+}{byGui: make(map[*Gui]sidebarThumbnailIndex)}
+
+func (g *Gui) sidebarThumbnailRange(top, bottom float32) (int, int) {
+	sidebarThumbnailIndexes.Lock()
+	index := sidebarThumbnailIndexes.byGui[g]
+	viewport := g.sidebarThumbnailViewportSize()
+	var firstObject, lastObject fyne.CanvasObject
+	if len(g.thumbList.Objects) > 0 {
+		firstObject, lastObject = g.thumbList.Objects[0], g.thumbList.Objects[len(g.thumbList.Objects)-1]
+	}
+	if index.generation != g.pdfGeneration || index.width != viewport.Width ||
+		index.list != g.thumbList || index.first != firstObject || index.last != lastObject ||
+		len(index.tops) != len(g.thumbList.Objects)+1 {
+		index = sidebarThumbnailIndex{
+			generation: g.pdfGeneration,
+			width:      viewport.Width,
+			list:       g.thumbList,
+			first:      firstObject,
+			last:       lastObject,
+			tops:       make([]float32, len(g.thumbList.Objects)+1),
+		}
+		for i, object := range g.thumbList.Objects {
+			index.tops[i+1] = index.tops[i] + object.MinSize().Height + theme.Padding()
+		}
+		sidebarThumbnailIndexes.byGui[g] = index
+	}
+	sidebarThumbnailIndexes.Unlock()
+	count := len(g.thumbList.Objects)
+	first := sort.Search(count, func(i int) bool { return index.tops[i+1]-theme.Padding() > top })
+	end := sort.Search(count, func(i int) bool { return index.tops[i] >= bottom })
+	return first, max(first, end)
+}
+
+func (g *Gui) sidebarThumbnailViewportSize() fyne.Size {
+	if g.sidebar.viewport != nil {
+		if size := g.sidebar.viewport.Size(); size.Width > 0 && size.Height > 0 {
+			return size
+		}
+	}
+	return g.sidebar.container.Size()
+}
+
+func (g *Gui) clearSidebarThumbnailIndex() {
+	sidebarThumbnailIndexes.Lock()
+	delete(sidebarThumbnailIndexes.byGui, g)
+	sidebarThumbnailIndexes.Unlock()
+}
 
 func (g *Gui) isOversizedPDFPage(page int) bool {
 	if page < 0 || page >= len(g.pdfPageSizes) {

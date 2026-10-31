@@ -43,6 +43,10 @@ func cloneRedactions(input []Redaction) []Redaction {
 // TextGeometry owns a copy of the glyph layout. Source caches are synchronized
 // and independent of editor mutations, so workers can use rendering snapshots.
 func (d *Document) TextGeometry(page int) (TextLayout, error) {
+	return d.textGeometry(page, true)
+}
+
+func (d *Document) textGeometry(page int, copyGlyphs bool) (TextLayout, error) {
 	if d.Format() != FormatPDF {
 		return TextLayout{}, errors.New("text selection requires a PDF")
 	}
@@ -51,17 +55,21 @@ func (d *Document) TextGeometry(page int) (TextLayout, error) {
 		return TextLayout{}, err
 	}
 	source.mu.Lock()
-	defer source.mu.Unlock()
 	layout, ok := source.textLayouts.get(index)
 	if !ok {
 		layout, err = pdfengine.TextLayout(source.original, index)
 		if err != nil {
+			source.mu.Unlock()
 			return TextLayout{}, err
 		}
 		source.textLayouts.put(index, layout)
 	}
-	layout.Glyphs = append([]pdfengine.Glyph(nil), layout.Glyphs...)
-	if turns := d.pages[page].turns; turns != 0 {
+	source.mu.Unlock()
+	turns := d.pages[page].turns
+	if copyGlyphs || turns != 0 {
+		layout.Glyphs = append([]pdfengine.Glyph(nil), layout.Glyphs...)
+	}
+	if turns != 0 {
 		for i := 0; i < turns; i++ {
 			for j := range layout.Glyphs {
 				layout.Glyphs[j].Quad = rotateTextQuad(layout.Glyphs[j].Quad, "right")
@@ -117,6 +125,12 @@ func (d *Document) RemoveRedaction(id RedactionID) error {
 func (d *Document) HasRedactions() bool     { return len(d.redactions) > 0 }
 func (d *Document) Redactions() []Redaction { return cloneRedactions(d.redactions) }
 func (d *Document) RedactionsForPage(page int) []Redaction {
+	return cloneRedactions(d.redactionsForPage(page))
+}
+
+// redactionsForPage returns immutable editor data for internal rendering paths.
+// Public callers must use RedactionsForPage, which owns its returned geometry.
+func (d *Document) redactionsForPage(page int) []Redaction {
 	if page < 0 || page >= len(d.pages) {
 		return nil
 	}
@@ -126,7 +140,7 @@ func (d *Document) RedactionsForPage(page int) []Redaction {
 			result = append(result, r)
 		}
 	}
-	return cloneRedactions(result)
+	return result
 }
 
 // Keys remain stable when pages are reordered. The GUI retains them outside
@@ -149,7 +163,7 @@ func (d *Document) redactExport(input []byte) ([]byte, error) {
 	}
 	var regions []pdfengine.Region
 	for page := range d.pages {
-		for _, r := range d.RedactionsForPage(page) {
+		for _, r := range d.redactionsForPage(page) {
 			for _, q := range r.Quads {
 				regions = append(regions, pdfengine.Region{Page: page, Quad: q})
 			}
@@ -195,7 +209,7 @@ func PaintRedactions(size image.Point, quads []TextQuad) *image.NRGBA {
 }
 func (d *Document) paintRedactions(page int, input image.Image) image.Image {
 	var quads []TextQuad
-	for _, r := range d.RedactionsForPage(page) {
+	for _, r := range d.redactionsForPage(page) {
 		quads = append(quads, r.Quads...)
 	}
 	return paintRedactionQuads(input, quads)

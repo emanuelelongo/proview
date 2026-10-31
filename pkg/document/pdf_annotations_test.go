@@ -619,8 +619,50 @@ func TestFormsRemainEditableAlongsideStandardAnnotations(t *testing.T) {
 	if len(fields) != 3 || fields[0].Value != "With annotations" || len(out.Overlays()) != 1 {
 		t.Fatal("form fields or annotation lost")
 	}
+	base, _, err := out.pageSource(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base != out.source.annotationBase {
+		t.Fatal("render page did not route through the annotation base source")
+	}
+	if _, err = out.Preview(0); err != nil {
+		t.Fatal(err)
+	}
+	if base.formRenderer == nil {
+		t.Fatal("annotation-base preview did not retain its native form renderer")
+	}
+	renderer := base.formRenderer
+	oneShot, err := renderPDFPage(base.original, 0, pdfPreviewDPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persistent, err := base.renderFormPage(base.original, 0, pdfPreviewDPI, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.formRenderer != renderer {
+		t.Fatal("same PDF content reopened its persistent renderer")
+	}
+	if oneShot.Bounds() != persistent.Bounds() {
+		t.Fatalf("persistent form raster bounds = %v, want %v", persistent.Bounds(), oneShot.Bounds())
+	}
+	for y := 0; y < oneShot.Bounds().Dy(); y++ {
+		for x := 0; x < oneShot.Bounds().Dx(); x++ {
+			if color.NRGBAModel.Convert(oneShot.At(x, y)) != color.NRGBAModel.Convert(persistent.At(x, y)) {
+				t.Fatalf("persistent annotation raster differs at (%d,%d)", x, y)
+			}
+		}
+	}
+	unfilledKey := base.formRendererKey
 	if err = out.SetFormValue(0, fields[0].ID, "Edited again"); err != nil {
 		t.Fatal(err)
+	}
+	if _, err = out.Preview(0); err != nil {
+		t.Fatal(err)
+	}
+	if base.formRenderer == nil || base.formRendererKey == unfilledKey {
+		t.Fatal("form-filled preview did not replace the renderer with the edited PDF")
 	}
 	again := reopenEditable(t, exportEditable(t, out))
 	fields, err = again.FormFields(0)
@@ -629,5 +671,9 @@ func TestFormsRemainEditableAlongsideStandardAnnotations(t *testing.T) {
 	}
 	if fields[0].Value != "Edited again" || len(again.Overlays()) != 1 {
 		t.Fatal("second form edit lost")
+	}
+	out.Close()
+	if base.formRenderer != nil {
+		t.Fatal("closing the document retained its annotation-base form renderer")
 	}
 }

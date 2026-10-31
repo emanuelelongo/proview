@@ -30,6 +30,21 @@ func waitSignatureUI(t *testing.T, ready func() bool) {
 	t.Fatal("signature UI did not finish loading")
 }
 
+func TestSignaturePreviewRenderingIsPixelBounded(t *testing.T) {
+	asset, err := signatures.Import("sample.svg", []byte(`<svg viewBox="0 0 100 30"><path d="M5 20L95 10" stroke="black"/></svg>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := make([]signatures.Entry, 3)
+	for i := range entries {
+		entries[i].Asset = asset
+	}
+	previews := renderSignaturePreviews(entries, 100, 10_000)
+	if len(previews) != len(entries) || previews[0] == nil || previews[1] != nil || previews[2] != nil {
+		t.Fatal("preview generation exceeded its aggregate pixel allowance")
+	}
+}
+
 func TestSignatureDropdownInsertsWithOneClickAndHasNoButtons(t *testing.T) {
 	g, _ := annotationTestGui(t)
 	g.image = canvas.NewImageFromImage(image.NewNRGBA(image.Rect(0, 0, 1000, 700)))

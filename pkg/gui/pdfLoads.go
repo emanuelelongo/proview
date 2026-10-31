@@ -5,6 +5,8 @@ import (
 	"image"
 )
 
+const pdfNativeRenderSlots = 2
+
 // Bound native page work even when the scrollbar skips hundreds of pages.
 // Cancellation drops waiting requests; at most two obsolete native calls may
 // finish because the native renderer itself is not interruptible.
@@ -14,9 +16,7 @@ type pdfRasterJob struct {
 }
 
 func (g *Gui) startPDFRasterJob(page int, thumbnail bool) (*pdfRasterJob, chan struct{}) {
-	if g.pdfLoadSlots == nil {
-		g.pdfLoadSlots = make(chan struct{}, 2)
-	}
+	slots := g.pdfRenderSlots()
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &pdfRasterJob{ctx: ctx, cancel: cancel}
 	if thumbnail {
@@ -30,21 +30,47 @@ func (g *Gui) startPDFRasterJob(page int, thumbnail bool) (*pdfRasterJob, chan s
 		}
 		g.pdfPageJobs[page] = job
 	}
-	return job, g.pdfLoadSlots
+	return job, slots
 }
 
 func (job *pdfRasterJob) render(slots chan struct{}, render func() (image.Image, error)) (image.Image, error) {
 	defer job.cancel()
+	var picture image.Image
+	err := withPDFRenderSlot(job.ctx, slots, func() error {
+		var err error
+		picture, err = render()
+		return err
+	})
+	return picture, err
+}
+
+func (g *Gui) pdfRenderSlots() chan struct{} {
+	g.pdfLoadSlotsOnce.Do(func() {
+		if g.pdfLoadSlots == nil {
+			g.pdfLoadSlots = make(chan struct{}, pdfNativeRenderSlots)
+		}
+	})
+	return g.pdfLoadSlots
+}
+
+func withPDFRenderSlot(ctx context.Context, slots chan struct{}, render func() error) error {
 	select {
 	case slots <- struct{}{}:
 		defer func() { <-slots }()
-	case <-job.ctx.Done():
-		return nil, job.ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	if err := job.ctx.Err(); err != nil {
-		return nil, err
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return render()
+}
+
+func (g *Gui) renderPDFBackground(ctx context.Context, render func() error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return withPDFRenderSlot(ctx, g.pdfRenderSlots(), render)
 }
 
 func (g *Gui) cancelDistantPDFLoads() {
@@ -65,6 +91,7 @@ func (g *Gui) cancelDistantPDFLoads() {
 }
 
 func (g *Gui) clearPDFLoads() {
+	g.clearSidebarThumbnailIndex()
 	for _, job := range g.pdfPageJobs {
 		job.cancel()
 	}

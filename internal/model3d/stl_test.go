@@ -30,11 +30,16 @@ func TestASCIIAndBinarySTL(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(m.Triangles) != 1 || m.Size() != (Vector{2, 1, 0}) || m.SourceBytes != int64(len(data)) {
+		if m.TriangleCount() != 1 || m.Size() != (Vector{2, 1, 0}) || m.SourceBytes != int64(len(data)) {
 			t.Fatalf("unexpected mesh: %+v", m)
 		}
-		if m.Triangles[0].Vertices != triangle {
-			t.Fatal("source coordinates changed")
+		if len(m.triangles) != 0 || len(m.packed) != 21 {
+			t.Fatal("full-precision source triangles were retained after packing")
+		}
+		for i, value := range []float32{1, -.5, 0} {
+			if m.packed[3+i] != value {
+				t.Fatal("normalized packed coordinates changed")
+			}
 		}
 	}
 }
@@ -62,7 +67,7 @@ func TestDegenerateTrianglesAndTinyCoordinates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := m.normalized(m.Triangles[0].Vertices[1])
+	v := Vector{float64(m.packed[3]), float64(m.packed[4]), float64(m.packed[5])}
 	if !finite(v.X) || !finite(v.Y) || !finite(v.Z) {
 		t.Fatal("tiny geometry normalization is invalid")
 	}

@@ -246,32 +246,27 @@ func (g *Gui) loadVisiblePDFPages() {
 }
 
 func (g *Gui) loadVisiblePDFThumbnails() {
-	if g.closed || g.document == nil || g.document.Format() != document.FormatPDF || g.sidebar.container.Size().Height <= 0 {
+	if g.closed || g.document == nil || g.document.Format() != document.FormatPDF {
+		return
+	}
+	size := g.sidebarThumbnailViewportSize()
+	if size.Height <= 0 {
 		return
 	}
 	if g.thumbnailDrag != nil {
 		g.updateThumbnailDrop(g.thumbnailDrag)
 	}
 	top := g.sidebar.container.Offset.Y
-	bottom := top + g.sidebar.container.Size().Height
-	thumbTop := float32(0)
-	lastVisible, firstVisible := -1, -1
-	for page, object := range g.thumbList.Objects {
-		thumbBottom := thumbTop + object.MinSize().Height
-		if thumbBottom > top && thumbTop < bottom {
-			g.loadPDFThumbnail(page)
-			if firstVisible < 0 {
-				firstVisible = page
-			}
-			lastVisible = page
-		}
-		thumbTop = thumbBottom + theme.Padding()
+	bottom := top + size.Height
+	firstVisible, endVisible := g.sidebarThumbnailRange(top, bottom)
+	for page := firstVisible; page < endVisible; page++ {
+		g.loadPDFThumbnail(page)
 	}
-	if firstVisible >= 0 {
-		g.retainPDFThumbnails(firstVisible, lastVisible+1)
+	if endVisible > firstVisible {
+		g.retainPDFThumbnails(firstVisible, endVisible)
 	}
-	if lastVisible >= 0 && lastVisible+1 < len(g.thumbList.Objects) {
-		g.loadPDFThumbnail(lastVisible + 1)
+	if endVisible > firstVisible && endVisible < len(g.thumbList.Objects) {
+		g.loadPDFThumbnail(endVisible)
 	}
 }
 

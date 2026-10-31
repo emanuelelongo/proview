@@ -482,7 +482,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		crop := newCropOverlay()
 		crop.onActiveChanged = g.setCropToolActive
 		g.pdfCrops[page] = crop
-		forms := newFormLayer(g, page)
+		forms := newDeferredFormLayer(g, page)
 		g.formLayers[page] = forms
 		correction := newTextCorrectionLayer(g, page)
 		g.correctionLayers[page] = correction

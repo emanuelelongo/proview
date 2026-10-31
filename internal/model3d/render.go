@@ -27,7 +27,7 @@ func (c Camera) rotate(v Vector) Vector {
 // Render uses an orthographic camera and bounded triangle boxes. Mesh and camera
 // are immutable for the duration of a frame; the returned image owns its pixels.
 func Render(ctx context.Context, m *Mesh, c Camera, w, h int) (*image.RGBA, error) {
-	if m == nil || len(m.Triangles) == 0 || w < 1 || h < 1 || w > 2400 || h > 2400 || int64(w)*int64(h) > 4_000_000 {
+	if m == nil || m.TriangleCount() == 0 || w < 1 || h < 1 || w > 2400 || h > 2400 || int64(w)*int64(h) > 4_000_000 {
 		return nil, fmt.Errorf("invalid model viewport")
 	}
 	if !finite(c.Yaw) || !finite(c.Pitch) || !finite(c.Zoom) || !finite(c.PanX) || !finite(c.PanY) {
@@ -42,7 +42,7 @@ func Render(ctx context.Context, m *Mesh, c Camera, w, h int) (*image.RGBA, erro
 // RenderHighQuality uses four subpixel samples per output pixel.
 func RenderHighQuality(ctx context.Context, m *Mesh, c Camera, w, h int) (*image.RGBA, error) {
 	// Validate before allocating the larger buffers.
-	if m == nil || len(m.Triangles) == 0 || w < 1 || h < 1 || w > 2400 || h > 2400 || int64(w)*int64(h) > 4_000_000 {
+	if m == nil || m.TriangleCount() == 0 || w < 1 || h < 1 || w > 2400 || h > 2400 || int64(w)*int64(h) > 4_000_000 {
 		return nil, fmt.Errorf("invalid model viewport")
 	}
 	if !finite(c.Yaw) || !finite(c.Pitch) || !finite(c.Zoom) || !finite(c.PanX) || !finite(c.PanY) {
@@ -81,32 +81,32 @@ func renderFrame(ctx context.Context, m *Mesh, c Camera, w, h int) (*image.RGBA,
 	}
 	scale := float64(min(w, h)) * .29 * math.Max(.05, math.Min(c.Zoom, 30))
 	light := Vector{-.4, .6, 1}.Unit()
-	project := func(t Triangle) [3]Vector {
+	project := func(offset int) [3]Vector {
 		var result [3]Vector
-		for i, v := range t.Vertices {
-			v = c.rotate(m.normalized(v))
+		for i := range 3 {
+			p := offset + i*3
+			v := c.rotate(Vector{float64(m.packed[p]), float64(m.packed[p+1]), float64(m.packed[p+2])})
 			result[i] = Vector{float64(w)/2 + v.X*scale + c.PanX*float64(w), float64(h)/2 - v.Y*scale + c.PanY*float64(h), v.Z}
 		}
 		return result
 	}
-	for i, t := range m.Triangles {
+	for i := 0; i < m.TriangleCount(); i++ {
 		if i%128 == 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 		}
-		p := project(t)
-		normal := c.rotate(m.normalized(t.Vertices[1]).Sub(m.normalized(t.Vertices[0])).Cross(m.normalized(t.Vertices[2]).Sub(m.normalized(t.Vertices[0])))).Unit()
+		offset := i * 21
+		p := project(offset)
+		normal := c.rotate(Vector{float64(m.packed[offset+18]), float64(m.packed[offset+19]), float64(m.packed[offset+20])})
 		// Two-sided lighting accommodates common STL winding inconsistencies.
 		intensity := surfaceLight(normal, light)
 		var shades [3]float64
-		for j, v := range t.Vertices {
+		for j := range 3 {
 			shades[j] = intensity
-			if n, ok := m.normals[v]; ok {
-				n = c.rotate(n)
-				if math.Abs(n.Dot(normal)) >= .8 {
-					shades[j] = surfaceLight(n, light)
-				}
+			n := c.rotate(Vector{float64(m.packed[offset+9+j*3]), float64(m.packed[offset+10+j*3]), float64(m.packed[offset+11+j*3])})
+			if math.Abs(n.Dot(normal)) >= .8 {
+				shades[j] = surfaceLight(n, light)
 			}
 		}
 		if c.Wireframe {
@@ -117,13 +117,13 @@ func renderFrame(ctx context.Context, m *Mesh, c Camera, w, h int) (*image.RGBA,
 		}
 	}
 	if c.Wireframe {
-		for i, t := range m.Triangles {
+		for i := 0; i < m.TriangleCount(); i++ {
 			if i%128 == 0 {
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
 			}
-			p := project(t)
+			p := project(i * 21)
 			for j := range 3 {
 				line(dst, depth, p[j], p[(j+1)%3])
 			}

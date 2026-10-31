@@ -14,24 +14,25 @@ import (
 
 type cropOverlay struct {
 	widget.BaseWidget
-	area               image.Rectangle
-	onComplete         func(image.Rectangle)
-	onActiveChanged    func(bool)
-	onSelectionChanged func(image.Rectangle)
-	liveSelection      bool
-	liveArea           image.Rectangle
-	active             bool
-	selecting          bool
-	hasSelection       bool
-	dragMode           cropDragMode
-	lastPos            fyne.Position
-	anchor             fyne.Position
-	selMin             fyne.Position
-	selMax             fyne.Position
-	rect               *canvas.Rectangle
-	handles            []*cropHandle
-	activeHandle       *cropHandle
-	confirm            *widget.Button
+	area                image.Rectangle
+	onComplete          func(image.Rectangle)
+	onActiveChanged     func(bool)
+	onSelectionChanged  func(image.Rectangle)
+	liveSelection       bool
+	liveArea            image.Rectangle
+	active              bool
+	selecting           bool
+	hasSelection        bool
+	dragMode            cropDragMode
+	lastPos             fyne.Position
+	anchor              fyne.Position
+	selMin              fyne.Position
+	selMax              fyne.Position
+	rect                *canvas.Rectangle
+	handles             []*cropHandle
+	activeHandle        *cropHandle
+	confirm             *widget.Button
+	controlsInitialized bool
 }
 
 type cropDragMode int
@@ -50,13 +51,21 @@ const (
 )
 
 func newCropOverlay() *cropOverlay {
+	o := &cropOverlay{}
+	o.ExtendBaseWidget(o)
+	o.Hide()
+	return o
+}
+
+func (o *cropOverlay) ensureControls() {
+	if o.controlsInitialized {
+		return
+	}
 	rect := canvas.NewRectangle(color.NRGBA{R: 70, G: 160, B: 255, A: 96})
 	rect.StrokeColor = color.NRGBA{R: 0, G: 122, B: 255, A: 200}
 	rect.StrokeWidth = 2
 
-	o := &cropOverlay{
-		rect: rect,
-	}
+	o.rect = rect
 
 	o.confirm = widget.NewButtonWithIcon("Crop", theme.ConfirmIcon(), func() {
 		o.applySelection()
@@ -70,16 +79,14 @@ func newCropOverlay() *cropOverlay {
 		newCropHandle(o, handleBottomLeft),
 		newCropHandle(o, handleBottomRight),
 	}
-
-	o.ExtendBaseWidget(o)
-	o.Hide()
-	return o
+	o.controlsInitialized = true
 }
 
 func (c *cropOverlay) Activate(area image.Rectangle, onComplete func(image.Rectangle)) {
 	if c.active {
 		return
 	}
+	c.ensureControls()
 	c.liveSelection = false
 	c.onSelectionChanged = nil
 	c.onComplete = onComplete
@@ -169,11 +176,7 @@ func (c *cropOverlay) clearSelection() {
 
 func (c *cropOverlay) CreateRenderer() fyne.WidgetRenderer {
 	bg := canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 96})
-	objects := []fyne.CanvasObject{bg, c.rect, c.confirm}
-	for _, h := range c.handles {
-		objects = append(objects, h)
-	}
-	return &cropOverlayRenderer{overlay: c, background: bg, objects: objects}
+	return &cropOverlayRenderer{overlay: c, background: bg}
 }
 
 func (c *cropOverlay) beginDrag(start fyne.Position) {
@@ -390,6 +393,9 @@ func (c *cropOverlay) handleAt(pos fyne.Position) *cropHandle {
 }
 
 func (c *cropOverlay) updateRect() {
+	if c.rect == nil {
+		return
+	}
 	if !c.rect.Visible() && !c.hasSelection && c.dragMode != dragNew {
 		return
 	}
@@ -400,6 +406,9 @@ func (c *cropOverlay) updateRect() {
 }
 
 func (c *cropOverlay) showHandles() {
+	if len(c.handles) == 0 {
+		return
+	}
 	for _, h := range c.handles {
 		h.Show()
 		h.Resize(fyne.NewSize(handleSize, handleSize))
@@ -413,7 +422,7 @@ func (c *cropOverlay) hideHandles() {
 }
 
 func (c *cropOverlay) positionControls() {
-	if !c.hasSelection {
+	if !c.hasSelection || c.confirm == nil {
 		return
 	}
 	minX, minY, maxX, maxY := c.selectionBounds()
@@ -558,6 +567,7 @@ func (r *cropOverlayRenderer) Destroy() {}
 func (r *cropOverlayRenderer) Layout(size fyne.Size) {
 	r.background.Resize(size)
 	r.background.Move(fyne.NewPos(0, 0))
+	r.updateObjects()
 	if r.overlay.liveSelection && !r.overlay.selecting {
 		r.overlay.layoutLiveSelection()
 	}
@@ -572,18 +582,33 @@ func (r *cropOverlayRenderer) MinSize() fyne.Size {
 }
 
 func (r *cropOverlayRenderer) Objects() []fyne.CanvasObject {
+	r.updateObjects()
 	return r.objects
 }
 
 func (r *cropOverlayRenderer) Refresh() {
+	r.updateObjects()
 	r.background.Refresh()
-	if r.overlay.rect.Visible() {
+	if r.overlay.rect != nil && r.overlay.rect.Visible() {
 		r.overlay.rect.Refresh()
 	}
 	for _, h := range r.overlay.handles {
 		h.Refresh()
 	}
-	r.overlay.confirm.Refresh()
+	if r.overlay.confirm != nil {
+		r.overlay.confirm.Refresh()
+	}
+}
+
+func (r *cropOverlayRenderer) updateObjects() {
+	objects := []fyne.CanvasObject{r.background}
+	if r.overlay.controlsInitialized {
+		objects = append(objects, r.overlay.rect, r.overlay.confirm)
+		for _, handle := range r.overlay.handles {
+			objects = append(objects, handle)
+		}
+	}
+	r.objects = objects
 }
 
 type handleKind int

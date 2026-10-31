@@ -286,6 +286,7 @@ func (d *Document) pruneTextSources() {
 			kept = append(kept, source)
 			continue
 		}
+		d.derived.dropSource(source)
 		source.Close()
 	}
 	clear(d.textSources[len(kept):])
@@ -358,7 +359,7 @@ func (d *Document) Thumbnail(page int) (image.Image, error) {
 		return nil, err
 	}
 	var quads []TextQuad
-	for _, r := range d.RedactionsForPage(page) {
+	for _, r := range d.redactionsForPage(page) {
 		quads = append(quads, r.Quads...)
 	}
 	key := derivedKey{source: source, index: index, thumbnail: true, forms: d.formsFingerprint(source), redactions: redactionsFingerprint(quads)}

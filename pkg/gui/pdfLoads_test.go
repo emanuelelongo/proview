@@ -39,3 +39,40 @@ func TestCanceledPDFLoadsDoNotEnterNativeRenderer(t *testing.T) {
 	<-finished
 	<-finished
 }
+
+func TestPDFRenderSlotsAreSharedByBackgroundWork(t *testing.T) {
+	g := &Gui{}
+	g.pdfRenderSlots()
+	entered := make(chan struct{}, pdfNativeRenderSlots)
+	release := make(chan struct{})
+	finishedWorkers := make(chan struct{}, pdfNativeRenderSlots)
+	for range pdfNativeRenderSlots {
+		go func() {
+			_ = g.renderPDFBackground(context.Background(), func() error {
+				entered <- struct{}{}
+				<-release
+				return nil
+			})
+			finishedWorkers <- struct{}{}
+		}()
+	}
+	for range pdfNativeRenderSlots {
+		<-entered
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan error, 1)
+	go func() {
+		finished <- g.renderPDFBackground(ctx, func() error {
+			t.Error("work entered native rendering beyond the shared slot limit")
+			return nil
+		})
+	}()
+	cancel()
+	if err := <-finished; !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiting background work was not canceled: %v", err)
+	}
+	close(release)
+	for range pdfNativeRenderSlots {
+		<-finishedWorkers
+	}
+}

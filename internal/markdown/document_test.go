@@ -19,6 +19,7 @@ func TestLoadParsesGFMAndHighlightsWithoutLosingCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
 	for _, newline := range []string{"\n", "\r\n"} {
 		t.Run(fmt.Sprintf("newline=%q", newline), func(t *testing.T) {
@@ -39,7 +40,7 @@ func TestLoadParsesGFMAndHighlightsWithoutLosingCode(t *testing.T) {
 					case *east.TaskCheckBox:
 						counts["task"]++
 					case *ast.FencedCodeBlock:
-						if tokens := d.Tokens[n]; len(tokens) > 0 {
+						if tokens := d.TokensFor(n); len(tokens) > 0 {
 							counts["highlight"]++
 							var b strings.Builder
 							for _, token := range tokens {
@@ -49,7 +50,7 @@ func TestLoadParsesGFMAndHighlightsWithoutLosingCode(t *testing.T) {
 								t.Fatal("highlighting changed code")
 							}
 						}
-						if string(n.Language(d.Source)) == "mermaid" && len(d.Tokens[n]) != 0 {
+						if string(n.Language(d.Source)) == "mermaid" && len(d.TokensFor(n)) != 0 {
 							t.Fatal("unexpected Mermaid interpretation")
 						}
 					}
@@ -62,6 +63,35 @@ func TestLoadParsesGFMAndHighlightsWithoutLosingCode(t *testing.T) {
 		})
 	}
 }
+
+func TestCodeTokensAreLazyAndRegeneratedAfterTrim(t *testing.T) {
+	d, err := Load("code.md", "", strings.NewReader("```go\nvar answer = 42\n```\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block *ast.FencedCodeBlock
+	_ = ast.Walk(d.Root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			block, _ = n.(*ast.FencedCodeBlock)
+		}
+		return ast.WalkContinue, nil
+	})
+	if block == nil || len(d.Tokens) != 0 {
+		t.Fatal("code tokens were highlighted eagerly")
+	}
+	first := d.TokensFor(block)
+	if len(first) == 0 || len(d.Tokens) != 1 || !d.HasReleasableResources() {
+		t.Fatal("code tokens were not cached on demand")
+	}
+	d.TrimImages()
+	if len(d.Tokens) != 0 || d.HasReleasableResources() {
+		t.Fatal("trim retained disposable token buffers")
+	}
+	if regenerated := d.TokensFor(block); len(regenerated) == 0 {
+		t.Fatal("trimmed tokens were not regenerated")
+	}
+}
+
 func TestLoadRejectsNonTextAndOversize(t *testing.T) {
 	for _, source := range []string{"\xff", "a\x00b", strings.Repeat("x", MaxSourceBytes+1)} {
 		if _, err := Load("bad.md", "", strings.NewReader(source)); err == nil {

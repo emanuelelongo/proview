@@ -79,10 +79,7 @@ func (g *Gui) showSignatureLibrary() {
 		generation := loadGeneration
 		go func() {
 			entries, listErr := store.List()
-			previews := make([]image.Image, len(entries))
-			for i, entry := range entries {
-				previews[i], _ = entry.Asset.Render(180)
-			}
+			previews := renderSignaturePreviews(entries, 180, maxSignaturePreviewPixels)
 			fyne.Do(func() {
 				if closed || generation != loadGeneration {
 					return

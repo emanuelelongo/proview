@@ -114,19 +114,14 @@ func (g *Gui) showSaveAsDialog(exports preparedExports, saved func()) {
 
 func (g *Gui) prepareExports() (preparedExports, error) {
 	revision := g.document.Revision()
-	formats := []document.Format{document.FormatPNG, document.FormatJPEG}
-	if g.document.Format() == document.FormatPDF {
-		formats = []document.Format{document.FormatPDF}
+	if g.document.Format() != document.FormatPDF {
+		return preparedExports{data: map[document.Format][]byte{}, revision: revision}, nil
 	}
-	result := make(map[document.Format][]byte, len(formats))
-	for _, format := range formats {
-		data, err := g.document.Export(document.ExportOptions{Format: format})
-		if err != nil {
-			return preparedExports{}, err
-		}
-		result[format] = data
+	data, err := g.document.Export(document.ExportOptions{Format: document.FormatPDF})
+	if err != nil {
+		return preparedExports{}, err
 	}
-	return preparedExports{data: result, revision: revision}, nil
+	return preparedExports{data: map[document.Format][]byte{document.FormatPDF: data}, revision: revision}, nil
 }
 
 func (g *Gui) exportForName(name string) ([]byte, error) {
@@ -279,7 +274,10 @@ func (g *Gui) showLocalSaveAsDialog(exports preparedExports, saved func()) {
 	save := widget.NewButton("Save", func() {
 		filename := strings.TrimSpace(name.Text)
 		format, formatErr := document.FormatFromName(filename)
-		data, supported := exports.data[format]
+		_, supported := exports.data[format]
+		if g.document != nil && g.document.Format() != document.FormatPDF {
+			supported = format == document.FormatPNG || format == document.FormatJPEG
+		}
 		if filename == "" || filepath.Base(filename) != filename || strings.ContainsAny(filename, "/\\") || formatErr != nil || !supported {
 			expected := ".png, .jpg, or .jpeg"
 			if g.document.Format() == document.FormatPDF {
@@ -297,8 +295,31 @@ func (g *Gui) showLocalSaveAsDialog(exports preparedExports, saved func()) {
 			if g.document != doc || doc.Revision() != exports.revision {
 				return
 			}
-			chooser.Hide()
-			g.finishFileSave(data, uri, exports.revision, saved)
+			if data, prepared := exports.data[format]; prepared {
+				chooser.Hide()
+				g.finishFileSave(data, uri, exports.revision, saved)
+				return
+			}
+			g.working = true
+			progress := dialog.NewCustomWithoutButtons("Preparing export", widget.NewProgressBarInfinite(), g.window)
+			progress.Show()
+			go func() {
+				data, exportErr := doc.Export(document.ExportOptions{Format: format})
+				fyne.Do(func() {
+					progress.Hide()
+					g.working = false
+					defer g.processPendingFiles()
+					if g.closed || g.document != doc || doc.Revision() != exports.revision {
+						return
+					}
+					if exportErr != nil {
+						g.showOperationError("save", exportErr)
+						return
+					}
+					chooser.Hide()
+					g.finishFileSave(data, uri, exports.revision, saved)
+				})
+			}()
 		}
 		_, err := os.Stat(uri.Path())
 		if err != nil && !os.IsNotExist(err) {
