@@ -64,7 +64,7 @@ static pv_point pv_normalize(fz_point p, fz_rect bounds)
 
 void pv_layout(const unsigned char *data, size_t length, int page_number, pv_result *result)
 {
-    fz_context *ctx = pv_context();
+    fz_context *ctx = pv_context_with_store(16 << 20);
     pdf_document *doc = NULL;
     pdf_page *page = NULL;
     fz_stext_page *text = NULL;
@@ -74,7 +74,7 @@ void pv_layout(const unsigned char *data, size_t length, int page_number, pv_res
     if (!ctx) { pv_error(result, "Cannot create MuPDF context"); return; }
     fz_try(ctx) {
         doc = pv_open(ctx, data, length);
-        pv_clean_resource_tags(ctx, doc);
+        pv_clean_page_resource_tags(ctx, doc, page_number);
         page = pdf_load_page(ctx, doc, page_number);
         pv_clean_page_tags(ctx, doc, page);
         fz_rect bounds = fz_bound_page(ctx, &page->super);
@@ -312,9 +312,100 @@ static pdf_obj *pv_reset_action(fz_context *ctx, pdf_obj *obj)
     return action;
 }
 
+static int pv_page_has_widget(fz_context *ctx, pdf_obj *page_obj)
+{
+    pdf_obj *annots = pdf_dict_get(ctx, page_obj, PDF_NAME(Annots));
+    int count = pdf_array_len(ctx, annots);
+    for (int i = 0; i < count; ++i) {
+        pdf_obj *annot = pdf_array_get(ctx, annots, i);
+        if (pdf_name_eq(ctx, pdf_dict_get(ctx, annot, PDF_NAME(Subtype)), PDF_NAME(Widget)))
+            return 1;
+    }
+    return 0;
+}
+
+static int pv_annot_is_importable(fz_context *ctx, pdf_obj *annot)
+{
+    pdf_obj *subtype = pdf_dict_get(ctx, annot, PDF_NAME(Subtype));
+    return pdf_name_eq(ctx, subtype, PDF_NAME(FreeText)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Ink)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Highlight)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Square)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Circle)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Line)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Polygon)) ||
+        pdf_name_eq(ctx, subtype, PDF_NAME(Stamp));
+}
+
+static int pv_annot_is_visual(fz_context *ctx, pdf_obj *annot)
+{
+    int flags = pdf_dict_get_int(ctx, annot, PDF_NAME(F));
+    if (flags & (PDF_ANNOT_IS_INVISIBLE | PDF_ANNOT_IS_HIDDEN | PDF_ANNOT_IS_NO_VIEW))
+        return 0;
+    pdf_obj *subtype = pdf_dict_get(ctx, annot, PDF_NAME(Subtype));
+    if (pdf_name_eq(ctx, subtype, PDF_NAME(Popup)))
+        return 0;
+    if (pdf_name_eq(ctx, subtype, PDF_NAME(Link))) {
+        if (pdf_dict_get(ctx, annot, PDF_NAME(AP)))
+            return 1;
+        pdf_obj *bs = pdf_dict_get(ctx, annot, PDF_NAME(BS));
+        if (bs)
+            return pdf_dict_get_real(ctx, bs, PDF_NAME(W)) > 0;
+        pdf_obj *border = pdf_dict_get(ctx, annot, PDF_NAME(Border));
+        if (pdf_is_array(ctx, border) && pdf_array_len(ctx, border) >= 3)
+            return pdf_array_get_real(ctx, border, 2) > 0;
+        return 0;
+    }
+    return 1;
+}
+
+void pv_free_pdf_info(pv_pdf_info *result)
+{
+    free(result->annot_pages);
+}
+
+void pv_inspect_pdf(const unsigned char *data, size_t length, pv_pdf_info *result)
+{
+    fz_context *ctx = pv_context_with_store(16 << 20);
+    pdf_document *doc = NULL;
+    fz_var(doc);
+    if (!ctx) { snprintf(result->error, sizeof(result->error), "Cannot create MuPDF context"); return; }
+    fz_try(ctx) {
+        doc = pv_open(ctx, data, length);
+        pdf_obj *form = pdf_dict_get(ctx, pdf_dict_get(ctx, pdf_trailer(ctx, doc), PDF_NAME(Root)), PDF_NAME(AcroForm));
+        if (pdf_dict_get(ctx, form, PDF_NAME(XFA)) ||
+            pdf_array_len(ctx, pdf_dict_get(ctx, form, PDF_NAME(Fields))) > 0)
+            result->has_forms = 1;
+        int pages = pdf_count_pages(ctx, doc);
+        for (int n = 0; n < pages; ++n) {
+            pdf_obj *page_obj = pdf_lookup_page_obj(ctx, doc, n);
+            pdf_obj *annots = pdf_dict_get(ctx, page_obj, PDF_NAME(Annots));
+            int count = pdf_array_len(ctx, annots);
+            if (!count) continue;
+            int has_visual = 0;
+            for (int i = 0; i < count; ++i) {
+                pdf_obj *annot = pdf_array_get(ctx, annots, i);
+                if (!result->has_importable && pv_annot_is_importable(ctx, annot))
+                    result->has_importable = 1;
+                if (!has_visual && pv_annot_is_visual(ctx, annot))
+                    has_visual = 1;
+            }
+            if (has_visual) {
+                int *list = realloc(result->annot_pages, (result->annot_page_count + 1) * sizeof(int));
+                if (!list) fz_throw(ctx, FZ_ERROR_SYSTEM, "Cannot allocate annotation page list");
+                result->annot_pages = list;
+                result->annot_pages[result->annot_page_count++] = n;
+            }
+        }
+    }
+    fz_always(ctx) { pdf_drop_document(ctx, doc); }
+    fz_catch(ctx) { snprintf(result->error, sizeof(result->error), "%s", fz_caught_message(ctx)); fz_report_error(ctx); }
+    fz_drop_context(ctx);
+}
+
 void pv_read_forms(const unsigned char *data, size_t length, pv_form_result *result)
 {
-    fz_context *ctx = pv_context();
+    fz_context *ctx = pv_context_with_store(16 << 20);
     pdf_document *doc = NULL;
     pdf_page *page = NULL;
     fz_var(doc); fz_var(page);
@@ -326,6 +417,8 @@ void pv_read_forms(const unsigned char *data, size_t length, pv_form_result *res
             fz_throw(ctx, FZ_ERROR_ARGUMENT, "XFA forms are not supported");
         int pages = pdf_array_len(ctx, pdf_dict_get(ctx, form, PDF_NAME(Fields))) ? pdf_count_pages(ctx, doc) : 0;
         for (int n = 0; n < pages; ++n) {
+            if (!pv_page_has_widget(ctx, pdf_lookup_page_obj(ctx, doc, n)))
+                continue;
             page = pdf_load_page(ctx, doc, n);
             fz_rect bounds = fz_bound_page(ctx, &page->super);
             for (pdf_annot *w = pdf_first_widget(ctx, page); w; w = pdf_next_widget(ctx, w)) {

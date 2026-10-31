@@ -177,3 +177,20 @@ func TestDocumentMemoryUsageCountsEachSourceOnce(t *testing.T) {
 		t.Fatal("raster bytes were not reported")
 	}
 }
+
+func TestPlainPDFSkipsAnnotationAndFormRenderers(t *testing.T) {
+	source, err := Load("plain.pdf", bytes.NewReader(minimalPDF(t, 2)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	if !source.noForms || len(source.annotPages) != 0 || source.hasPDFAnnotations || source.annotationBase != nil {
+		t.Fatalf("plain PDF classified as annotated: forms=%v pages=%v", !source.noForms, source.annotPages)
+	}
+	if _, err := source.Preview(1); err != nil {
+		t.Fatal(err)
+	}
+	if source.formRenderer != nil {
+		t.Fatal("plain PDF opened a second native renderer")
+	}
+}

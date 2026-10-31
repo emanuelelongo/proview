@@ -81,13 +81,14 @@ func (d *Document) basePageDPI(page int, dpi float64) (image.Image, error) {
 	if !changed && dpi == pdfThumbnailDPI {
 		preview, e = source.Thumbnail(index)
 	} else if !changed {
+		_, _ = source.formFields()
 		source.mu.Lock()
 		if source.pdf == nil {
 			source.mu.Unlock()
 			return nil, fmt.Errorf("The PDF is closed")
 		}
-		if source.hasPDFAnnotations {
-			preview, e = renderPDFPage(source.original, index, dpi)
+		if len(source.formsByPage[index]) > 0 || source.hasPageAnnotations(index) {
+			preview, e = source.renderFormPage(source.original, index, dpi, 0)
 		} else {
 			preview, e = source.pdf.ImageDPI(index, dpi)
 		}

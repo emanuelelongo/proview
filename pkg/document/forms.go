@@ -37,6 +37,9 @@ const (
 )
 
 func (s *Source) formFields() ([]pdfengine.FormField, error) {
+	if s.noForms {
+		return nil, nil
+	}
 	// Metadata never changes with the immutable source. Keep its publication
 	// independent of the native raster lock used by preview workers.
 	s.formsOnce.Do(func() {

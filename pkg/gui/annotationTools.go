@@ -161,8 +161,11 @@ func (g *Gui) setAnnotationTool(tool annotationTool) {
 		g.clearRedactionSelection()
 	}
 	for _, layer := range g.signatureLayers {
-		g.bindAnnotationLayer(layer)
-		layer.Refresh()
+		// Deferred, never-shown pages bind when they first become resident.
+		if layer.input != nil || layer.Visible() {
+			g.bindAnnotationLayer(layer)
+			layer.Refresh()
+		}
 	}
 	if g.imageSignatureLayer != nil {
 		g.bindAnnotationLayer(g.imageSignatureLayer)

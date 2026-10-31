@@ -362,6 +362,7 @@ func (g *Gui) loadPDFPage(page int) {
 			}
 			g.pdfPageImages[page].Refresh()
 			if layer := g.signatureLayers[page]; layer != nil {
+				g.bindAnnotationLayer(layer)
 				layer.SetPageSize(preview.Bounds().Size())
 				layer.reload()
 				layer.Show()

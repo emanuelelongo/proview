@@ -71,6 +71,28 @@ func newSignatureLayer(
 	return layer
 }
 
+func newDeferredSignatureLayer(
+	doc *document.Document,
+	page int,
+	pageSize image.Point,
+	onSelect func(*signatureLayer, document.SignatureID),
+	onActivate func(int),
+	onChanged func(int),
+) *signatureLayer {
+	layer := &signatureLayer{
+		document:   doc,
+		page:       page,
+		pageSize:   pageSize,
+		onSelect:   onSelect,
+		onActivate: onActivate,
+		onChanged:  onChanged,
+		zoom:       1,
+	}
+	layer.ExtendBaseWidget(layer)
+	layer.Hide()
+	return layer
+}
+
 func (l *signatureLayer) CreateRenderer() fyne.WidgetRenderer {
 	return &signatureLayerRenderer{layer: l}
 }
@@ -133,6 +155,9 @@ func (l *signatureLayer) SetDocument(doc *document.Document, page int, size imag
 }
 
 func (l *signatureLayer) reload() {
+	if l.editor != nil && l.input == nil {
+		l.editor.bindAnnotationLayer(l)
+	}
 	l.widgets = nil
 	l.redactionWidgets = nil
 	if l.document == nil {

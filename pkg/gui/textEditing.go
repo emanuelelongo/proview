@@ -31,20 +31,31 @@ type textCorrectionLayer struct {
 }
 
 func newTextCorrectionLayer(g *Gui, page int) *textCorrectionLayer {
-	l := &textCorrectionLayer{editor: g, page: page, selection: canvas.NewRectangle(color.NRGBA{R: 255, G: 170, A: 90})}
+	l := &textCorrectionLayer{editor: g, page: page}
+	l.ExtendBaseWidget(l)
+	if g.textEditing {
+		l.ensureVisuals()
+	} else {
+		l.Hide()
+	}
+	return l
+}
+
+func (l *textCorrectionLayer) ensureVisuals() {
+	if l.selection != nil {
+		return
+	}
+	l.selection = canvas.NewRectangle(color.NRGBA{R: 255, G: 170, A: 90})
 	l.selection.Hide()
 	l.horizontalGuide = canvas.NewLine(color.NRGBA{R: 40, G: 190, B: 255, A: 255})
 	l.verticalGuide = canvas.NewLine(color.NRGBA{R: 40, G: 190, B: 255, A: 255})
 	l.horizontalGuide.StrokeWidth = 1.25
 	l.verticalGuide.StrokeWidth = 1.25
 	l.hideMoveGuides()
-	l.ExtendBaseWidget(l)
-	if !g.textEditing {
-		l.Hide()
-	}
-	return l
 }
+
 func (l *textCorrectionLayer) CreateRenderer() fyne.WidgetRenderer {
+	l.ensureVisuals()
 	return &textCorrectionRenderer{layer: l}
 }
 
@@ -126,6 +137,7 @@ func (l *textCorrectionLayer) selectWord(position fyne.Position) {
 		return
 	}
 	x0, y0, x1, y1 := quads[0].Bounds()
+	l.ensureVisuals()
 	l.selectionRect = document.NormalizedRect{X: x0, Y: y0, Width: x1 - x0, Height: y1 - y0}
 	l.selection.Move(fyne.NewPos(float32(x0)*size.Width, float32(y0)*size.Height))
 	l.selection.Resize(fyne.NewSize(float32(x1-x0)*size.Width, float32(y1-y0)*size.Height))
@@ -166,8 +178,11 @@ func (g *Gui) setTextEditing(active bool) {
 		g.textEditAction.SetActive(active)
 	}
 	for _, l := range g.correctionLayers {
-		l.selection.Hide()
+		if l.selection != nil {
+			l.selection.Hide()
+		}
 		if active {
+			l.ensureVisuals()
 			l.Show()
 		} else {
 			l.Hide()
@@ -332,6 +347,7 @@ func (g *Gui) beginTextMove(l *textCorrectionLayer, start, end int, value string
 	if l.doc == nil || g.document != l.doc || l.doc.Revision() != l.revision || !g.textEditing {
 		return
 	}
+	l.ensureVisuals()
 	g.textMove = &textMoveState{layer: l, start: start, end: end, value: norm.NFC.String(value), base: l.selectionRect, references: textAlignmentReferences(l.layout, start, end)}
 	l.selection.Show()
 	l.Refresh()

@@ -470,11 +470,15 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 		}
 		pageBorders = append(pageBorders, pageBorder)
 
-		layer := newSignatureLayer(loadedDocument, page, pageSize, g.selectSignature, g.activatePDFPage, g.documentChanged)
-		layer.pageLayoutOwned = true
-		g.bindAnnotationLayer(layer)
-		if page != 0 {
-			layer.Hide()
+		var layer *signatureLayer
+		if page == 0 {
+			layer = newSignatureLayer(loadedDocument, page, pageSize, g.selectSignature, g.activatePDFPage, g.documentChanged)
+			layer.pageLayoutOwned = true
+			g.bindAnnotationLayer(layer)
+		} else {
+			layer = newDeferredSignatureLayer(loadedDocument, page, pageSize, g.selectSignature, g.activatePDFPage, g.documentChanged)
+			layer.pageLayoutOwned = true
+			layer.editor = g
 		}
 		signatureLayers[page] = layer
 		pan := newPanOverlay(g.pdfScroll)

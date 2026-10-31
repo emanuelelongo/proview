@@ -61,6 +61,8 @@ type Source struct {
 	annotationBase    *Source
 	importedOverlays  []Overlay
 	hasPDFAnnotations bool
+	annotPages        map[int]bool
+	noForms           bool
 	formsOnce         sync.Once
 	forms             []pdfengine.FormField
 	formsByPage       map[int][]pdfengine.FormField
@@ -155,21 +157,25 @@ func loadSource(name, location string, data []byte, importAnnotations bool) (*So
 	}
 	if pdf != nil {
 		if importAnnotations {
-			clean, overlays, hasAnnots, e := readPDFAnnotations(data)
+			scan, e := readPDFAnnotations(data)
 			if e != nil {
 				pdf.Close()
 				return nil, fmt.Errorf("document: read PDF annotations: %w", e)
 			}
-			source.hasPDFAnnotations = hasAnnots
-			source.importedOverlays = overlays
-			if len(overlays) > 0 {
-				source.annotationBase, e = loadSource(name, location, clean, false)
+			source.hasPDFAnnotations = scan.hasPDFAnnotations
+			source.annotPages = scan.annotPages
+			source.noForms = scan.noForms
+			source.importedOverlays = scan.overlays
+			if len(scan.overlays) > 0 {
+				source.annotationBase, e = loadSource(name, location, scan.base, false)
 				if e != nil {
 					pdf.Close()
 					return nil, e
 				}
 				// Retained unsupported annotations still need their standard appearances.
-				source.annotationBase.hasPDFAnnotations = hasAnnots
+				source.annotationBase.hasPDFAnnotations = scan.hasPDFAnnotations
+				source.annotationBase.annotPages = scan.retainedPages
+				source.annotationBase.noForms = scan.noForms
 				// Pages render from the base; the outer source keeps only its
 				// bytes and reopens lazily if ever asked to render, so it neither
 				// holds a second MuPDF context nor halves the shared raster budget.
@@ -243,6 +249,10 @@ func (s *Source) PageCount() int {
 	return len(s.pages)
 }
 
+func (s *Source) hasPageAnnotations(page int) bool {
+	return s.hasPDFAnnotations || s.annotPages[page]
+}
+
 func (s *Source) Preview(page int) (image.Image, error) {
 	if s.format == FormatPDF {
 		_, _ = s.formFields()
@@ -259,7 +269,7 @@ func (s *Source) Preview(page int) (image.Image, error) {
 			if err = s.openPDF(); err != nil {
 				return nil, err
 			}
-			if len(s.formsByPage[page]) > 0 || s.hasPDFAnnotations {
+			if len(s.formsByPage[page]) > 0 || s.hasPageAnnotations(page) {
 				preview, err = s.renderFormPage(s.original, page, pdfPreviewDPI, 0)
 			} else {
 				preview, err = s.pdf.ImageDPI(page, pdfPreviewDPI)
@@ -314,7 +324,7 @@ func (s *Source) Thumbnail(page int) (image.Image, error) {
 		}
 		var thumbnail image.Image
 		var err error
-		if len(s.formsByPage[page]) > 0 || s.hasPDFAnnotations {
+		if len(s.formsByPage[page]) > 0 || s.hasPageAnnotations(page) {
 			thumbnail, err = s.renderFormPage(s.original, page, pdfThumbnailDPI, 0)
 		} else {
 			thumbnail, err = s.pdf.ImageDPI(page, pdfThumbnailDPI)

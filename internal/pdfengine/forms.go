@@ -237,3 +237,34 @@ func (r *FormRenderer) Close() {
 		r.handle = nil
 	}
 }
+
+type PDFInfo struct {
+	AnnotPages    map[int]bool
+	HasImportable bool
+	HasForms      bool
+}
+
+func InspectPDF(data []byte) (PDFInfo, error) {
+	if len(data) == 0 {
+		return PDFInfo{}, errors.New("pdfengine: empty PDF")
+	}
+	input := cBytes(data)
+	var result C.pv_pdf_info
+	defer C.pv_free_pdf_info(&result)
+	C.pv_inspect_pdf((*C.uchar)(input), C.size_t(len(data)), &result)
+	if message := C.GoString(&result.error[0]); message != "" {
+		return PDFInfo{}, fmt.Errorf("pdfengine: %s", message)
+	}
+	var pages map[int]bool
+	if result.annot_page_count > 0 {
+		pages = make(map[int]bool, int(result.annot_page_count))
+		for _, page := range unsafe.Slice(result.annot_pages, int(result.annot_page_count)) {
+			pages[int(page)] = true
+		}
+	}
+	return PDFInfo{
+		AnnotPages:    pages,
+		HasImportable: result.has_importable != 0,
+		HasForms:      result.has_forms != 0,
+	}, nil
+}
