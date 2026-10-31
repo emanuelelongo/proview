@@ -20,6 +20,9 @@ create a searchable PDF for use in other applications.
 - Uses `Document.SelectableText`: native PDF text first; existing local OCR for
   images or pages without native text when enabled. Native PDF search works
   without OCR being enabled. Recognition stays transient and never modifies PDFs.
+- OCR compares a second thresholding pass when the first pass reports distorted
+  character boxes. Matching words can take corrected selection geometry while
+  retaining their original text, confidence and reading order.
 - Reuses visible-page recognition and retains layouts across queries in a
   128-page / 16 MiB bounded cache. Source-revision checks are independent of
   annotation edits and do not traverse all pages for each progress update.

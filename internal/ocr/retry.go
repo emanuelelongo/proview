@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -22,7 +23,8 @@ func recognizeWithRetry(ctx context.Context, img image.Image, run func(context.C
 	if err := ctx.Err(); err != nil {
 		return textselect.Layout{}, err
 	}
-	if !needsRetry(img, primary) {
+	repairGeometry := hasDistortedCharacterBoxes(primary)
+	if !repairGeometry && !needsRetry(img, primary) {
 		return primary, nil
 	}
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < 4*time.Second {
@@ -37,7 +39,72 @@ func recognizeWithRetry(ctx context.Context, img image.Image, run func(context.C
 	if err != nil || retryCtx.Err() != nil {
 		return primary, nil
 	}
+	if repairGeometry {
+		primary = repairCharacterBoxes(primary, secondary)
+	}
 	return supplementWords(ctx, primary, secondary)
+}
+
+// A very tall character box among ordinary glyphs can make Tesseract's word
+// box too short or wide even when its recognized text and confidence are good.
+// In that case compare one Otsu pass, retaining the original text and ordering.
+func hasDistortedCharacterBoxes(layout textselect.Layout) bool {
+	for _, word := range layout.Words {
+		if distortedCharacterRatio(word, layout.Height) > 1.55 {
+			return true
+		}
+	}
+	return false
+}
+
+func distortedCharacterRatio(word textselect.Word, height float64) float64 {
+	if len(word.Characters) < 4 || height <= 0 {
+		return 0
+	}
+	var small [32]float64
+	heights := small[:0]
+	if len(word.Characters) > len(small) {
+		heights = make([]float64, 0, len(word.Characters))
+	}
+	for _, character := range word.Characters {
+		box := boundsOf(textselect.Word{Quad: character.Quad})
+		h := (box.y1 - box.y0) * height
+		if h <= 0 {
+			return 0
+		}
+		heights = append(heights, h)
+	}
+	sort.Float64s(heights)
+	median, tallest := heights[len(heights)/2], heights[len(heights)-1]
+	if tallest-median < 4 {
+		return 0
+	}
+	return tallest / median
+}
+
+func repairCharacterBoxes(primary, secondary textselect.Layout) textselect.Layout {
+	if primary.Width != secondary.Width || primary.Height != secondary.Height {
+		return primary
+	}
+	primary.Words = append([]textselect.Word(nil), primary.Words...)
+	for i := range primary.Words {
+		original := &primary.Words[i]
+		ratio := distortedCharacterRatio(*original, primary.Height)
+		if ratio <= 1.55 {
+			continue
+		}
+		for _, candidate := range secondary.Words {
+			if candidate.Text != original.Text || candidate.Confidence < 80 || len(candidate.Characters) != len(original.Characters) ||
+				!boundsOf(*original).overlaps(boundsOf(candidate)) ||
+				distortedCharacterRatio(candidate, secondary.Height) >= ratio*.8 {
+				continue
+			}
+			original.Quad = candidate.Quad
+			original.Characters = candidate.Characters
+			break
+		}
+	}
+	return primary
 }
 
 func needsRetry(img image.Image, primary textselect.Layout) bool {

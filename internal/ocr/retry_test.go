@@ -51,6 +51,38 @@ func TestRetryLeavesSuccessfulPrimaryAndLightPagesUnchanged(t *testing.T) {
 	}
 }
 
+func TestRetryRepairsDistortedCharacterGeometryWithoutChangingText(t *testing.T) {
+	characters := make([]textselect.Character, 7)
+	for i := range characters {
+		characters[i] = textselect.Character{Start: i, End: i + 1, Quad: textselect.Rect(.1+float64(i)*.04, .12, .14+float64(i)*.04, .2)}
+	}
+	characters[5].Quad = textselect.Rect(.3, .08, .34, .24)
+	characters[6].Quad = textselect.Rect(.34, .12, .38, .2)
+	primary := retryLayout(textselect.Word{Text: "SCANNED", Quad: textselect.Rect(.1, .08, .38, .24), Characters: characters, Confidence: 92})
+	secondaryChars := append([]textselect.Character(nil), characters...)
+	secondaryChars[5].Quad = textselect.Rect(.3, .12, .34, .2)
+	secondaryChars[6].Quad = textselect.Rect(.34, .12, .43, .2)
+	secondary := retryLayout(textselect.Word{Text: "SCANNED", Quad: textselect.Rect(.1, .12, .43, .2), Characters: secondaryChars, Confidence: 92})
+	before := primary.Words[0]
+	methods := []int{}
+	got, err := recognizeWithRetry(context.Background(), retryImage(color.White), func(_ context.Context, method int) (textselect.Layout, error) {
+		methods = append(methods, method)
+		if method == 2 {
+			return primary, nil
+		}
+		return secondary, nil
+	})
+	if err != nil || !reflect.DeepEqual(methods, []int{2, 0}) || got.Words[0].Text != "SCANNED" || got.Words[0].Quad != secondary.Words[0].Quad ||
+		!reflect.DeepEqual(got.Words[0].Characters, secondaryChars) || primary.Words[0].Quad != before.Quad || !reflect.DeepEqual(primary.Words[0].Characters, characters) {
+		t.Fatalf("geometry repair: got=%+v methods=%v err=%v", got, methods, err)
+	}
+	secondary.Words[0].Text = "SCANNER"
+	got = repairCharacterBoxes(primary, secondary)
+	if !reflect.DeepEqual(got.Words[0], before) {
+		t.Fatal("changed geometry when the second pass recognized different text")
+	}
+}
+
 func TestRetrySupplementsWithoutReplacingAnyPrimaryWords(t *testing.T) {
 	primary := retryLayout(retryWord("first", .1, .2, 60), retryWord("last", .4, .2, 95))
 	before := append([]textselect.Word(nil), primary.Words...)

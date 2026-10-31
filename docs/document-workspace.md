@@ -221,9 +221,11 @@ first page's actual aspect ratio; Markdown uses a tall A4-like reading viewport
 (its reading layout remains continuous). The requested content height is at most
 1120 logical units, reduced to the monitor's usable desktop area with room for
 window decorations. The toolbar, property panel and visible sidebar are included
-in the width calculation. Landscape PDF pages can use a wider window. Images use
-a standard 1000 × 740 window, also bounded to the available desktop, and start
-fitted to the viewport.
+in the width calculation. Landscape PDF pages can use a wider window. Pages wider
+than 2:1 or taller than 1:2 instead start in the standard 1000 × 740 window,
+bounded by the monitor; the opening fit zooms the complete page into its viewport.
+Images use a standard 1000 × 740 window, also bounded to the available desktop,
+and start fitted to the viewport.
 
 When startup or a forwarded desktop request supplies file paths for a fresh
 window, its first Show waits for the opening worker and geometry preparation.

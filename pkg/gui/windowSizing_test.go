@@ -31,6 +31,17 @@ func TestOpeningWindowSizeMatchesPageAndAvailableSpace(t *testing.T) {
 	}
 }
 
+func TestExtremePDFAspectUsesCompactWindow(t *testing.T) {
+	chrome, minimum := fyne.NewSize(210, 88), fyne.NewSize(760, 300)
+	area := fyne.NewSize(1920, 1080)
+	want := fyne.NewSize(1000, 740)
+	for _, page := range []fyne.Size{fyne.NewSize(760, 250), fyne.NewSize(250, 760)} {
+		if got := openingWindowSize(page, chrome, area, minimum); got != want {
+			t.Fatalf("extreme page %v opened at %v, want %v", page, got, want)
+		}
+	}
+}
+
 type openingWindowRecorder struct {
 	fyne.Window
 	editor                                      *Gui
@@ -198,6 +209,31 @@ func TestOpeningPDFShowsTheFirstPageAndHonorsFullscreen(t *testing.T) {
 	g.sizeWindowForOpenedFile()
 	if g.window.Canvas().Size() != manual {
 		t.Fatal("opening resized a fullscreen window")
+	}
+}
+
+func TestWidePDFOpeningFitsPageInCompactWindow(t *testing.T) {
+	g, _ := newDropTestGui(t)
+	g.windowWorkArea = func() fyne.Size { return fyne.NewSize(1920, 1080) }
+	g.window.Show()
+	data := bytes.ReplaceAll(scrollTestPDF(2), []byte("/MediaBox [0 0 72 72]"), []byte("/MediaBox [0 0 760 250]"))
+	source, err := document.Load("wide.pdf", bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := document.New(source)
+	if err != nil {
+		source.Close()
+		t.Fatal(err)
+	}
+	g.addDocument(doc, nil, storage.NewFileURI("/tmp/wide.pdf"))
+	defer g.closeDocument()
+	if size := g.window.Canvas().Size(); size.Width > 1100 || size.Height > 800 {
+		t.Fatalf("wide PDF opened in an oversized window: %v", size)
+	}
+	page, viewport := g.pdfPageImages[0].MinSize(), g.pdfScroll.Size()
+	if page.Width > viewport.Width || page.Height > viewport.Height || g.zoom != g.calculateFitZoom() {
+		t.Fatalf("wide PDF opening did not fit: page %v viewport %v zoom %v", page, viewport, g.zoom)
 	}
 }
 

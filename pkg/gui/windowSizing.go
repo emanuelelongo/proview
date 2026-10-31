@@ -113,11 +113,16 @@ func openingWindowSize(page, chrome, area, minimum fyne.Size) fyne.Size {
 	available := fyne.NewSize(max(1, area.Width-32), max(1, area.Height-48))
 	size := fyne.NewSize(1000, 740)
 	if page.Width > 0 && page.Height > 0 {
-		size.Height = min(1120, available.Height)
-		size.Width = max(1, size.Height-chrome.Height)*page.Width/page.Height + chrome.Width
-		if size.Width > available.Width {
-			size.Width = available.Width
-			size.Height = max(1, size.Width-chrome.Width)*page.Height/page.Width + chrome.Height
+		aspect := page.Width / page.Height
+		// Very wide or tall pages would otherwise stretch the initial window
+		// across the monitor. The opening fit supplies the needed page zoom.
+		if aspect >= .5 && aspect <= 2 {
+			size.Height = min(1120, available.Height)
+			size.Width = max(1, size.Height-chrome.Height)*aspect + chrome.Width
+			if size.Width > available.Width {
+				size.Width = available.Width
+				size.Height = max(1, size.Width-chrome.Width)/aspect + chrome.Height
+			}
 		}
 	}
 	return fyne.NewSize(min(available.Width, max(minimum.Width, size.Width)), min(available.Height, max(minimum.Height, size.Height)))
