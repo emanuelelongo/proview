@@ -143,7 +143,7 @@ func (g *Gui) updateHistoryActions() {
 		if item.Label == "Find" || item.Label == "Find Next" || item.Label == "Find Previous" {
 			item.Disabled = !hasDocument && !g.showingMarkdown()
 		}
-		if item.Label == "Print…" || item.Label == "Create PDF from Selection" {
+		if item.Label == "Print…" || item.Label == "Create PDF" {
 			item.Disabled = !g.selectionCanOutput()
 		}
 		if item.Label == "Crop" || item.Label == "Close" || item.Label == "Zoom In" || item.Label == "Zoom Out" || item.Label == "Fit to Window" {

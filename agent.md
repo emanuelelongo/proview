@@ -160,8 +160,8 @@ PDF page combination/reordering/deletion and blank pages.
   root. Fyne preferences stay in its platform configuration directory; framework
   theme settings and the verified OCR cache remain shared. Custom profiles skip
   file-association registration. Default storage and credential names stay compatible.
-- Use the shared `chooseFile` / `chooseFiles` helpers for document opening,
-  signature import and PDF collection selection. Native pickers use
+- Use the shared `chooseFile` / `chooseFiles` helpers for document opening
+  and signature import. Native pickers use
   `github.com/ncruces/zenity`; unavailable/failing backends fall back to Fyne.
   Cancellation must not trigger fallback. Keep selection work asynchronous,
   serialize pickers across windows, return results to the requesting editor and
@@ -201,6 +201,9 @@ PDF page combination/reordering/deletion and blank pages.
 - Use compact icon buttons with readable tooltips instead of wide text buttons.
   Property controls should align in height; colors use swatches and dimensions
   use compact preset selectors. Keep forms spacious enough to use comfortably.
+- Signature choices and color swatches are focusable controls with a visible
+  focus border and Enter/Space activation. Inactive signature previews are skipped
+  by Tab; focusing an offscreen signature scrolls it into view.
 - Tool and selected-object parameters belong in the vertical, scrollable right
   panel, one 36-pixel icon column wide. Use compact icon dropdowns with an
   integrated arrow; keep option text and the magnifier slider in overflow popups.

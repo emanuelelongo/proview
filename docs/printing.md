@@ -20,7 +20,7 @@ as one job: one page per image, and the complete paginated layout for each
 Markdown document. Command/Control-click toggles items and Shift-click selects
 a range. Models cannot be included until cropped into an image.
 
-**Create PDF from Selection**, in File and the thumbnail context menus, prepares
+**File → Create PDF** and the thumbnail context menus prepare
 the selected content after a page-layout choice and opens a new unsaved
 `Selection.pdf` window:
 

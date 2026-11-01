@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"io"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -161,178 +160,6 @@ func (g *Gui) runFileWork(title string, work func() (*document.Document, error),
 	}()
 }
 
-type pdfInput struct {
-	name, location string
-	data           []byte
-}
-
-func (g *Gui) openPDFCollection(appendPages bool) {
-	if g.waitAnnotationChanges(func() { g.openPDFCollection(appendPages) }) || g.working {
-		return
-	}
-	if appendPages && (g.document == nil || g.document.Format() != document.FormatPDF) {
-		dialog.ShowInformation("Append PDF", "Open a PDF first.", g.window)
-		return
-	}
-	launch := func() { g.choosePDFCollection(appendPages) }
-	if appendPages {
-		launch()
-	} else {
-		g.confirmDiscard(launch)
-	}
-}
-func (g *Gui) choosePDFCollection(appendPages bool) {
-	var inputs []pdfInput
-	selected := -1
-	list := widget.NewList(func() int { return len(inputs) }, func() fyne.CanvasObject { return widget.NewLabel("") }, func(i widget.ListItemID, o fyne.CanvasObject) {
-		o.(*widget.Label).SetText(fmt.Sprintf("%d. %s", i+1, inputs[i].name))
-	})
-	list.OnSelected = func(i widget.ListItemID) { selected = i }
-	list.OnUnselected = func(widget.ListItemID) { selected = -1 }
-	var chooser *dialog.CustomDialog
-	collectionOpen := true
-	add := widget.NewButtonWithIcon("Add PDFs", tablerIcon("plus"), func() {
-		g.chooseFiles("Add PDFs", []string{".pdf"}, true, func(readers []fyne.URIReadCloser, err error) {
-			if !collectionOpen {
-				closePickedFiles(readers)
-				return
-			}
-			if err != nil {
-				g.showOperationError("file_work", err)
-				return
-			}
-			if len(readers) == 0 {
-				return
-			}
-			g.working = true
-			go func() {
-				var added []pdfInput
-				var readErr error
-				for _, reader := range readers {
-					data, err := io.ReadAll(reader)
-					if err != nil {
-						readErr = err
-						break
-					}
-					added = append(added, pdfInput{reader.URI().Name(), reader.URI().String(), data})
-				}
-				for _, reader := range readers {
-					if err := reader.Close(); readErr == nil {
-						readErr = err
-					}
-				}
-				fyne.Do(func() {
-					g.working = false
-					defer g.processPendingFiles()
-					if !collectionOpen || g.closed {
-						return
-					}
-					if readErr != nil {
-						g.showOperationError("open", readErr)
-						return
-					}
-					inputs = append(inputs, added...)
-					list.Refresh()
-					list.Select(len(inputs) - 1)
-				})
-			}()
-		})
-	})
-	move := func(delta int) {
-		i := selected
-		j := i + delta
-		if i < 0 || j < 0 || j >= len(inputs) {
-			return
-		}
-		inputs[i], inputs[j] = inputs[j], inputs[i]
-		list.Refresh()
-		list.Select(j)
-	}
-	remove := newIconButton(tablerIcon("trash"), "Delete", func() {
-		if selected < 0 || selected >= len(inputs) {
-			return
-		}
-		inputs = append(inputs[:selected], inputs[selected+1:]...)
-		list.UnselectAll()
-		list.Refresh()
-	})
-	label, title := "Open", "Open PDFs together"
-	if appendPages {
-		label, title = "Append", "Append PDFs"
-	}
-	submit := widget.NewButton(label, func() {
-		if g.working || len(inputs) == 0 {
-			return
-		}
-		current := g.document
-		if appendPages && (current == nil || current.Format() != document.FormatPDF) {
-			dialog.ShowInformation("Append PDF", "Open a PDF first.", g.window)
-			return
-		}
-		// The prepared collection stays in the dialog until loading succeeds, so
-		// an invalid PDF can be removed and the rest retried.
-		selectedInputs := append([]pdfInput(nil), inputs...)
-		g.runFileWork("Loading PDFs", func() (*document.Document, error) {
-			sources := make([]*document.Source, 0, len(selectedInputs))
-			for _, input := range selectedInputs {
-				// The dialog keeps input.data for retries; sharing it avoids a copy.
-				source, err := document.LoadBytes(input.name, input.location, input.data)
-				if err != nil {
-					for _, s := range sources {
-						s.Close()
-					}
-					return nil, err
-				}
-				sources = append(sources, source)
-			}
-			if appendPages { // Mutation belongs to the UI callback; only load in worker.
-				prepared, err := document.New(sources[0])
-				if err != nil {
-					return nil, err
-				}
-				if err = prepared.AppendPDFs(sources[1:]...); err != nil {
-					return nil, err
-				}
-				return prepared, nil
-			}
-			combined, err := document.New(sources[0])
-			if err != nil {
-				return nil, err
-			}
-			if err = combined.AppendPDFs(sources[1:]...); err != nil {
-				return nil, err
-			}
-			combined.MarkSaved()
-			if len(selectedInputs) > 1 {
-				combined.MarkUnsaved()
-			}
-			_, err = combined.Preview(0)
-			return combined, err
-		}, func(loaded *document.Document) {
-			inputs = nil
-			chooser.Hide()
-			if appendPages {
-				if err := current.AppendDocumentPages(loaded); err != nil {
-					g.showOperationError("file_work", err)
-					return
-				}
-				g.rebuildPDF(g.activePDFPage)
-			} else {
-				g.showDocument(loaded)
-				g.saveTarget = nil
-			}
-			requestMemoryRelease()
-		})
-	})
-	scroll := container.NewGridWrap(fyne.NewSize(520, 280), list)
-	controls := container.NewHBox(add, newIconButton(tablerIcon("arrow-up"), "Move up", func() { move(-1) }), newIconButton(tablerIcon("arrow-down"), "Move down", func() { move(1) }), remove)
-	chooser = dialog.NewCustom(title, "Cancel", container.NewVBox(widget.NewLabel("Add PDFs, then arrange their order before opening."), scroll, controls, submit), g.window)
-	chooser.SetOnClosed(func() { collectionOpen = false })
-	chooser.Show()
-}
-
-func (g *Gui) deletePDFPage(page int) { g.deletePDFPages([]int{page}) }
-
 func (g *Gui) deletePDFPages(pages []int) {
 	if g.waitAnnotationChanges(func() { g.deletePDFPages(pages) }) || g.working {
 		return
@@ -404,8 +231,6 @@ func (g *Gui) rebuildPDFWithCompletion(active int, done func()) {
 		requestMemoryRelease()
 	})
 }
-
-func (g *Gui) duplicatePDFPage(page int) { g.duplicatePDFPages([]int{page}) }
 
 func (g *Gui) duplicatePDFPages(pages []int) {
 	if g.waitAnnotationChanges(func() { g.duplicatePDFPages(pages) }) || g.working || g.document == nil || len(pages) == 0 {

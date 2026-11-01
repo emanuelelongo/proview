@@ -77,8 +77,8 @@ workspace rules inside that window. Without a running application, the initial
 window fulfills the request; it does not create a second empty window.
 
 `--work-dir` must name an existing directory. Relative directory paths are resolved
-against the caller's current directory before forwarding. Every new Open,
-PDF collection, signature import and Save As dialog in the receiving window starts
+against the caller's current directory before forwarding. The Open,
+signature import and Save As dialogs in the receiving window start
 there, even after selecting files elsewhere. It does not change the process
 working directory, reinterpret file arguments, restrict browsing, or overwrite an
 existing document's Save target. Save As still permits another destination.

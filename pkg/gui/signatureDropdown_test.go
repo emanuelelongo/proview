@@ -2,6 +2,7 @@ package gui
 
 import (
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"testing"
@@ -15,6 +16,55 @@ import (
 	fyneTest "fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 )
+
+func TestSignatureChoiceKeyboardFocusAndDisabledRows(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	window := app.NewWindow("Signatures")
+	activated := 0
+	first := newSignatureChoice(canvas.NewRectangle(color.White), func() { activated++ })
+	disabled := newSignatureChoice(canvas.NewRectangle(color.White), nil)
+	last := newSignatureChoice(widget.NewLabel("Manage signatures"), func() { activated++ })
+	window.SetContent(container.NewVBox(first, disabled, last))
+	window.Show()
+	window.Canvas().FocusNext()
+	if window.Canvas().Focused() != first || first.border.StrokeWidth == 0 {
+		t.Fatal("first signature choice is not visibly focusable")
+	}
+	for _, key := range []fyne.KeyName{fyne.KeyReturn, fyne.KeyEnter, fyne.KeySpace} {
+		first.TypedKey(&fyne.KeyEvent{Name: key})
+	}
+	if activated != 3 {
+		t.Fatalf("keyboard activated signature choice %d times, want 3", activated)
+	}
+	window.Canvas().FocusNext()
+	if window.Canvas().Focused() != last || first.border.StrokeWidth != 0 || last.border.StrokeWidth == 0 {
+		t.Fatal("Tab did not skip an inactive signature preview")
+	}
+	disabled.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	if activated != 3 || disabled.border.StrokeWidth != 0 {
+		t.Fatal("inactive signature preview became actionable")
+	}
+}
+
+func TestFocusedSignatureChoiceScrollsIntoView(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	content := container.NewVBox()
+	scroll := container.NewVScroll(content)
+	for range 8 {
+		choice := newSignatureChoice(widget.NewLabel("Signature"), func() {})
+		choice.onFocus = func() { revealSignatureChoice(scroll, choice.Position().Y, choice.Size().Height) }
+		content.Add(choice)
+	}
+	scroll.Resize(fyne.NewSize(200, 80))
+	scroll.Refresh()
+	last := content.Objects[len(content.Objects)-1].(*signatureChoice)
+	last.FocusGained()
+	if scroll.Offset.Y <= 0 {
+		t.Fatal("keyboard focus did not reveal an offscreen signature")
+	}
+}
 
 func waitSignatureUI(t *testing.T, ready func() bool) {
 	t.Helper()
@@ -69,6 +119,9 @@ func TestSignatureDropdownInsertsWithOneClickAndHasNoButtons(t *testing.T) {
 	first, ok := content.Objects[0].(*signatureChoice)
 	if !ok {
 		t.Fatal("signature preview is not clickable")
+	}
+	if g.window.Canvas().Focused() != first {
+		t.Fatal("signature dropdown did not focus its first choice")
 	}
 	if popup.Content.Size().Height < content.MinSize().Height {
 		t.Fatal("dropdown clips the management row")

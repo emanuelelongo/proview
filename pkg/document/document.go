@@ -28,6 +28,8 @@ import (
 const (
 	pdfPreviewDPI   = 144
 	pdfThumbnailDPI = 72
+	maxImagePixels  = 32_000_000
+	maxImageSide    = 16_384
 )
 
 // Each Source opens its own MuPDF context, so the library-wide store limit is
@@ -416,6 +418,15 @@ func FormatFromName(name string) (Format, error) {
 }
 
 func loadImage(data []byte) ([]pageData, error) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if config.Width <= 0 || config.Height <= 0 || config.Width > maxImageSide || config.Height > maxImageSide ||
+		int64(config.Width)*int64(config.Height) > maxImagePixels {
+		return nil, fmt.Errorf("image dimensions %d × %d exceed the decoding limit (%d pixels, %d per side)",
+			config.Width, config.Height, maxImagePixels, maxImageSide)
+	}
 	decoded, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, err

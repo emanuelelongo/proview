@@ -2,14 +2,37 @@ package document
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
 	"image/png"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
+
+func TestImageDimensionsAreCheckedBeforeDecoding(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range []image.Point{{X: maxImageSide + 1, Y: 1}, {X: 6000, Y: 6000}} {
+		t.Run(fmt.Sprintf("%dx%d", size.X, size.Y), func(t *testing.T) {
+			data := bytes.Clone(encoded.Bytes())
+			binary.BigEndian.PutUint32(data[16:20], uint32(size.X))
+			binary.BigEndian.PutUint32(data[20:24], uint32(size.Y))
+			binary.BigEndian.PutUint32(data[29:33], crc32.ChecksumIEEE(data[12:29]))
+			_, err := LoadBytes("oversized.png", "oversized.png", data)
+			if err == nil || !strings.Contains(err.Error(), "exceed the decoding limit") {
+				t.Fatalf("oversized image: expected dimension limit, got %v", err)
+			}
+		})
+	}
+}
 
 func TestInactiveImageDocumentReloadsPreview(t *testing.T) {
 	original := image.NewRGBA(image.Rect(0, 0, 8, 6))

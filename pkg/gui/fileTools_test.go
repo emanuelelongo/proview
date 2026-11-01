@@ -98,9 +98,14 @@ func TestNewActionsAvailableAndToolbarUsesIcons(t *testing.T) {
 			labels[item.Label] = true
 		}
 	}
-	for _, label := range []string{"New page", "New from clipboard", "Open PDFs Together", "Append PDFs", "Duplicate Pages", "Delete Pages"} {
+	for _, label := range []string{"New page", "New from clipboard", "Create PDF"} {
 		if !labels[label] {
 			t.Fatalf("missing action %s", label)
+		}
+	}
+	for _, label := range []string{"Open PDFs Together", "Append PDFs", "Duplicate Pages", "Delete Pages", "Create PDF from Selection"} {
+		if labels[label] {
+			t.Fatalf("removed action %s is still in the menu", label)
 		}
 	}
 	for _, action := range g.annotationActions {
@@ -119,6 +124,26 @@ func TestNewActionsAvailableAndToolbarUsesIcons(t *testing.T) {
 		if err := png.Encode(file, g.window.Canvas().Capture()); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestCreatePDFMenuWorksWithOneDocument(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	g := newGui(app)
+	var createPDF *fyne.MenuItem
+	for _, item := range g.window.MainMenu().Items[0].Items {
+		if item.Label == "Create PDF" {
+			createPDF = item
+			break
+		}
+	}
+	if createPDF == nil || !createPDF.Disabled {
+		t.Fatal("Create PDF should be present but disabled without a document")
+	}
+	g.showDocument(testDocument(t, 40, 30))
+	if createPDF.Disabled {
+		t.Fatal("Create PDF stayed disabled with one open image")
 	}
 }
 

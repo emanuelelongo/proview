@@ -163,7 +163,7 @@ func (g *Gui) prepareDocumentSwitch() {
 	}
 }
 
-func (g *Gui) addDocument(doc *document.Document, mesh *model3d.Mesh, target fyne.URI) {
+func (g *Gui) addDocument(doc *document.Document, mesh *model3d.Mesh, target fyne.URI, openingPreview ...image.Image) {
 	g.activateEditor()
 	g.prepareDocumentSwitch()
 	entry := &editorDocument{doc: doc, mesh: mesh, target: target}
@@ -175,7 +175,7 @@ func (g *Gui) addDocument(doc *document.Document, mesh *model3d.Mesh, target fyn
 	if mesh != nil {
 		g.showModel(mesh)
 	} else {
-		g.showDocument(doc)
+		g.showDocument(doc, openingPreview...)
 		g.saveTarget = target
 	}
 	g.refreshDocumentSidebar()
@@ -450,18 +450,18 @@ func (g *Gui) documentContextMenu(entry *editorDocument, event *fyne.PointEvent)
 	menu.ShowAtPosition(event.AbsolutePosition)
 }
 
-func (g *Gui) receiveDocument(doc *document.Document, mesh *model3d.Mesh, target fyne.URI, done func()) {
+func (g *Gui) receiveDocument(doc *document.Document, mesh *model3d.Mesh, target fyne.URI, done func(), openingPreview ...image.Image) {
 	incomingPDF := doc != nil && doc.Format() == document.FormatPDF
 	currentPDF := g.document != nil && g.document.Format() == document.FormatPDF
 	if g.hasOpenContent() && incomingPDF != currentPDF {
 		editor := g.newEditor()
-		editor.addDocument(doc, mesh, target)
+		editor.addDocument(doc, mesh, target, openingPreview...)
 		editor.showWindow()
 		done()
 		return
 	}
 	if doc == nil || doc.Format() != document.FormatPDF || g.document == nil || g.document.Format() != document.FormatPDF {
-		g.addDocument(doc, mesh, target)
+		g.addDocument(doc, mesh, target, openingPreview...)
 		done()
 		return
 	}
@@ -484,7 +484,7 @@ func (g *Gui) receiveDocument(doc *document.Document, mesh *model3d.Mesh, target
 			g.logEvent("pdf_open_decision", "choice=new_window")
 			consumed = true
 			editor := g.newEditor()
-			editor.addDocument(doc, nil, target)
+			editor.addDocument(doc, nil, target, openingPreview...)
 			editor.showWindow()
 			prompt.Hide()
 		}),

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"image/color"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -8,6 +9,36 @@ import (
 	fyneTest "fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 )
+
+func TestColorSwatchKeyboardFocusAndDisabledState(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	window := app.NewWindow("Colors")
+	activated := 0
+	swatch := newColorSwatch(color.White, func() { activated++ })
+	window.SetContent(container.NewVBox(swatch, widget.NewButton("Next", nil)))
+	window.Show()
+	window.Canvas().FocusNext()
+	if window.Canvas().Focused() != swatch || swatch.rect.StrokeWidth <= 1 {
+		t.Fatal("color swatch is not visibly focusable")
+	}
+	for _, key := range []fyne.KeyName{fyne.KeyReturn, fyne.KeyEnter, fyne.KeySpace} {
+		swatch.TypedKey(&fyne.KeyEvent{Name: key})
+	}
+	if activated != 3 {
+		t.Fatalf("keyboard activated color swatch %d times, want 3", activated)
+	}
+	swatch.Disable()
+	swatch.TypedKey(&fyne.KeyEvent{Name: fyne.KeySpace})
+	if activated != 3 || swatch.rect.StrokeWidth != 1 {
+		t.Fatal("disabled swatch remained actionable or focused")
+	}
+	window.Canvas().Focus(nil)
+	window.Canvas().FocusNext()
+	if window.Canvas().Focused() == swatch {
+		t.Fatal("Tab focused a disabled color swatch")
+	}
+}
 
 func TestCompactSelectPopupDoesNotWidenPropertyRail(t *testing.T) {
 	app := fyneTest.NewApp()

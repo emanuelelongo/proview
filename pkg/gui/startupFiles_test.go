@@ -33,13 +33,40 @@ func TestStartupFileReaderUsesTheSharedDocumentLoader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err := loadDocumentReader(reader)
+	doc, _, err := loadDocumentReader(reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer doc.Close()
 	if doc.Name() != filepath.Base(path) || doc.Format() != document.FormatPNG || doc.Location() == "" {
 		t.Fatalf("loaded startup document = name %q, format %q, location %q", doc.Name(), doc.Format(), doc.Location())
+	}
+}
+
+func TestOpenedPDFUsesPreparedPreviewAfterCacheEviction(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	path := filepath.Join(t.TempDir(), "pages.pdf")
+	if err := os.WriteFile(path, scrollTestPDF(1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := startupFileReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, preview, err := loadDocumentReader(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	if preview == nil {
+		t.Fatal("PDF preview was not prepared during loading")
+	}
+	doc.TrimPagePreview(0)
+	g := newGui(app)
+	g.showDocument(doc, preview)
+	if g.pdfPageImages[0].Image != preview {
+		t.Fatal("opening rendered the first page again instead of using its prepared preview")
 	}
 }
 
@@ -83,7 +110,7 @@ func TestStartupJPEGFileReaderHandlesFinderPaths(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			doc, err := loadDocumentReader(reader)
+			doc, _, err := loadDocumentReader(reader)
 			if err != nil {
 				t.Fatal(err)
 			}

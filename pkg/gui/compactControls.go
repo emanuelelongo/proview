@@ -122,6 +122,7 @@ type colorSwatch struct {
 	rect     *canvas.Rectangle
 	tapped   func()
 	disabled bool
+	focused  bool
 }
 
 func newColorSwatch(c color.Color, tapped func()) *colorSwatch {
@@ -133,18 +134,42 @@ func newColorSwatch(c color.Color, tapped func()) *colorSwatch {
 }
 func (s *colorSwatch) Tapped(*fyne.PointEvent) {
 	if !s.disabled && s.tapped != nil {
+		if c := fyne.CurrentApp().Driver().CanvasForObject(s); c != nil {
+			c.Focus(s)
+		}
 		s.tapped()
 	}
 }
+func (s *colorSwatch) FocusGained()   { s.focused = true; s.refreshBorder() }
+func (s *colorSwatch) FocusLost()     { s.focused = false; s.refreshBorder() }
+func (s *colorSwatch) TypedRune(rune) {}
+func (s *colorSwatch) TypedKey(event *fyne.KeyEvent) {
+	if event.Name == fyne.KeyReturn || event.Name == fyne.KeyEnter || event.Name == fyne.KeySpace {
+		s.Tapped(nil)
+	}
+}
+func (s *colorSwatch) refreshBorder() {
+	if s.disabled {
+		s.rect.StrokeColor = theme.DisabledColor()
+	} else if s.focused {
+		s.rect.StrokeColor = theme.PrimaryColor()
+	} else {
+		s.rect.StrokeColor = theme.ForegroundColor()
+	}
+	if s.focused && !s.disabled {
+		s.rect.StrokeWidth = 3
+	} else {
+		s.rect.StrokeWidth = 1
+	}
+	s.Refresh()
+}
 func (s *colorSwatch) Disable() {
 	s.disabled = true
-	s.rect.StrokeColor = theme.DisabledColor()
-	s.Refresh()
+	s.refreshBorder()
 }
 func (s *colorSwatch) Enable() {
 	s.disabled = false
-	s.rect.StrokeColor = theme.ForegroundColor()
-	s.Refresh()
+	s.refreshBorder()
 }
 func (s *colorSwatch) Disabled() bool                      { return s.disabled }
 func (s *colorSwatch) setColor(c color.Color)              { s.rect.FillColor = c; s.Refresh() }

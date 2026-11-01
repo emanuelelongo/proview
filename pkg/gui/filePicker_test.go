@@ -157,8 +157,8 @@ func TestWorkDirectoryOverridesOpenDialogsWithoutChangingOtherWindows(t *testing
 		requests <- request
 		return nil, zenity.ErrCanceled
 	}
-	// Open document, append-PDF and signature import all share this path.
-	for _, title := range []string{"Open file", "Append PDFs", "Import signature"} {
+	// Open document and signature import share this path.
+	for _, title := range []string{"Open file", "Import signature"} {
 		done := false
 		g.chooseFiles(title, []string{".pdf"}, true, func([]fyne.URIReadCloser, error) { done = true })
 		request := <-requests

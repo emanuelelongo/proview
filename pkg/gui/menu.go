@@ -31,23 +31,19 @@ func BuildMenu(g *Gui) {
 	blankItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: shortcutModifier}
 	clipboardItem := fyne.NewMenuItem("New from clipboard", g.newFromClipboard)
 	clipboardItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: toolModifier}
-	openTogetherItem := fyne.NewMenuItem("Open PDFs Together", func() { g.openPDFCollection(false) })
-	appendItem := fyne.NewMenuItem("Append PDFs", func() { g.openPDFCollection(true) })
-	deletePageItem := fyne.NewMenuItem("Delete Pages", func() { g.deletePDFPages(g.selectedPDFPages()) })
-	duplicatePageItem := fyne.NewMenuItem("Duplicate Pages", func() { g.duplicatePDFPages(g.selectedPDFPages()) })
 	saveItem := fyne.NewMenuItem("Save", g.save)
 	saveItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: shortcutModifier}
 	saveAsItem := fyne.NewMenuItem("Save As", g.saveAs)
 	saveAsItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: shortcutModifier | fyne.KeyModifierShift}
 	printItem := fyne.NewMenuItem("Print…", g.requestPrint)
 	printItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyP, Modifier: shortcutModifier}
-	createPDFItem := fyne.NewMenuItem("Create PDF from Selection", g.requestCreatePDF)
+	createPDFItem := fyne.NewMenuItem("Create PDF", g.requestCreatePDF)
 	closeItem := fyne.NewMenuItem("Close", g.requestCloseDocument)
 	closeItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyW, Modifier: shortcutModifier}
 	exitItem := fyne.NewMenuItem("Exit", g.requestClose)
 	exitItem.IsQuit = true
 	fileMenu := fyne.NewMenu("File",
-		openItem, blankItem, clipboardItem, openTogetherItem, appendItem, duplicatePageItem, deletePageItem,
+		openItem, blankItem, clipboardItem,
 		saveItem, saveAsItem, createPDFItem, printItem, closeItem, fyne.NewMenuItemSeparator(),
 		exitItem,
 	)
@@ -135,7 +131,7 @@ func BuildMenu(g *Gui) {
 	g.redoItem = redoItem
 	g.menuDocumentItems = []*fyne.MenuItem{
 		findItem, nextMatchItem, previousMatchItem,
-		openTogetherItem, appendItem, duplicatePageItem, deletePageItem, saveItem, saveAsItem, createPDFItem, printItem, closeItem,
+		saveItem, saveAsItem, createPDFItem, printItem, closeItem,
 		zoomInItem, zoomOutItem, resetZoomItem,
 		copyItem, pasteItem, selectItem, cropItem, drawItem, highlightItem, shapesItem, textItem, redactItem,
 	}
@@ -254,6 +250,7 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 	markdownImageBytes, markdownAnimationBytes := g.markdownLoadBudgets()
 	go func() {
 		var doc *document.Document
+		var preview image.Image
 		var mesh *model3d.Mesh
 		var md *markdown.Document
 		var err error
@@ -262,7 +259,7 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 		} else if isModelFile(target.Name()) {
 			mesh, err = loadModelReader(uri)
 		} else {
-			doc, err = loadDocumentReader(uri)
+			doc, preview, err = loadDocumentReader(uri)
 		}
 		fyne.Do(func() {
 			if progress != nil {
@@ -288,37 +285,39 @@ func (g *Gui) openFile(uri fyne.URIReadCloser, err error, done func()) {
 				finish()
 				return
 			}
-			g.receiveDocument(doc, mesh, target, finish)
+			g.receiveDocument(doc, mesh, target, finish, preview)
 		})
 	}()
 }
 
-func loadDocumentReader(uri fyne.URIReadCloser) (*document.Document, error) {
+func loadDocumentReader(uri fyne.URIReadCloser) (*document.Document, image.Image, error) {
 	name, location := uri.URI().Name(), uri.URI().String()
 	data, err := io.ReadAll(uri)
 	err = errors.Join(err, uri.Close())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	source, err := document.LoadBytes(name, location, data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	loadedDocument, err := document.New(source)
 	if err != nil {
 		source.Close()
-		return nil, err
+		return nil, nil, err
 	}
+	var preview image.Image
 	if loadedDocument.Format() == document.FormatPDF {
-		if _, err := loadedDocument.Preview(0); err != nil {
+		preview, err = loadedDocument.Preview(0)
+		if err != nil {
 			loadedDocument.Close()
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return loadedDocument, nil
+	return loadedDocument, preview, nil
 }
 
-func (g *Gui) showDocument(loadedDocument *document.Document) {
+func (g *Gui) showDocument(loadedDocument *document.Document, openingPreview ...image.Image) {
 	g.stopGIFPlayback()
 	g.clearMarkdown()
 	g.clearModel()
@@ -337,7 +336,11 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.pdfCrops = nil
 	g.pdfPageIDs = nil
 	if loadedDocument.Format() == document.FormatPDF {
-		g.showPDF(loadedDocument)
+		var preview image.Image
+		if len(openingPreview) > 0 {
+			preview = openingPreview[0]
+		}
+		g.showPDF(loadedDocument, preview)
 		return
 	}
 	preview, err := loadedDocument.Preview(0)
@@ -383,7 +386,7 @@ func (g *Gui) showDocument(loadedDocument *document.Document) {
 	g.updateHistoryActions()
 }
 
-func (g *Gui) showPDF(loadedDocument *document.Document) {
+func (g *Gui) showPDF(loadedDocument *document.Document, openingPreview ...image.Image) {
 	frozen := g.thumbnailSelectionFrozen
 	g.thumbnailSelectionFrozen = true
 	defer func() { g.thumbnailSelectionFrozen = frozen }()
@@ -436,10 +439,17 @@ func (g *Gui) showPDF(loadedDocument *document.Document) {
 	g.correctionLayers = make(map[int]*textCorrectionLayer, loadedDocument.PageCount())
 	panOverlays := make([]*panOverlay, 0, loadedDocument.PageCount())
 
-	firstPreview, err := loadedDocument.Preview(0)
-	if err != nil {
-		g.showOperationError("open", err)
-		return
+	var firstPreview image.Image
+	if len(openingPreview) > 0 {
+		firstPreview = openingPreview[0]
+	}
+	if firstPreview == nil {
+		var err error
+		firstPreview, err = loadedDocument.Preview(0)
+		if err != nil {
+			g.showOperationError("open", err)
+			return
+		}
 	}
 	for page := 0; page < loadedDocument.PageCount(); page++ {
 		pageSize, err := loadedDocument.PageSize(page)

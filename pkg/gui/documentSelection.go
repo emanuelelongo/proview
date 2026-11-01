@@ -107,7 +107,7 @@ func (g *Gui) updateSelectionActions() {
 	disabled := !g.selectionCanOutput()
 	changed := false
 	for _, item := range g.menuDocumentItems {
-		if item.Label == "Print…" || item.Label == "Create PDF from Selection" {
+		if item.Label == "Print…" || item.Label == "Create PDF" {
 			if item.Disabled != disabled {
 				item.Disabled = disabled
 				changed = true

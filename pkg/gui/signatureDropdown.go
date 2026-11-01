@@ -61,6 +61,7 @@ func (g *Gui) showSignatureDropdown() {
 			if len(entries) == 0 {
 				content.Add(widget.NewLabel("No saved signatures"))
 			}
+			var firstChoice *signatureChoice
 			for i, entry := range entries {
 				entry := entry
 				preview := canvas.NewImageFromImage(previews[i])
@@ -74,21 +75,30 @@ func (g *Gui) showSignatureDropdown() {
 					}
 				})
 				if doc == nil {
-					choice.tapped = nil
+					choice.Disable()
+				} else if firstChoice == nil {
+					firstChoice = choice
 				}
+				choice.onFocus = func() { revealSignatureChoice(scroll, choice.Position().Y, choice.Size().Height) }
 				content.Add(choice)
 			}
 			content.Add(widget.NewSeparator())
-			content.Add(newSignatureChoice(widget.NewLabel("Manage signatures…"), func() {
+			manage := newSignatureChoice(widget.NewLabel("Manage signatures…"), func() {
 				popup.Hide()
 				g.signaturePopup = nil
 				g.showSignatureLibrary()
-			}))
+			})
+			manage.onFocus = func() { revealSignatureChoice(scroll, manage.Position().Y, manage.Size().Height) }
+			content.Add(manage)
 			content.Refresh()
 			// PopUp dimensions include its frame padding; the scroll viewport
 			// needs the full content height to display the last row completely.
 			padding := popup.Theme().Size(theme.SizeNameInnerPadding)
 			popup.Resize(fyne.NewSize(width+padding, min(height, content.MinSize().Height+padding)))
+			if firstChoice == nil {
+				firstChoice = manage
+			}
+			g.window.Canvas().Focus(firstChoice)
 		})
 	}()
 }
@@ -112,39 +122,79 @@ func renderSignaturePreviews(entries []signatures.Entry, maxSide, pixelBudget in
 
 // A whole preview is clickable; dropdown choices contain no action buttons.
 type signatureChoice struct {
-	widget.BaseWidget
-	content fyne.CanvasObject
-	border  *canvas.Rectangle
-	tapped  func()
+	widget.DisableableWidget
+	content          fyne.CanvasObject
+	border           *canvas.Rectangle
+	tapped           func()
+	onFocus          func()
+	focused, hovered bool
 }
 
 func newSignatureChoice(content fyne.CanvasObject, tapped func()) *signatureChoice {
 	w := &signatureChoice{content: content, border: canvas.NewRectangle(color.Transparent), tapped: tapped}
 	w.ExtendBaseWidget(w)
+	if tapped == nil {
+		w.Disable()
+	}
 	return w
 }
 func (w *signatureChoice) Tapped(*fyne.PointEvent) {
-	if w.tapped != nil {
+	if !w.Disabled() && w.tapped != nil {
+		if c := fyne.CurrentApp().Driver().CanvasForObject(w); c != nil {
+			c.Focus(w)
+		}
 		w.tapped()
 	}
 }
-func (w *signatureChoice) MouseIn(*desktop.MouseEvent) {
-	if w.tapped != nil {
-		w.border.StrokeColor = theme.PrimaryColor()
-		w.border.StrokeWidth = 2
-		w.Refresh()
+func (w *signatureChoice) FocusGained() {
+	w.focused = true
+	w.refreshBorder()
+	if w.onFocus != nil {
+		w.onFocus()
 	}
 }
+func (w *signatureChoice) FocusLost()     { w.focused = false; w.refreshBorder() }
+func (w *signatureChoice) TypedRune(rune) {}
+func (w *signatureChoice) TypedKey(event *fyne.KeyEvent) {
+	if event.Name == fyne.KeyReturn || event.Name == fyne.KeyEnter || event.Name == fyne.KeySpace {
+		w.Tapped(nil)
+	}
+}
+func (w *signatureChoice) MouseIn(*desktop.MouseEvent) {
+	w.hovered = true
+	w.refreshBorder()
+}
 func (w *signatureChoice) MouseMoved(*desktop.MouseEvent) {}
-func (w *signatureChoice) MouseOut()                      { w.border.StrokeWidth = 0; w.Refresh() }
+func (w *signatureChoice) MouseOut()                      { w.hovered = false; w.refreshBorder() }
+func (w *signatureChoice) refreshBorder() {
+	w.border.StrokeWidth = 0
+	if !w.Disabled() && (w.focused || w.hovered) {
+		w.border.StrokeColor = theme.PrimaryColor()
+		w.border.StrokeWidth = 2
+	}
+	w.Refresh()
+}
 func (w *signatureChoice) Cursor() desktop.Cursor {
-	if w.tapped != nil {
+	if !w.Disabled() && w.tapped != nil {
 		return desktop.PointerCursor
 	}
 	return desktop.DefaultCursor
 }
 func (w *signatureChoice) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(container.New(signatureChoiceLayout{}, w.content, w.border))
+}
+
+func revealSignatureChoice(scroll *container.Scroll, top, height float32) {
+	viewHeight := scroll.Size().Height
+	if viewHeight <= 0 {
+		return
+	}
+	offset := scroll.Offset.Y
+	if top < offset {
+		scroll.ScrollToOffset(fyne.NewPos(scroll.Offset.X, top))
+	} else if top+height > offset+viewHeight {
+		scroll.ScrollToOffset(fyne.NewPos(scroll.Offset.X, top+height-viewHeight))
+	}
 }
 
 // Keep the hover stroke inside the scroll viewport rather than clipping its

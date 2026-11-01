@@ -97,10 +97,11 @@ func (g *Gui) showSignatureLibrary() {
 					preview := canvas.NewImageFromImage(previews[i])
 					preview.FillMode = canvas.ImageFillContain
 					preview.SetMinSize(fyne.NewSize(150, 65))
-					picture := newSignatureChoice(container.NewStack(canvas.NewRectangle(color.White), preview), nil)
+					var edit func()
 					if entry.Asset.Drawing != nil {
-						picture.tapped = func() { library.Hide(); g.editArchiveDrawing(entry, func() { g.showSignatureLibrary() }) }
+						edit = func() { library.Hide(); g.editArchiveDrawing(entry, func() { g.showSignatureLibrary() }) }
 					}
+					picture := newSignatureChoice(container.NewStack(canvas.NewRectangle(color.White), preview), edit)
 					remove := widget.NewButtonWithIcon("", tablerIcon("trash"), func() {
 						dialog.ShowConfirm("Delete signature", "Delete this signature from the library? Copies in documents will remain available.", func(confirm bool) {
 							if !confirm {
@@ -123,7 +124,9 @@ func (g *Gui) showSignatureLibrary() {
 						}, g.window)
 					})
 					remove.Importance = widget.DangerImportance
-					content.Add(container.New(signatureLibraryRowLayout{}, picture, remove))
+					row := container.New(signatureLibraryRowLayout{}, picture, remove)
+					picture.onFocus = func() { revealSignatureChoice(scroll, row.Position().Y, row.Size().Height) }
+					content.Add(row)
 				}
 				content.Refresh()
 			})

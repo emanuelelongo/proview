@@ -366,8 +366,6 @@ Follow-up fixes to the retained-memory changes:
 - Preview trims from scroll eviction and document switch no longer wait on the
   source lock held during a MuPDF render: a busy source queues the trim to one
   background worker, which keeps previews used after the request.
-- "Open PDFs together" keeps the prepared list until loading succeeds, so an
-  invalid PDF no longer empties the still-open dialog.
 - `GOGC=50` (unless `GOGC` is set) is retained as a deliberate CPU-for-RSS
   trade-off.
 
@@ -392,9 +390,15 @@ Derived rasters and load-time copies (second audit):
   outer source closes its MuPDF context after loading and no longer takes a
   share of the raster budget (it reopens lazily when needed). The base is built
   from the cleaned bytes without an extra copy.
-- `LoadBytes` takes ownership of an in-memory buffer. GUI open, PDF collection,
+- `LoadBytes` takes ownership of an in-memory buffer. GUI open,
   clipboard, selection output and internal reloads use it, removing the
   `io.ReadAll` duplicate of every opened file.
+- Image loading checks decoded dimensions before allocating the raster: at most
+  32 million pixels and 16,384 pixels per side. The same check applies when an
+  inactive image is decoded again.
+- Opening a PDF passes the first page raster prepared in the background to the
+  new view, including when the raster was too large to remain in the source
+  cache. The UI no longer requests that page a second time during opening.
 - `rasterBytes` counts actual storage of compact formats (JPEG YCbCr, gray,
   paletted, 64-bit) instead of assuming 8 bytes per pixel, so budgets no longer
   evict early for JPEG-heavy documents.

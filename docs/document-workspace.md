@@ -68,8 +68,8 @@ The last clicked document is displayed, independently of the other selections.
 
 Right-click within the selection and choose **Print selected items…** or
 **Create PDF from selected items**. Right-clicking an unselected thumbnail first
-selects only that item. **File → Print…** also prints the selected documents, and
-**File → Create PDF from Selection** creates a separate, unsaved PDF window.
+selects only that item. **File → Print…** also prints the selected documents.
+**File → Create PDF** and the thumbnail context menu open a separate, unsaved PDF window.
 Use Save/Save As in that window to choose its destination. Existing source files,
 unsaved changes and histories remain intact.
 
