@@ -268,6 +268,41 @@ func TestTextCorrectionModeIsSeparateFromForms(t *testing.T) {
 	}
 }
 
+func TestTextCorrectionModeAvailableWithRedactions(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	g := newGui(app)
+	source, err := document.Load("text.pdf", bytes.NewReader(searchTextFixture(t, "PUBLIC SECRET KEEP")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := document.New(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	layout, err := doc.TextGeometry(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(textLayoutString(layout), "SECRET")
+	if start < 0 {
+		t.Fatal("missing fixture word")
+	}
+	if _, err := doc.AddRedaction(0, layout.Selection(start, start+len("SECRET")-1)); err != nil {
+		t.Fatal(err)
+	}
+	g.document = doc
+	g.updateHistoryActions()
+	if g.textEditAction.button.Disabled() || g.textEditItem.Disabled {
+		t.Fatal("text editing disabled by a pending redaction")
+	}
+	g.toggleTextEditing()
+	if !g.textEditing {
+		t.Fatal("text editing did not activate")
+	}
+}
+
 func TestTextCorrectionSelectionDialogAndZoom(t *testing.T) {
 	app := fyneTest.NewApp()
 	defer app.Quit()

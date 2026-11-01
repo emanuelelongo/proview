@@ -157,7 +157,7 @@ func correctionWordRange(layout document.TextLayout, index int) (int, int) {
 	return start, end
 }
 func (g *Gui) toggleTextEditing() {
-	if g.document == nil || g.document.Format() != document.FormatPDF || g.document.HasRedactions() || g.working {
+	if g.document == nil || g.document.Format() != document.FormatPDF || g.working {
 		return
 	}
 	active := !g.textEditing

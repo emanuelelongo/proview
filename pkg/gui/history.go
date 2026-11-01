@@ -79,7 +79,7 @@ func (g *Gui) updateHistoryActions() {
 	g.updateFileInfo()
 	hasDocument := g.document != nil
 	if g.textEditAction != nil {
-		available := hasDocument && g.document.Format() == document.FormatPDF && !g.document.HasRedactions()
+		available := hasDocument && g.document.Format() == document.FormatPDF
 		setToggleToolbarActionEnabled(g.textEditAction, available)
 		if g.textEditItem != nil {
 			g.textEditItem.Disabled = !available

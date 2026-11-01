@@ -7,8 +7,8 @@ No new OCR, paragraph reflow, release or packaging.
 ## Accepted interface and implemented behavior
 
 - [x] Separate Tabler `file-type-pdf` toolbar button, next to form filling;
-      Tools > Edit PDF Text, Ctrl/Command+Shift+E. Enabled for PDFs without
-      pending redactions. Form filling and correction are mutually exclusive.
+      Tools > Edit PDF Text, Ctrl/Command+Shift+E. Enabled for PDFs, including
+      those with pending redactions. Form filling and correction are mutually exclusive.
 - [x] Click a native word to open the compact Edit PDF Text dialog with its
       value, Apply/Cancel and compact Move (`arrows-move`) and Duplicate
       (`copy-plus`) icons beside the entry, with passive Move / Duplicate hover
@@ -224,9 +224,10 @@ original was not modified or added to fixtures. Desktop dragging needs user revi
       until document close, including versions evicted from history, because a
       rendering snapshot may still use them. Large documents/many corrections
       need a more economical representation and explicit snapshot lifetimes.
-- [ ] Correction is disabled while redactions exist. Recognition/search continue
-      using the existing sanitized path; no original redacted content is exposed
-      by the correction selector.
+- [x] Pending redactions mask covered source words in the correction selector,
+      including words only partially covered. Native correction and duplication
+      reject those words, while visible words on the same or other pages remain
+      editable. Recognition/search continue using the existing sanitized path.
 
 ## Verification and reproducibility
 
@@ -260,7 +261,7 @@ unchanged at 144 DPI. pdfcpu independently validates generated output.
 
 `pkg/document/text_editing_test.go` covers snapshots, one-step Undo/Redo,
 independent duplicated pages, stable IDs, pending form values, overlays, editable
-save/reopen, stale preparation and redaction exclusion. GUI tests cover toolbar
+save/reopen, stale preparation and redaction coexistence. GUI tests cover toolbar
 eligibility, mode exclusion, selection/dialog creation, zoom and Escape,
 explicit deletion, mouse moves at two zoom levels, pending text changes and
 cancellation before a queued move commits, repeated drops with independent

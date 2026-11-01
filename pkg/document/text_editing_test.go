@@ -316,7 +316,7 @@ func TestTextCorrectionPreservesPendingFormsAndOverlays(t *testing.T) {
 	}
 }
 
-func TestTextCorrectionRejectsStalePreparationAndRedactions(t *testing.T) {
+func TestTextCorrectionRejectsStalePreparation(t *testing.T) {
 	d := redactionDocument(t)
 	start, n := correctionRange(t, d, 0, "SECRET")
 	p, err := d.RenderingSnapshot().PrepareTextCorrection(0, start, n, "EDIT", 0, 0)
@@ -330,11 +330,85 @@ func TestTextCorrectionRejectsStalePreparationAndRedactions(t *testing.T) {
 	if err := d.ApplyTextCorrection(p); err == nil {
 		t.Fatal("stale correction accepted")
 	}
+}
+
+func TestTextCorrectionWithRedactions(t *testing.T) {
+	d := redactionDocument(t)
+	secretStart, secretCount := correctionRange(t, d, 0, "SECRET")
+	publicStart, publicCount := correctionRange(t, d, 0, "PUBLIC")
+	if err := d.DuplicatePage(0); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := d.AddRedaction(0, selectedWord(t, d, "SECRET")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.RenderingSnapshot().CorrectionTextGeometry(0); err == nil {
-		t.Fatal("redacted content exposed for correction")
+	snapshot := d.RenderingSnapshot()
+	layout, err := snapshot.CorrectionTextGeometry(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var visible strings.Builder
+	for _, glyph := range layout.Glyphs {
+		visible.WriteRune(glyph.Rune)
+	}
+	if strings.Contains(visible.String(), "SECRET") || !strings.Contains(visible.String(), "PUBLIC") {
+		t.Fatalf("correction selector exposed or hid the wrong text: %q", visible.String())
+	}
+	if p, err := snapshot.PrepareTextCorrection(0, secretStart, secretCount, "EXPOSED", 0, 0); err == nil {
+		p.Close()
+		t.Fatal("redacted word was edited")
+	}
+	if p, err := snapshot.PrepareTextDuplication(0, secretStart, secretCount, "EXPOSED", 0, 20); err == nil {
+		p.Close()
+		t.Fatal("redacted word was duplicated")
+	}
+	prepared, err := snapshot.PrepareTextCorrection(0, publicStart, publicCount, "VISIBLE", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	if err := d.ApplyTextCorrection(prepared); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.RedactionsForPage(0)) != 1 || !strings.Contains(correctedPageText(t, d, 0), "VISIBLE") {
+		t.Fatal("same-page edit lost the redaction or visible text")
+	}
+	otherStart, otherCount := correctionRange(t, d, 1, "SECRET")
+	other, err := d.RenderingSnapshot().PrepareTextCorrection(1, otherStart, otherCount, "EDIT", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if err := d.ApplyTextCorrection(other); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(correctedPageText(t, d, 1), "EDIT") {
+		t.Fatal("redaction on another page blocked editing")
+	}
+}
+
+func TestTextCorrectionMasksPartiallyRedactedWord(t *testing.T) {
+	d := redactionDocument(t)
+	start, count := correctionRange(t, d, 0, "SECRET")
+	layout, err := d.CorrectionTextGeometry(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.AddRedaction(0, []TextQuad{layout.Glyphs[start].Quad}); err != nil {
+		t.Fatal(err)
+	}
+	visible, err := d.RenderingSnapshot().CorrectionTextGeometry(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := start; i < start+count; i++ {
+		if visible.Glyphs[i].Rune != ' ' {
+			t.Fatalf("partially covered word exposed at glyph %d", i)
+		}
+	}
+	if p, err := d.RenderingSnapshot().PrepareTextCorrection(0, start+1, count-1, "EXPOSED", 0, 0); err == nil {
+		p.Close()
+		t.Fatal("partially covered word was edited")
 	}
 }
 
