@@ -36,7 +36,6 @@ type editorDocument struct {
 	doc             *document.Document
 	mesh            *model3d.Mesh
 	camera          model3d.Camera
-	modelUnit       model3d.Unit
 	modelGrid       bool
 	modelViewName   string
 	modelMeasuring  bool
@@ -134,7 +133,7 @@ func (g *Gui) captureDocument() {
 	entry.mesh = nil
 	if g.showingModel() {
 		entry.mesh, entry.camera = g.modelViewport.mesh, g.modelViewport.camera
-		entry.modelUnit, entry.modelGrid = g.modelViewport.unit, g.modelViewport.grid
+		entry.modelGrid = g.modelViewport.grid
 		entry.modelViewName, entry.modelMeasuring = g.modelViewport.viewName, g.modelViewport.measuring
 		entry.modelPoints = append(entry.modelPoints[:0], g.modelViewport.measurePoints...)
 	}
@@ -238,7 +237,7 @@ func (g *Gui) activateDocumentReady(entry *editorDocument) {
 	} else if entry.mesh != nil {
 		g.showModel(entry.mesh)
 		g.modelViewport.camera = entry.camera
-		g.modelViewport.unit, g.modelViewport.grid = entry.modelUnit, entry.modelGrid
+		g.modelViewport.grid = entry.modelGrid
 		g.modelViewport.viewName, g.modelViewport.measuring = entry.modelViewName, entry.modelMeasuring
 		g.modelViewport.measurePoints = append(g.modelViewport.measurePoints[:0], entry.modelPoints...)
 		g.updateModelMeasurementMenu()

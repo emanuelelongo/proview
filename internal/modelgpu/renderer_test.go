@@ -125,7 +125,7 @@ func TestNativeGPUFramesAndIndependentContexts(t *testing.T) {
 	if mismatches > 200 {
 		t.Fatalf("GPU camera differs from CPU: %d pixels", mismatches)
 	}
-	model3d.DrawGrid(original, mesh, camera, model3d.UnitMillimeter, "Isometric")
+	model3d.DrawGrid(original, mesh, camera, "Isometric")
 	gridPixels := 0
 	for i := 0; i < len(original.Pix); i += 4 {
 		if original.Pix[i] == 59 && original.Pix[i+1] == 69 && original.Pix[i+2] == 78 ||

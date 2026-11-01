@@ -90,15 +90,7 @@ func BuildMenu(g *Gui) {
 	g.modelMenuItems = append(g.modelMenuItems, g.modelWireframeItem)
 	g.modelGridItem = fyne.NewMenuItem("Reference Grid", g.toggleModelGrid)
 	g.modelMeasureItem = fyne.NewMenuItem("Measure Distance", g.toggleModelMeasurement)
-	unitMenu := fyne.NewMenu("")
-	for _, choice := range modelUnits {
-		item := fyne.NewMenuItem(choice.label, func() { g.setModelUnit(choice.unit) })
-		g.modelUnitItems = append(g.modelUnitItems, item)
-		unitMenu.Items = append(unitMenu.Items, item)
-	}
-	unitsItem := fyne.NewMenuItem("STL Units", nil)
-	unitsItem.ChildMenu = unitMenu
-	g.modelMenuItems = append(g.modelMenuItems, g.modelGridItem, unitsItem, g.modelMeasureItem)
+	g.modelMenuItems = append(g.modelMenuItems, g.modelGridItem, g.modelMeasureItem)
 	prepareModelMenu(g)
 
 	toolItem := func(label string, key fyne.KeyName, action func()) *fyne.MenuItem {

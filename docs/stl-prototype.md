@@ -30,17 +30,15 @@ uses the ordinary unbundled developer build; STL itself requires no OCR assets.
 - Press 1–7 for Isometric, Top, Bottom, Front, Rear, Left and Right, respectively.
 - Press 0 to toggle Wireframe. These commands also appear in View, only for STL.
 - View → Reference Grid toggles a depth-aware grid behind the model. Grid
-  spacing changes with zoom using 1/2/5 steps; Top/Bottom use XY, Front/Rear
-  use XZ, Left/Right use YZ, and free orbit uses the XY floor.
-- View → STL Units interprets one coordinate in the file as a millimeter,
-  centimeter, meter or inch. The default remains unspecified model units
-  because STL stores no unit metadata. The selected interpretation applies to
-  the dimensions and distance labels; physical grids are labeled in millimeters.
+  spacing changes with zoom using 1/2/5 steps, with a thicker line every ten
+  intervals; Top/Bottom use XY, Front/Rear use XZ, Left/Right use YZ, and free
+  orbit uses the XY floor. The legend chooses mm, cm or m for its current step.
 - View → Measure Distance lets two clicks on visible mesh surfaces show their
   straight-line 3D distance. A third click starts a new measurement; Escape
   clears it. The selected points stay attached to model coordinates when the
-  camera moves. This measures the triangulated surface, not an original CAD
-  curve or a path following the surface.
+  camera moves. Clicks near a visible sharp edge or corner snap to it; smooth
+  tessellation seams do not attract the measurement. This measures the
+  triangulated surface, not an original CAD curve or a path following the surface.
 - Selecting a standard view resets zoom and pan while preserving wireframe.
 - Fit to Window (`Command/Ctrl+0`) resets zoom and pan without changing orientation.
 - Crop selects a rectangular screenshot of the current shaded/wireframe view.
@@ -48,9 +46,10 @@ uses the ordinary unbundled developer build; STL itself requires no OCR assets.
   mesh stay intact. Escape cancels; changing the camera cancels the selection.
 - File → Close (`Command/Ctrl+W`) clears the model and keeps the window open.
 
-The status bar shows triangle count and axis-aligned bounding-box dimensions
-in the selected interpretation of model units. Choosing a physical unit is an
-explicit assumption about the source file, not a change to its coordinates.
+The status bar shows triangle count and axis-aligned bounding-box dimensions.
+Proview interprets one STL coordinate as one millimeter and chooses mm, cm or m
+for displayed lengths. STL stores no unit metadata, so physical labels rely on
+that assumption; source coordinates do not change.
 Save, signatures, drawing tools, image transforms, clipboard document editing
 and PDF page operations are unavailable in model mode. Creating a new image adds a sidebar
 entry in the same window and retains the model. PDFs open separately. Selecting an image/PDF restores

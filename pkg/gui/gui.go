@@ -61,7 +61,6 @@ type Gui struct {
 	modelMenu                         *fyne.Menu
 	modelMenuItems                    []*fyne.MenuItem
 	modelGridItem, modelMeasureItem   *fyne.MenuItem
-	modelUnitItems                    []*fyne.MenuItem
 	modelWireframeItem                *fyne.MenuItem
 	ocr                               *ocrState
 	qr                                *qrState

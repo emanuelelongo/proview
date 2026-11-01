@@ -27,7 +27,6 @@ type modelViewport struct {
 	renderer                      *modelgpu.Renderer
 	camera                        model3d.Camera
 	image                         *canvas.Image
-	unit                          model3d.Unit
 	grid, measuring               bool
 	viewName                      string
 	measurePoints                 []model3d.Vector
@@ -45,7 +44,7 @@ type modelViewport struct {
 }
 
 func newModelViewport(g *Gui) *modelViewport {
-	v := &modelViewport{editor: g, camera: model3d.DefaultCamera(), image: canvas.NewImageFromImage(nil), unit: model3d.UnitModel, grid: true, viewName: "Isometric"}
+	v := &modelViewport{editor: g, camera: model3d.DefaultCamera(), image: canvas.NewImageFromImage(nil), grid: true, viewName: "Isometric"}
 	v.image.FillMode = canvas.ImageFillContain
 	v.image.ScaleMode = canvas.ImageScaleSmooth
 	v.initMeasurementOverlay()
@@ -177,7 +176,7 @@ func (v *modelViewport) startRender() {
 	}
 	renderer := v.renderer
 	mesh, camera, generation := v.mesh, v.camera, v.generation
-	grid, unit, viewName := v.grid, v.unit, v.viewName
+	grid, viewName := v.grid, v.viewName
 	epoch := v.epoch
 	interacting := v.interacting
 	ctx, cancel := context.WithCancel(context.Background())
@@ -192,7 +191,7 @@ func (v *modelViewport) startRender() {
 			frame, err = renderer.Render(ctx, mesh, camera, w, h)
 		}
 		if err == nil && grid {
-			model3d.DrawGrid(frame, mesh, camera, unit, viewName)
+			model3d.DrawGrid(frame, mesh, camera, viewName)
 		}
 		cancel()
 		fyne.Do(func() {
@@ -241,7 +240,6 @@ func (g *Gui) showModel(mesh *model3d.Mesh) {
 	g.modelViewport.interacting = false
 	g.modelViewport.mesh = mesh
 	g.modelViewport.camera = model3d.DefaultCamera()
-	g.modelViewport.unit = model3d.UnitModel
 	g.modelViewport.grid = true
 	g.modelViewport.viewName = "Isometric"
 	g.modelViewport.measurePoints = nil
@@ -279,7 +277,8 @@ func isModelFile(name string) bool { return strings.HasSuffix(strings.ToLower(na
 func (g *Gui) modelInfo() string {
 	m := g.modelViewport.mesh
 	s := m.Size()
-	return fmt.Sprintf("%d triangles · %.3g × %.3g × %.3g %s", m.TriangleCount(), s.X, s.Y, s.Z, g.modelViewport.unit.Label())
+	scale, unit := model3d.MetricScale(math.Max(s.X, math.Max(s.Y, s.Z)))
+	return fmt.Sprintf("%d triangles · %.3g × %.3g × %.3g %s", m.TriangleCount(), s.X/scale, s.Y/scale, s.Z/scale, unit)
 }
 
 var modelViews = []string{"Isometric", "Top", "Bottom", "Front", "Rear", "Left", "Right"}

@@ -1,39 +1,26 @@
 package model3d
 
 import (
+	"fmt"
 	"image"
 	"math"
 )
 
-// Unit describes how one coordinate in a unitless STL should be interpreted.
-type Unit string
-
-const (
-	UnitModel      Unit = "model"
-	UnitMillimeter Unit = "mm"
-	UnitCentimeter Unit = "cm"
-	UnitMeter      Unit = "m"
-	UnitInch       Unit = "in"
-)
-
-func (u Unit) Label() string {
-	if u == UnitModel || u == "" {
-		return "units"
+// STL has no unit metadata. Proview interprets one source coordinate as one mm.
+func MetricScale(mm float64) (float64, string) {
+	switch {
+	case math.Abs(mm) >= 1000:
+		return 1000, "m"
+	case math.Abs(mm) >= 10:
+		return 10, "cm"
+	default:
+		return 1, "mm"
 	}
-	return string(u)
 }
 
-func (u Unit) MillimetersPerUnit() float64 {
-	switch u {
-	case UnitCentimeter:
-		return 10
-	case UnitMeter:
-		return 1000
-	case UnitInch:
-		return 25.4
-	default:
-		return 1
-	}
+func FormatMetricLength(mm float64) string {
+	scale, label := MetricScale(mm)
+	return fmt.Sprintf("%.4g %s", mm/scale, label)
 }
 
 func Distance(a, b Vector) float64 {
@@ -66,12 +53,17 @@ func (c Camera) unrotate(v Vector) Vector {
 // not depend on which renderer produced the displayed frame. Call off the UI
 // thread for large meshes.
 func Pick(m *Mesh, c Camera, w, h int, x, y float64) (Vector, bool) {
+	point, _, hit := pickSurface(m, c, w, h, x, y)
+	return point, hit
+}
+
+func pickSurface(m *Mesh, c Camera, w, h int, x, y float64) (Vector, int, bool) {
 	if m == nil || w < 1 || h < 1 || x < 0 || y < 0 || x >= float64(w) || y >= float64(h) {
-		return Vector{}, false
+		return Vector{}, -1, false
 	}
 	span := modelSpan(m)
 	if span <= 0 || !finite(span) {
-		return Vector{}, false
+		return Vector{}, -1, false
 	}
 	scale := float64(min(w, h)) * .29 * math.Max(.05, math.Min(c.Zoom, 30))
 	viewX := (x - float64(w)/2 - c.PanX*float64(w)) / scale
@@ -82,20 +74,9 @@ func Pick(m *Mesh, c Camera, w, h int, x, y float64) (Vector, bool) {
 	dir := c.unrotate(Vector{0, 0, -1}).Unit()
 	nearest := math.Inf(1)
 	var point Vector
+	nearestIndex := -1
 	for i := 0; i < m.TriangleCount(); i++ {
-		var vertices [3]Vector
-		if m.packed != nil {
-			for corner := range vertices {
-				offset := i*21 + corner*3
-				vertices[corner] = Vector{
-					center.X + float64(m.packed[offset])*span/2,
-					center.Y + float64(m.packed[offset+1])*span/2,
-					center.Z + float64(m.packed[offset+2])*span/2,
-				}
-			}
-		} else {
-			vertices = m.triangles[i].Vertices
-		}
+		vertices := meshTriangleVertices(m, i, center, span)
 		a, b, d := vertices[0], vertices[1], vertices[2]
 		e1, e2 := b.Sub(a), d.Sub(a)
 		p := dir.Cross(e2)
@@ -119,43 +100,40 @@ func Pick(m *Mesh, c Camera, w, h int, x, y float64) (Vector, bool) {
 		hit := e2.Dot(q) * inv
 		if hit >= 0 && hit < nearest {
 			nearest = hit
+			nearestIndex = i
 			point = Vector{origin.X + dir.X*hit, origin.Y + dir.Y*hit, origin.Z + dir.Z*hit}
 		}
 	}
-	return point, !math.IsInf(nearest, 1)
+	return point, nearestIndex, nearestIndex >= 0
 }
 
-// GridStep chooses 1/2/5 spacing at a readable screen pitch. For physical
-// units it uses millimeters; unitless models remain in source coordinates.
-func GridStep(m *Mesh, c Camera, w, h int, unit Unit) (float64, string) {
+// GridStep chooses 1/2/5 spacing in source millimeters at a readable pitch.
+func GridStep(m *Mesh, c Camera, w, h int) float64 {
 	span := modelSpan(m)
 	if span <= 0 || w < 1 || h < 1 {
-		return 0, ""
+		return 0
 	}
 	pixelsPerUnit := 2 * float64(min(w, h)) * .29 * math.Max(.05, math.Min(c.Zoom, 30)) / span
-	physical := 45 / pixelsPerUnit * unit.MillimetersPerUnit()
-	base := math.Pow(10, math.Floor(math.Log10(physical)))
+	wanted := 45 / pixelsPerUnit
+	base := math.Pow(10, math.Floor(math.Log10(wanted)))
 	step := base
 	for _, factor := range []float64{1, 2, 5, 10} {
 		step = factor * base
-		if step >= physical {
+		if step >= wanted {
 			break
 		}
 	}
-	if unit == UnitModel || unit == "" {
-		return step, "units"
-	}
-	return step / unit.MillimetersPerUnit(), "mm"
+	return step
 }
 
 // DrawGrid paints a reference plane behind visible mesh pixels. It works on
 // either CPU or GPU frames without changing the renderer's depth behavior.
-func DrawGrid(frame *image.RGBA, m *Mesh, c Camera, unit Unit, view string) {
+func DrawGrid(frame *image.RGBA, m *Mesh, c Camera, view string) {
 	if frame == nil || m == nil {
 		return
 	}
 	w, h := frame.Bounds().Dx(), frame.Bounds().Dy()
-	step, _ := GridStep(m, c, w, h, unit)
+	step := GridStep(m, c, w, h)
 	if step <= 0 || !finite(step) {
 		return
 	}
@@ -192,17 +170,17 @@ func DrawGrid(frame *image.RGBA, m *Mesh, c Camera, unit Unit, view string) {
 		if major {
 			color = [3]byte{78, 91, 100}
 		}
-		gridLine(frame, Project(m, c, p, w, h), Project(m, c, q, w, h), color)
+		gridLine(frame, Project(m, c, p, w, h), Project(m, c, q, w, h), color, major)
 	}
 	for i := math.Ceil(a.lo / step); i <= math.Floor(a.hi/step) && i < math.Ceil(a.lo/step)+200; i++ {
-		draw(point(i*step, b.lo), point(i*step, b.hi), math.Mod(math.Abs(i), 5) == 0)
+		draw(point(i*step, b.lo), point(i*step, b.hi), math.Mod(math.Abs(i), 10) == 0)
 	}
 	for i := math.Ceil(b.lo / step); i <= math.Floor(b.hi/step) && i < math.Ceil(b.lo/step)+200; i++ {
-		draw(point(a.lo, i*step), point(a.hi, i*step), math.Mod(math.Abs(i), 5) == 0)
+		draw(point(a.lo, i*step), point(a.hi, i*step), math.Mod(math.Abs(i), 10) == 0)
 	}
 }
 
-func gridLine(frame *image.RGBA, a, b Vector, color [3]byte) {
+func gridLine(frame *image.RGBA, a, b Vector, color [3]byte, major bool) {
 	w, h := frame.Bounds().Dx(), frame.Bounds().Dy()
 	dx, dy := b.X-a.X, b.Y-a.Y
 	lo, hi := 0., 1.
@@ -231,9 +209,19 @@ func gridLine(frame *image.RGBA, a, b Vector, color [3]byte) {
 		if x < 0 || y < 0 || x >= w || y >= h {
 			continue
 		}
-		j := y*frame.Stride + x*4
-		if frame.Pix[j] == BackgroundColor.R && frame.Pix[j+1] == BackgroundColor.G && frame.Pix[j+2] == BackgroundColor.B {
-			frame.Pix[j], frame.Pix[j+1], frame.Pix[j+2] = color[0], color[1], color[2]
+		radius := 0
+		if major {
+			radius = 1
+		}
+		for yy := max(0, y-radius); yy <= min(h-1, y+radius); yy++ {
+			for xx := max(0, x-radius); xx <= min(w-1, x+radius); xx++ {
+				j := yy*frame.Stride + xx*4
+				background := frame.Pix[j] == BackgroundColor.R && frame.Pix[j+1] == BackgroundColor.G && frame.Pix[j+2] == BackgroundColor.B
+				minor := frame.Pix[j] == 59 && frame.Pix[j+1] == 69 && frame.Pix[j+2] == 78
+				if background || major && minor {
+					frame.Pix[j], frame.Pix[j+1], frame.Pix[j+2] = color[0], color[1], color[2]
+				}
+			}
 		}
 	}
 }

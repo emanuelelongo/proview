@@ -2,24 +2,12 @@ package gui
 
 import (
 	"emanuelelongo/proview/internal/model3d"
-	"fmt"
 	"image/color"
 	"math"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 )
-
-var modelUnits = []struct {
-	label string
-	unit  model3d.Unit
-}{
-	{"Model units", model3d.UnitModel},
-	{"Millimeters", model3d.UnitMillimeter},
-	{"Centimeters", model3d.UnitCentimeter},
-	{"Meters", model3d.UnitMeter},
-	{"Inches", model3d.UnitInch},
-}
 
 func (v *modelViewport) initMeasurementOverlay() {
 	v.measureLine = canvas.NewLine(color.RGBA{255, 190, 55, 255})
@@ -66,12 +54,9 @@ func (v *modelViewport) updateMeasurementOverlay() {
 		return
 	}
 	if v.grid {
-		step, label := model3d.GridStep(v.mesh, v.publishedCamera, v.publishedSize.X, v.publishedSize.Y, v.unit)
+		step := model3d.GridStep(v.mesh, v.publishedCamera, v.publishedSize.X, v.publishedSize.Y)
 		if step > 0 {
-			if v.unit != model3d.UnitModel {
-				step *= v.unit.MillimetersPerUnit()
-			}
-			v.gridLabel.Text = fmt.Sprintf("Grid %.3g %s", step, label)
+			v.gridLabel.Text = "Grid " + model3d.FormatMetricLength(step)
 			v.gridLabel.Move(fyne.NewPos(12, 10))
 			v.gridLabel.Refresh()
 			v.gridLabel.Show()
@@ -84,7 +69,7 @@ func (v *modelViewport) updateMeasurementOverlay() {
 	if len(v.measurePoints) == 1 {
 		message = "Click second point"
 	} else if len(v.measurePoints) == 2 {
-		message = fmt.Sprintf("Distance %.4g %s", model3d.Distance(v.measurePoints[0], v.measurePoints[1]), v.unit.Label())
+		message = "Distance " + model3d.FormatMetricLength(model3d.Distance(v.measurePoints[0], v.measurePoints[1]))
 	}
 	v.measureLabel.Text = message
 	v.measureLabel.Move(fyne.NewPos(12, max(0, v.Size().Height-30)))
@@ -124,7 +109,7 @@ func (v *modelViewport) Tapped(event *fyne.PointEvent) {
 	v.pickGeneration++
 	pickGeneration := v.pickGeneration
 	go func() {
-		point, hit := model3d.Pick(mesh, camera, size.X, size.Y, x, y)
+		point, hit := model3d.PickSnapped(mesh, camera, size.X, size.Y, x, y, float64(scale))
 		fyne.Do(func() {
 			if v.pickGeneration != pickGeneration {
 				return
@@ -152,16 +137,6 @@ func (g *Gui) toggleModelGrid() {
 	v.requestRender()
 }
 
-func (g *Gui) setModelUnit(unit model3d.Unit) {
-	if !g.showingModel() {
-		return
-	}
-	g.modelViewport.unit = unit
-	g.updateModelMeasurementMenu()
-	g.updateFileInfo()
-	g.modelViewport.requestRender()
-}
-
 func (g *Gui) toggleModelMeasurement() {
 	if !g.showingModel() {
 		return
@@ -184,8 +159,5 @@ func (g *Gui) updateModelMeasurementMenu() {
 	v := g.modelViewport
 	g.modelGridItem.Checked = v.grid
 	g.modelMeasureItem.Checked = v.measuring
-	for i, choice := range modelUnits {
-		g.modelUnitItems[i].Checked = v.unit == choice.unit || v.unit == "" && choice.unit == model3d.UnitModel
-	}
 	refreshMenuState(g.modelMenu)
 }
