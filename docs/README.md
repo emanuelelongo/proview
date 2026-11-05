@@ -16,6 +16,7 @@ Feature documentation on a prototype branch does not imply a published release.
 | [Website and OAuth branding](github-pages-setup.md) | Pages, domain and Google project setup |
 | [Demo fixtures and media automation](../demo/README.md) | Synthetic inputs, screenshot/GIF recipes and agent regeneration workflow |
 | [Interactive performance](performance.md) | Rendering invalidation, bounded caches, long PDFs and measurements |
+| [Large JPEG experiment](large-image-experiment.md) | Isolated reduced/region decoder, bounded request scheduling, measurements and integration plan |
 | [Performance profiling plan](performance-plan.md) | Deferred desktop measurements and criteria for virtualization, shared memory budgets and work prioritization |
 | [Diagnostic logs](logging.md) | Local rotating logs, crash reports, retention and troubleshooting |
 | [Licensing review](licensing.md) | Dependencies, distribution obligations and open licensing work |

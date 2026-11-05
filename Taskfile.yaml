@@ -9,6 +9,11 @@ vars:
   LINUXDEPLOY_AARCH64_SHA256: 620095110d693282b8ebeb244a95b5e911cf8f65f76c88b4b47d16ae6346fcff
 
 tasks:
+  image:probe:
+    desc: Run the isolated large JPEG region experiment (requires libjpeg-turbo development files)
+    cmds:
+      - go run -tags largeimageexperiment ./cmd/imageprobe {{.CLI_ARGS}}
+
   demo:list:
     desc: List screenshot and animation recipes
     cmds:
