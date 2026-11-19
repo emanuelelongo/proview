@@ -24,7 +24,9 @@ Proview is an independent project and is not affiliated with, sponsored by, or e
 
 Open files from your desktop or drag them onto a Proview window. Switch between
 images, Markdown documents and STL models in the sidebar. PDFs open in separate
-windows, with the option to append pages when another PDF is already open.
+windows, with the option to append pages when another PDF is already open. Files
+changed outside Proview reload automatically when they have no unsaved edits;
+otherwise Proview asks before discarding them.
 See [Document workspace](docs/document-workspace.md) for details.
 
 ### Image viewing and basic editing
@@ -150,10 +152,11 @@ for details.
 
 ### Resume your files
 
-Launch `proview` without file arguments to reopen the previous session.
-Each window remembers its file set on closing; the last window closed wins.
-Sessions remember file paths, so save document edits separately. Launching with
-file arguments opens those files instead.
+Proview starts with an empty workspace. Use **File > Reopen Last Session** to
+reopen the file set from the last closed window. Each window remembers its set on
+closing; the last window closed wins, and closing an empty workspace keeps the
+previous set. Sessions remember file paths, so save document edits separately.
+Launching with file arguments opens those files instead.
 
 ### Read Markdown
 

@@ -165,6 +165,7 @@ func (g *Gui) detachDocumentView() {
 }
 
 func (g *Gui) closeWindow() {
+	g.stopFileWatch()
 	g.stopGIFPlayback()
 	if !g.closed {
 		g.saveSession()

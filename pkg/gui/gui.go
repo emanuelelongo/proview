@@ -157,7 +157,12 @@ type Gui struct {
 	redoItem                          *fyne.MenuItem
 	saveItem                          *fyne.MenuItem
 	saveAsItem                        *fyne.MenuItem
+	reopenSessionItem                 *fyne.MenuItem
+	reloadFileItem                    *fyne.MenuItem
 	signatureItem                     *fyne.MenuItem
+	fileWatchTimer                    *time.Timer
+	fileWatchGeneration               uint64
+	reloadPrompt                      dialog.Dialog
 	saveTarget                        fyne.URI
 	objectOrderMenu                   *widget.PopUpMenu
 	zoom                              float32
@@ -386,8 +391,7 @@ func (g *Gui) RunWithOptions(paths []string, options OpenOptions) {
 	// Showing the first window runs the native macOS launch event loop.
 	// Capture document requests before AppKit starts processing them.
 	registerOpenFilesHandler(nil)
-	if !g.deferSessionRestoreForFinder(paths) {
-		paths = g.launchPaths(paths)
+	if !g.deferFinderLaunch(paths) {
 		g.prepareWindowOpening(paths)
 		g.openStartupFiles(paths)
 	}

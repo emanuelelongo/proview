@@ -104,6 +104,34 @@ func TestSearchScansAllPagesAndReusesOCR(t *testing.T) {
 	}
 }
 
+type fixedClipboardWindow struct {
+	fyne.Window
+	clipboard fyne.Clipboard
+}
+
+func (w *fixedClipboardWindow) Clipboard() fyne.Clipboard { return w.clipboard }
+
+func TestSearchEntryPasteUsesTextClipboard(t *testing.T) {
+	app := fyneTest.NewApp()
+	defer app.Quit()
+	g := newGui(app)
+	clipboard := fyneTest.NewClipboard()
+	clipboard.SetContent("needle")
+	g.window = &fixedClipboardWindow{Window: g.window, clipboard: clipboard}
+	g.window.Show()
+	g.search.bar.Show()
+	g.search.host.Refresh()
+	g.window.Canvas().Focus(g.search.entry)
+	if g.window.Canvas().Focused() != g.search.entry {
+		t.Fatal("search entry did not take focus")
+	}
+	g.pasteImage()
+	if g.search.entry.Text != "needle" {
+		t.Fatalf("search paste = %q", g.search.entry.Text)
+	}
+	g.window.Canvas().Focus(nil)
+}
+
 func TestSearchNavigationEscapeAndInvalidation(t *testing.T) {
 	app := fyneTest.NewApp()
 	defer app.Quit()

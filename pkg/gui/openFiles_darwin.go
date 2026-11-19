@@ -104,18 +104,18 @@ func (inbox *finderFileInbox) finishLaunch() {
 }
 
 // Finder's launch documents arrive after the first native Show. Wait for
-// AppKit's launch boundary before deciding whether the saved session applies.
-func (g *Gui) deferSessionRestoreForFinder(paths []string) bool {
+// AppKit's launch boundary before opening them; a plain launch stays empty.
+func (g *Gui) deferFinderLaunch(paths []string) bool {
 	if len(paths) != 0 {
 		return false
 	}
 	finderOpenHandler.startLaunch(func(files []string) {
+		if len(files) == 0 {
+			return
+		}
 		fyne.Do(func() {
 			if g.closed {
 				return
-			}
-			if len(files) == 0 {
-				files = g.launchPaths(nil)
 			}
 			g.openStartupFiles(files)
 		})

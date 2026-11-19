@@ -62,9 +62,10 @@ Use `proview --foreground [files...]` to stay attached and see terminal diagnost
 `task run` uses this option automatically. `--help` and `--check-ocr` still run
 synchronously. Startup errors after detaching are recorded in the logs.
 
-With no file arguments, startup restores the previous session's file set. Each
-window saves its set on closing; the last writer wins, including an empty set.
-Explicit file arguments skip session restore. Document edits must be saved normally.
+With no file arguments, startup shows an empty workspace. Use File > Reopen Last
+Session to reopen the previous set. Each window saves its non-empty set on closing;
+the last writer wins, and an empty workspace keeps the remembered set. Explicit
+file arguments never restore a session. Document edits must be saved normally.
 
 When a process is already running, `proview file.md` adds the file to its active
 window where compatible. Requests wait for ongoing work; the PDF opening rules

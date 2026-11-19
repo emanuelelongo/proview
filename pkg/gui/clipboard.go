@@ -63,6 +63,9 @@ func (g *Gui) textClipboardShortcut(copy bool) bool {
 	case *annotationEntry:
 		e.TypedShortcut(shortcut)
 		return true
+	case *searchEntry:
+		e.TypedShortcut(shortcut)
+		return true
 	case *widget.Entry:
 		e.TypedShortcut(shortcut)
 		return true

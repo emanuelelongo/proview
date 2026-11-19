@@ -166,30 +166,48 @@ default application do not. See [launch options](development.md#command-line-win
 for framework preferences and cache locations.
 `--check-ocr` still exits before desktop registration or forwarding.
 
-## Automatic session restore
+## Reopen last session
 
 Closing a window automatically remembers its local file paths in sidebar order.
-Starting Proview without file arguments reopens that set through the normal
-opening queue. Explicit file arguments take priority and skip restoration. On
-macOS, Finder launch documents are collected before the restore decision; opening
-a file with Proview starts with that file alone. A Finder selection of several
-files is queued together in one workspace, subject to the PDF window rules.
-Finder may deliver mixed file types in separate events; events arriving within a
-short opening interval are grouped before routing. Later Finder requests keep
-their normal separate-window behavior.
-There are no session menu commands, names or confirmation dialogs.
+Starting Proview without file arguments always shows an empty workspace.
+File > Reopen Last Session reopens the remembered set through the normal opening
+queue; the item is disabled when no set is saved. Restore uses the current window
+when it is empty and a fresh window when it already has content. Explicit file
+arguments never trigger restoration. On macOS, Finder launch documents are opened
+directly; a plain Finder launch stays empty and offers Reopen Last Session. A
+Finder selection of several files is queued together in one workspace, subject to
+the PDF window rules. Finder may deliver mixed file types in separate events;
+events arriving within a short opening interval are grouped before routing. Later
+Finder requests keep their normal separate-window behavior.
+There are no session names or confirmation dialogs.
 
-Each window writes its own file set: the last window to save on closing wins,
-including an empty window, which clears the remembered set. Canceling a close
-does not save a session. Preferences follow `--data-dir` profile isolation.
-Independent processes use the same last-writer-wins behavior.
+Each window writes its non-empty file set on closing: the last window to save wins.
+An empty workspace does not clear the remembered set, so closing a plain launch
+does not discard the previous session. Canceling a close does not save a session.
+Preferences follow `--data-dir` profile isolation. Independent processes use the
+same last-writer-wins behavior.
 
 Sessions reference files on disk: they do not store unsaved edits, generated
 content, merged PDF state, Undo history, camera/reading position or window geometry.
 Save edits normally before relying on restoration. Entries without a local save
 path are excluded. Missing or unreadable files use the normal opening error flow;
 other queued files continue to open. PDF compatibility and append choices remain
-unchanged. Without a saved session, a no-file launch shows an empty window.
+unchanged. Without a saved session, Reopen Last Session stays disabled.
+
+## Reloading changed files
+
+While a window is open, its active file-backed document is checked every two
+seconds for an external size or modification-time change. A clean document reloads
+automatically and keeps its page, scroll position and zoom; Markdown keeps its
+reading state and STL keeps its camera. Document Undo history restarts because the
+source bytes were replaced. Selecting another file checks it immediately.
+
+A dirty document is never replaced silently: a dialog asks whether to reload and
+discard unsaved changes or keep the current content. File > Reload from Disk
+(Cmd/Ctrl+R) runs the same operation on demand and prompts when the active document
+is dirty. Generated or unsaved content, remote entries and files with no local path
+are excluded. Proview records the file stamp after its own successful save so a
+save is not mistaken for an external change.
 
 ## Verification
 
@@ -200,12 +218,15 @@ unchanged. Without a saved session, a no-file launch shows an empty window.
   Unicode paths, missing files and closed-window delivery.
 - `internal/openfiles/openfiles_test.go`: second-launch forwarding, absolute
   paths, endpoint restart and rejection of unauthenticated/relative requests.
-- `pkg/gui/sessions_test.go`: automatic no-file restore, explicit-file precedence,
-  last-window-wins persistence, empty-session clearing, exclusion of unsaved generated
-  files and queued CLI reuse of occupied windows.
-- `pkg/gui/openFiles_darwin_test.go`: Finder launch documents take priority over
-  the saved session; closely spaced mixed-file events share a workspace; later
+- `pkg/gui/sessions_test.go`: empty no-file launch, explicit restore item and window
+  routing, explicit-file precedence, last-window-wins persistence with empty-window
+  preservation, exclusion of unsaved generated files and queued CLI reuse of occupied
+  windows.
+- `pkg/gui/openFiles_darwin_test.go`: plain launches stay empty while Finder launch
+  documents open directly; closely spaced mixed-file events share a workspace; later
   requests remain separate.
+- `pkg/gui/fileWatch_test.go`: clean files reload after external changes and dirty
+  files prompt before replacement.
 - `cmd/gui/detach_test.go`: child continuation after launcher exit, disconnected
   output and preserved working directory.
 - Run `go test ./...` and `go vet ./...`.
@@ -230,8 +251,8 @@ and start fitted to the viewport.
 When startup or a forwarded desktop request supplies file paths for a fresh
 window, its first Show waits for the opening worker and geometry preparation.
 It is centered once before that Show. Opening into an already visible editor
-never recenters it. Launches without files restore the previous session when available; otherwise
-the empty window shows immediately; opening failures show
+never recenters it. Launches without files show the empty window immediately;
+Reopen Last Session then follows the normal file-opening rules; opening failures show
 the empty window and error dialog. File loading remains asynchronous, with the
 Opening dialog used only in already visible editors.
 

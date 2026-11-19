@@ -96,7 +96,7 @@ func (g *Gui) addMarkdown(d *markdown.Document, target fyne.URI) {
 	}
 	g.activateEditor()
 	g.prepareDocumentSwitch()
-	entry := &editorDocument{markdown: d, target: target}
+	entry := &editorDocument{markdown: d, target: target, stamp: stampForURI(target)}
 	g.documents = append(g.documents, entry)
 	g.activeDocument = entry
 	g.singleDocumentSelection(entry)

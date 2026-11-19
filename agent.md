@@ -137,13 +137,18 @@ PDF page combination/reordering/deletion and blank pages.
 - Command-line requests reuse the active workspace when compatible; Finder retains
   the separate-window policy. Normal executable launches detach from the terminal;
   `--foreground` retains synchronous diagnostics (`task run` uses it). A window automatically
-  saves its local file paths on close (last writer wins, including empty sets).
-  Restore that set only when a launch has neither file arguments nor Finder
-  launch documents. Wait until macOS finishes delivering its initial
-  Finder documents before deciding whether restoration applies. Finder can send
+  saves its non-empty local file paths on close (last writer wins); an empty
+  workspace keeps the remembered set. No-file launches always open empty and offer
+  the saved set through File > Reopen Last Session; explicit file arguments and
+  Finder launch documents never restore it. Wait until macOS finishes delivering
+  its initial Finder documents before opening them. Finder can send
   one selection as separate Apple Events by file type; group nearby events before
   routing them so mixed non-PDF files share the receiving window.
-  There are no session menu commands or serialized edits/history. See docs/document-workspace.md.
+  Sessions store paths only, never edits/history. Active file-backed documents are
+  polled for external changes; reload clean files automatically and prompt before
+  discarding dirty edits, preserving view state and recording stamps after own
+  saves. File > Reload from Disk (Cmd/Ctrl+R) forces the same reload.
+  See docs/document-workspace.md.
 - Desktop launches with paths use `internal/openfiles` to forward to an existing
   process through a private authenticated loopback endpoint and OS file lock.
   macOS retains its Apple Event bridge. Keep `--check-ocr` free of IPC/registration.
@@ -812,8 +817,8 @@ Fresh startup/desktop file windows must load and size before their first Show;
 center once before Show and never recenter after opening into a visible editor.
 Reveal the window on opening errors so the dialog remains accessible. Account
 for primary-monitor DPI/user scaling before Canvas.Scale is initialized. Preserve
-the immediate empty launch when no session is saved, automatic restoration without
-file arguments and macOS open-request registration order.
+the immediate empty launch for every no-file launch, explicit Reopen Last Session
+routing and macOS open-request registration order.
 
 ## STL viewer prototype
 

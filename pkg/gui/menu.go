@@ -27,6 +27,9 @@ func BuildMenu(g *Gui) {
 	toolModifier := shortcutModifier | fyne.KeyModifierShift
 	openItem := fyne.NewMenuItem("Open", g.requestOpen)
 	openItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyO, Modifier: shortcutModifier}
+	reopenSessionItem := fyne.NewMenuItem("Reopen Last Session", g.reopenLastSession)
+	reloadFileItem := fyne.NewMenuItem("Reload from Disk", g.reloadCurrentFile)
+	reloadFileItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyR, Modifier: shortcutModifier}
 	blankItem := fyne.NewMenuItem("New page", g.newBlankPage)
 	blankItem.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: shortcutModifier}
 	clipboardItem := fyne.NewMenuItem("New from clipboard", g.newFromClipboard)
@@ -43,7 +46,7 @@ func BuildMenu(g *Gui) {
 	exitItem := fyne.NewMenuItem("Exit", g.requestClose)
 	exitItem.IsQuit = true
 	fileMenu := fyne.NewMenu("File",
-		openItem, blankItem, clipboardItem,
+		openItem, reopenSessionItem, reloadFileItem, fyne.NewMenuItemSeparator(), blankItem, clipboardItem,
 		saveItem, saveAsItem, createPDFItem, printItem, closeItem, fyne.NewMenuItemSeparator(),
 		exitItem,
 	)
@@ -126,6 +129,8 @@ func BuildMenu(g *Gui) {
 	g.editMenu = editMenu
 	g.saveItem = saveItem
 	g.saveAsItem = saveAsItem
+	g.reopenSessionItem = reopenSessionItem
+	g.reloadFileItem = reloadFileItem
 	g.signatureItem = signatureItem
 	g.undoItem = undoItem
 	g.redoItem = redoItem

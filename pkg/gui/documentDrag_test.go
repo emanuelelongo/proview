@@ -46,7 +46,7 @@ func TestDocumentThumbnailDragPreservesStateAndSessionOrder(t *testing.T) {
 		t.Fatal("drag feedback was not cleared")
 	}
 	g.saveSession()
-	paths := g.launchPaths(nil)
+	paths := g.savedSessionPaths()
 	want := []string{filepath.Join(directory, "second.png"), filepath.Join(directory, "third.png"), filepath.Join(directory, "first.png")}
 	if !slices.Equal(paths, want) {
 		t.Fatalf("session paths = %v, want %v", paths, want)

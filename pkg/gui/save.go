@@ -165,6 +165,7 @@ func (g *Gui) finishFileSave(data []byte, uri fyne.URI, revision uint64, saved f
 func (g *Gui) finishSave(uri fyne.URI, revision uint64, saved func()) {
 	g.logEvent("save_completed", "bytes=%d exported_revision=%d scheme=%q", g.fileSizeBytes, revision, uri.Scheme())
 	g.saveTarget = uri
+	g.recordSavedFileStamp(uri)
 	if uri.Scheme() == "file" && g.workDir == "" {
 		if directory, err := filepath.Abs(filepath.Dir(uri.Path())); err == nil {
 			g.app.Preferences().SetString(lastSaveDirectoryKey, directory)

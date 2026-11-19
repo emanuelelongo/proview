@@ -37,6 +37,7 @@ type editorDocument struct {
 	mesh            *model3d.Mesh
 	camera          model3d.Camera
 	target          fyne.URI
+	stamp           fileStamp
 	redactedTargets map[string][]string
 	zoom            float32
 	zoomLevel, page int
@@ -166,7 +167,7 @@ func (g *Gui) prepareDocumentSwitch() {
 func (g *Gui) addDocument(doc *document.Document, mesh *model3d.Mesh, target fyne.URI, openingPreview ...image.Image) {
 	g.activateEditor()
 	g.prepareDocumentSwitch()
-	entry := &editorDocument{doc: doc, mesh: mesh, target: target}
+	entry := &editorDocument{doc: doc, mesh: mesh, target: target, stamp: stampForURI(target)}
 	g.documents = append(g.documents, entry)
 	g.activeDocument = entry
 	g.singleDocumentSelection(entry)
@@ -249,6 +250,9 @@ func (g *Gui) activateDocumentReady(entry *editorDocument) {
 		}
 	}
 	g.refreshDocumentSidebar()
+	if g.fileWatchTimer != nil {
+		g.checkActiveFileChange()
+	}
 }
 
 func (g *Gui) refreshDocumentSidebar() {

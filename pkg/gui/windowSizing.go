@@ -31,6 +31,7 @@ func (g *Gui) showWindow() {
 	}
 	g.showAfterOpening = false
 	g.window.Show()
+	g.startFileWatch()
 }
 
 func (g *Gui) showPreparedWindow() {

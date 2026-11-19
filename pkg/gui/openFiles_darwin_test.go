@@ -59,7 +59,7 @@ func TestFinderLaunchSkipsSavedSessionAndOpensSelectedFilesTogether(t *testing.T
 	}
 	g.app.Preferences().SetStringList(sessionPreferenceKey, []string{previous})
 	finderOpenHandler = finderFileInbox{}
-	if !g.deferSessionRestoreForFinder(nil) {
+	if !g.deferFinderLaunch(nil) {
 		t.Fatal("Finder launch was not deferred")
 	}
 	finderOpenHandler.finishLaunch()
@@ -109,23 +109,28 @@ func TestRunningMacGroupsSeparateFinderEventsInOneWorkspace(t *testing.T) {
 	g.closeWindow()
 }
 
-func TestPlainMacLaunchRestoresSavedSessionAfterLaunch(t *testing.T) {
+func TestPlainMacLaunchStaysEmptyAfterLaunch(t *testing.T) {
 	g, driver := newDropTestGui(t)
 	previous := filepath.Join(t.TempDir(), "previous.md")
 	if err := os.WriteFile(previous, []byte("# Previous session\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	g.app.Preferences().SetStringList(sessionPreferenceKey, []string{previous})
+	g.updateHistoryActions()
 	finderOpenHandler = finderFileInbox{}
-	if !g.deferSessionRestoreForFinder(nil) {
+	if !g.deferFinderLaunch(nil) {
 		t.Fatal("plain macOS launch was not deferred")
 	}
 	finderOpenHandler.finishLaunch()
-	for len(g.documents) == 0 || g.openingFiles || len(g.pendingFiles) > 0 {
+	time.Sleep(finderBatchDelay + 50*time.Millisecond)
+	for g.openingFiles || len(g.pendingFiles) > 0 {
 		driver.runNext(t)
 	}
-	if len(g.documents) != 1 || g.documents[0].target.Path() != previous {
+	if len(g.documents) != 0 {
 		t.Fatalf("plain launch restored %d documents", len(g.documents))
+	}
+	if g.reopenSessionItem.Disabled {
+		t.Fatal("plain launch did not offer the saved session")
 	}
 	g.closeWindow()
 }

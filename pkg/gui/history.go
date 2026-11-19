@@ -138,6 +138,11 @@ func (g *Gui) updateHistoryActions() {
 	if g.saveAsItem != nil {
 		g.saveAsItem.Disabled = !hasDocument
 	}
+	g.updateRestoreSessionItem()
+	if g.reloadFileItem != nil {
+		_, uri := g.activeFileTarget()
+		g.reloadFileItem.Disabled = uri == nil
+	}
 	for _, item := range g.menuDocumentItems {
 		item.Disabled = !hasDocument
 		if item.Label == "Find" || item.Label == "Find Next" || item.Label == "Find Previous" {
