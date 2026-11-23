@@ -7,7 +7,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
 	"image"
 	"image/color"
 )
@@ -20,7 +19,7 @@ func (g *Gui) newToolPropertyPanel() {
 	properties.Hide()
 	g.annotationPropertyScroll = properties
 	g.currentToolIndicator = newToolIndicator()
-	g.toolIndicatorHeader = container.NewPadded(container.NewVBox(g.currentToolIndicator, widget.NewSeparator()))
+	g.toolIndicatorHeader = container.NewPadded(container.NewVBox(g.currentToolIndicator, newRailDivider()))
 	// Reserve the column even when the property scroll has no visible controls.
 	space := canvas.NewRectangle(color.Transparent)
 	space.SetMinSize(fyne.NewSize(44, 0))

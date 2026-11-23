@@ -505,7 +505,7 @@ func (g *Gui) showPDF(loadedDocument *document.Document, openingPreview ...image
 		g.formLayers[page] = forms
 		correction := newTextCorrectionLayer(g, page)
 		g.correctionLayers[page] = correction
-		pageContainer := container.NewCenter(container.NewStack(canvas.NewRectangle(color.White), pageImage, pageBorder, layer, crop, forms, correction, pan))
+		pageContainer := container.NewCenter(container.NewStack(newPageShadow(2, 6), canvas.NewRectangle(color.White), pageImage, pageBorder, layer, crop, forms, correction, pan))
 		objects = append(objects, pageContainer)
 		pageContainers = append(pageContainers, pageContainer)
 
@@ -557,8 +557,8 @@ func (g *Gui) showPDF(loadedDocument *document.Document, openingPreview ...image
 		thumbBackdrop := canvas.NewRectangle(color.White)
 		thumbBackdrop.StrokeColor = theme.Color(theme.ColorNameSeparator)
 		thumbBackdrop.StrokeWidth = 1
-		card := container.NewStack(thumbBackdrop, thumbImage, placeholder, thumbBorder, newThumbnailBadge(page+1))
-		thumbs = append(thumbs, container.New(layout.NewCustomPaddedLayout(0, 8, 0, 0), container.NewStack(card, indicator, goToPage)))
+		card := container.NewStack(newPageShadow(2, 3), thumbBackdrop, thumbImage, placeholder, thumbBorder, newThumbnailBadge(page+1))
+		thumbs = append(thumbs, container.New(layout.NewCustomPaddedLayout(0, 10, 0, 0), container.NewStack(card, indicator, goToPage)))
 	}
 
 	g.clearSignatureSelection()

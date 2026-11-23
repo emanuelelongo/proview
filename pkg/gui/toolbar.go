@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-const toolbarButtonSize float32 = 34
+const toolbarButtonSize float32 = 32
 
 type toggleToolbarAction struct {
 	button          *iconButton
@@ -50,52 +50,74 @@ func (a *toggleToolbarAction) preparePulse() {
 	a.pulseContent = container.NewStack(a.pulseBackground, a.button)
 }
 
-// toolbarDivider draws a subtle vertical hairline between toolbar tool groups.
-type toolbarDivider struct {
+// toolbarCapsule groups related toolbar actions inside an elevated rounded pill.
+type toolbarCapsule struct {
 	widget.BaseWidget
+	content fyne.CanvasObject
 }
 
-func newToolbarDivider() *toolbarDivider {
-	d := &toolbarDivider{}
-	d.ExtendBaseWidget(d)
-	return d
+func newToolbarCapsule(objects ...fyne.CanvasObject) *toolbarCapsule {
+	row := container.New(layout.NewHBoxLayout(), objects...)
+	padded := container.New(layout.NewCustomPaddedLayout(3, 3, 4, 4), row)
+	c := &toolbarCapsule{content: padded}
+	c.ExtendBaseWidget(c)
+	return c
 }
 
-func (d *toolbarDivider) CreateRenderer() fyne.WidgetRenderer {
-	line := canvas.NewRectangle(theme.Color(theme.ColorNameSeparator))
-	return &toolbarDividerRenderer{divider: d, line: line}
+func (c *toolbarCapsule) CreateRenderer() fyne.WidgetRenderer {
+	bg := canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
+	bg.CornerRadius = 10
+	bg.StrokeColor = theme.Color(theme.ColorNameSeparator)
+	bg.StrokeWidth = 1
+	return &toolbarCapsuleRenderer{
+		WidgetRenderer: widget.NewSimpleRenderer(container.NewStack(bg, c.content)),
+		bg:             bg,
+	}
 }
 
-type toolbarDividerRenderer struct {
-	divider *toolbarDivider
-	line    *canvas.Rectangle
+type toolbarCapsuleRenderer struct {
+	fyne.WidgetRenderer
+	bg *canvas.Rectangle
 }
 
-func (r *toolbarDividerRenderer) Layout(size fyne.Size) {
-	const inset float32 = 6
-	height := max(1, size.Height-2*inset)
-	r.line.Move(fyne.NewPos((size.Width-1)/2, inset))
-	r.line.Resize(fyne.NewSize(1, height))
+func (r *toolbarCapsuleRenderer) Refresh() {
+	r.bg.FillColor = theme.Color(theme.ColorNameInputBackground)
+	r.bg.StrokeColor = theme.Color(theme.ColorNameSeparator)
+	r.bg.Refresh()
+	r.WidgetRenderer.Refresh()
 }
-func (*toolbarDividerRenderer) MinSize() fyne.Size { return fyne.NewSize(9, toolbarButtonSize) }
-func (r *toolbarDividerRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.line}
-}
-func (r *toolbarDividerRenderer) Refresh() {
-	r.line.FillColor = theme.Color(theme.ColorNameSeparator)
-	r.line.Refresh()
-}
-func (*toolbarDividerRenderer) Destroy() {}
 
 func newModernToolbar(items ...widget.ToolbarItem) fyne.CanvasObject {
-	row := container.NewHBox()
+	var groups [][]fyne.CanvasObject
+	var current []fyne.CanvasObject
 	for _, item := range items {
 		if _, isSep := item.(*widget.ToolbarSeparator); isSep {
-			row.Add(newToolbarDivider())
+			if len(current) > 0 {
+				groups = append(groups, current)
+				current = nil
+			}
 			continue
 		}
-		row.Add(container.NewGridWrap(fyne.NewSize(toolbarButtonSize, toolbarButtonSize), item.ToolbarObject()))
+		current = append(current, container.NewGridWrap(fyne.NewSize(toolbarButtonSize, toolbarButtonSize), item.ToolbarObject()))
 	}
-	padded := container.New(layout.NewCustomPaddedLayout(6, 6, 10, 10), row)
+	if len(current) > 0 {
+		groups = append(groups, current)
+	}
+
+	row := container.NewHBox()
+	for i, group := range groups {
+		if i > 0 {
+			if i == len(groups)-1 && len(groups) > 1 {
+				// Right-align the zoom capsule for a balanced studio layout.
+				row.Add(layout.NewSpacer())
+			} else {
+				gap := canvas.NewRectangle(color.Transparent)
+				gap.SetMinSize(fyne.NewSize(4, 1))
+				row.Add(gap)
+			}
+		}
+		row.Add(newToolbarCapsule(group...))
+	}
+	padded := container.New(layout.NewCustomPaddedLayout(7, 7, 10, 10), row)
 	return newChromePanel(padded, chromeBorderBottom)
 }

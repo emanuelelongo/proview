@@ -39,6 +39,13 @@ func TestChromePanelAddsBorderThicknessToMinSize(t *testing.T) {
 	}
 }
 
+func TestPageShadowDoesNotAlterGeometry(t *testing.T) {
+	shadow := newPageShadow(2, 6)
+	if got := shadow.MinSize(); got != (fyne.Size{}) {
+		t.Fatalf("pageShadow MinSize = %v, want 0x0", got)
+	}
+}
+
 func TestEmptyStateTracksOpenContent(t *testing.T) {
 	app := fyneTest.NewApp()
 	defer app.Quit()

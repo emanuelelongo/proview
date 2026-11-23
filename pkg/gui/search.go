@@ -76,8 +76,15 @@ func (g *Gui) newSearchBar() *fyne.Container {
 	next.Importance = widget.LowImportance
 	close := newIconButton(tablerIcon("x"), "Close search (Escape)", g.closeSearch)
 	close.Importance = widget.LowImportance
-	inner := container.New(layout.NewCustomPaddedLayout(5, 5, 10, 10),
-		container.NewBorder(nil, nil, widget.NewLabel("Find"), container.NewHBox(s.status, previous, next, close), s.entry))
+	searchIcon := container.NewCenter(container.NewGridWrap(fyne.NewSize(18, 18), widget.NewIcon(tablerIcon("search"))))
+	nav := container.NewHBox(
+		s.status,
+		container.NewGridWrap(fyne.NewSize(30, 30), previous),
+		container.NewGridWrap(fyne.NewSize(30, 30), next),
+		container.NewGridWrap(fyne.NewSize(30, 30), close),
+	)
+	inner := container.New(layout.NewCustomPaddedLayout(6, 6, 12, 10),
+		container.NewBorder(nil, nil, container.New(layout.NewCustomPaddedLayout(0, 0, 0, 6), searchIcon), nav, s.entry))
 	s.bar = container.NewStack(newChromePanel(inner, chromeBorderBottom))
 	s.bar.Hide()
 	return s.bar
