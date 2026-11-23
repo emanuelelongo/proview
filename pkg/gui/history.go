@@ -73,6 +73,7 @@ func (g *Gui) syncDocumentView() {
 }
 
 func (g *Gui) updateHistoryActions() {
+	g.updateEmptyState()
 	g.ensureGIFPlayback()
 	g.syncSearch()
 	g.syncOCR()

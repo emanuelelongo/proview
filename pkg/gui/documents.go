@@ -304,8 +304,9 @@ func (g *Gui) refreshDocumentSidebar() {
 				}
 				preview.SetMinSize(thumbnailSizeForSidebar(entry.thumbnail.Bounds().Size(), width))
 				border := canvas.NewRectangle(color.Transparent)
-				border.StrokeColor = theme.PrimaryColor()
-				border.StrokeWidth = 3
+				border.StrokeColor = theme.Color(theme.ColorNamePrimary)
+				border.StrokeWidth = 2.5
+				border.CornerRadius = 3
 				if !g.documentSelection[entry] {
 					border.Hide()
 				}
@@ -367,12 +368,13 @@ func (g *Gui) refreshDocumentSidebar() {
 		g.sidebar.panel.Hide()
 	}
 	if g.document != nil && g.document.Format() == document.FormatPDF {
-		g.sidebar.panel.Layout = layout.NewBorderLayout(g.sidebar.documents, nil, nil, nil)
-		g.sidebar.panel.Objects = []fyne.CanvasObject{g.sidebar.documents, g.sidebar.viewport}
+		g.sidebar.content.Layout = layout.NewBorderLayout(g.sidebar.documents, nil, nil, nil)
+		g.sidebar.content.Objects = []fyne.CanvasObject{g.sidebar.documents, g.sidebar.viewport}
 	} else {
-		g.sidebar.panel.Layout = layout.NewStackLayout()
-		g.sidebar.panel.Objects = []fyne.CanvasObject{g.sidebar.documents}
+		g.sidebar.content.Layout = layout.NewStackLayout()
+		g.sidebar.content.Objects = []fyne.CanvasObject{g.sidebar.documents}
 	}
+	g.sidebar.content.Refresh()
 	g.sidebar.panel.Refresh()
 	if g.sidebarSplit != nil {
 		g.sidebarSplit.relayout()

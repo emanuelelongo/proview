@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -23,10 +24,11 @@ type tooltipSurface struct {
 
 func newTooltipSurface(content fyne.CanvasObject) *tooltipSurface {
 	s := &tooltipSurface{content: content, label: widget.NewLabel("")}
-	s.background = canvas.NewRectangle(theme.OverlayBackgroundColor())
-	s.background.StrokeColor = theme.ForegroundColor()
+	s.background = canvas.NewRectangle(theme.Color(theme.ColorNameOverlayBackground))
+	s.background.StrokeColor = theme.Color(theme.ColorNameSeparator)
 	s.background.StrokeWidth = 1
-	s.bubble = container.NewStack(s.background, s.label)
+	s.background.CornerRadius = 7
+	s.bubble = container.NewStack(s.background, container.New(layout.NewCustomPaddedLayout(0, 0, 4, 4), s.label))
 	s.bubble.Hide()
 	s.ExtendBaseWidget(s)
 	return s
@@ -67,8 +69,8 @@ func (r *tooltipRenderer) Destroy() {}
 func (r *tooltipRenderer) Refresh() {
 	s := r.surface
 	s.content.Refresh()
-	s.background.FillColor = theme.OverlayBackgroundColor()
-	s.background.StrokeColor = theme.ForegroundColor()
+	s.background.FillColor = theme.Color(theme.ColorNameOverlayBackground)
+	s.background.StrokeColor = theme.Color(theme.ColorNameSeparator)
 	s.background.Refresh()
 	s.label.Refresh()
 	r.Layout(s.Size())

@@ -3,6 +3,7 @@ package gui
 import (
 	"emanuelelongo/proview/pkg/document"
 	"image"
+	"image/color"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -113,13 +114,19 @@ type fixedSidebarSplitRenderer struct {
 
 type sidebarDivider struct {
 	widget.BaseWidget
-	background *canvas.Rectangle
-	dragging   bool
-	onDrag     func(float32)
+	hitArea  *canvas.Rectangle
+	line     *canvas.Rectangle
+	hovered  bool
+	dragging bool
+	onDrag   func(float32)
 }
 
 func newSidebarDivider(onDrag func(float32)) *sidebarDivider {
-	divider := &sidebarDivider{background: canvas.NewRectangle(theme.SeparatorColor()), onDrag: onDrag}
+	divider := &sidebarDivider{
+		hitArea: canvas.NewRectangle(color.Transparent),
+		line:    canvas.NewRectangle(theme.Color(theme.ColorNameSeparator)),
+		onDrag:  onDrag,
+	}
 	divider.ExtendBaseWidget(divider)
 	return divider
 }
@@ -127,32 +134,44 @@ func newSidebarDivider(onDrag func(float32)) *sidebarDivider {
 func (d *sidebarDivider) CreateRenderer() fyne.WidgetRenderer {
 	return &sidebarDividerRenderer{divider: d}
 }
-func (d *sidebarDivider) MouseIn(*desktop.MouseEvent) {}
-func (d *sidebarDivider) MouseOut()                   {}
+func (d *sidebarDivider) MouseIn(*desktop.MouseEvent) { d.hovered = true; d.Refresh() }
+func (d *sidebarDivider) MouseOut()                   { d.hovered = false; d.Refresh() }
 func (d *sidebarDivider) Cursor() desktop.Cursor      { return desktop.HResizeCursor }
 func (d *sidebarDivider) MouseDown(event *desktop.MouseEvent) {
 	d.dragging = event.Button == desktop.MouseButtonPrimary
+	d.Refresh()
 }
-func (d *sidebarDivider) MouseUp(*desktop.MouseEvent) { d.dragging = false }
+func (d *sidebarDivider) MouseUp(*desktop.MouseEvent) { d.dragging = false; d.Refresh() }
 func (d *sidebarDivider) Dragged(event *fyne.DragEvent) {
 	if d.dragging && d.onDrag != nil {
 		d.onDrag(event.Dragged.DX)
 	}
 }
-func (d *sidebarDivider) DragEnd() { d.dragging = false }
+func (d *sidebarDivider) DragEnd() { d.dragging = false; d.Refresh() }
 
 type sidebarDividerRenderer struct{ divider *sidebarDivider }
 
 func (r *sidebarDividerRenderer) Layout(size fyne.Size) {
-	r.divider.background.Resize(size)
+	r.divider.hitArea.Resize(size)
+	thickness := float32(1)
+	if r.divider.hovered || r.divider.dragging {
+		thickness = 2
+	}
+	r.divider.line.Move(fyne.NewPos(0, 0))
+	r.divider.line.Resize(fyne.NewSize(thickness, size.Height))
 }
 func (r *sidebarDividerRenderer) MinSize() fyne.Size { return fyne.NewSize(sidebarDividerWidth, 0) }
 func (r *sidebarDividerRenderer) Refresh() {
-	r.divider.background.FillColor = theme.SeparatorColor()
-	r.divider.background.Refresh()
+	if r.divider.hovered || r.divider.dragging {
+		r.divider.line.FillColor = theme.Color(theme.ColorNamePrimary)
+	} else {
+		r.divider.line.FillColor = theme.Color(theme.ColorNameSeparator)
+	}
+	r.Layout(r.divider.Size())
+	r.divider.line.Refresh()
 }
 func (r *sidebarDividerRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.divider.background}
+	return []fyne.CanvasObject{r.divider.hitArea, r.divider.line}
 }
 func (*sidebarDividerRenderer) Destroy() {}
 

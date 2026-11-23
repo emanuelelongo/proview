@@ -145,7 +145,7 @@ func (v *markdownView) buildOutline() {
 		v.viewport.headingCount = len(v.headings)
 	}
 	v.applyOutlineVisibility()
-	rail := container.New(&markdownOutlineLayout{}, container.NewBorder(button, nil, widget.NewSeparator(), nil, canvas.NewRectangle(color.Transparent)))
+	rail := container.New(&markdownOutlineLayout{}, newChromePanel(container.NewBorder(button, nil, nil, nil, canvas.NewRectangle(color.Transparent)), chromeBorderLeft))
 	g.toolPropertyPanel.Hide()
 	g.rightPanel.Objects = []fyne.CanvasObject{rail}
 	g.rightPanel.Refresh()

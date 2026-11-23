@@ -127,8 +127,9 @@ type colorSwatch struct {
 
 func newColorSwatch(c color.Color, tapped func()) *colorSwatch {
 	s := &colorSwatch{rect: canvas.NewRectangle(c), tapped: tapped}
-	s.rect.StrokeColor = theme.ForegroundColor()
+	s.rect.StrokeColor = theme.Color(theme.ColorNameSeparator)
 	s.rect.StrokeWidth = 1
+	s.rect.CornerRadius = 7
 	s.ExtendBaseWidget(s)
 	return s
 }
@@ -150,14 +151,14 @@ func (s *colorSwatch) TypedKey(event *fyne.KeyEvent) {
 }
 func (s *colorSwatch) refreshBorder() {
 	if s.disabled {
-		s.rect.StrokeColor = theme.DisabledColor()
+		s.rect.StrokeColor = theme.Color(theme.ColorNameDisabled)
 	} else if s.focused {
-		s.rect.StrokeColor = theme.PrimaryColor()
+		s.rect.StrokeColor = theme.Color(theme.ColorNamePrimary)
 	} else {
-		s.rect.StrokeColor = theme.ForegroundColor()
+		s.rect.StrokeColor = theme.Color(theme.ColorNameSeparator)
 	}
 	if s.focused && !s.disabled {
-		s.rect.StrokeWidth = 3
+		s.rect.StrokeWidth = 2.5
 	} else {
 		s.rect.StrokeWidth = 1
 	}

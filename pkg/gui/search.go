@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"golang.org/x/image/vector"
 )
@@ -70,9 +71,14 @@ func (g *Gui) newSearchBar() *fyne.Container {
 	s.entry.OnChanged = func(string) { g.startSearch() }
 	s.status = widget.NewLabel("")
 	previous := newIconButton(tablerIcon("chevron-up"), "Previous match (Shift+F3)", func() { g.nextSearch(true) })
+	previous.Importance = widget.LowImportance
 	next := newIconButton(tablerIcon("chevron-down"), "Next match (F3)", func() { g.nextSearch(false) })
+	next.Importance = widget.LowImportance
 	close := newIconButton(tablerIcon("x"), "Close search (Escape)", g.closeSearch)
-	s.bar = container.NewBorder(nil, nil, widget.NewLabel("Find"), container.NewHBox(s.status, previous, next, close), s.entry)
+	close.Importance = widget.LowImportance
+	inner := container.New(layout.NewCustomPaddedLayout(5, 5, 10, 10),
+		container.NewBorder(nil, nil, widget.NewLabel("Find"), container.NewHBox(s.status, previous, next, close), s.entry))
+	s.bar = container.NewStack(newChromePanel(inner, chromeBorderBottom))
 	s.bar.Hide()
 	return s.bar
 }

@@ -3,6 +3,7 @@ package gui
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"image/color"
 )
@@ -10,6 +11,7 @@ import (
 type Sidebar struct {
 	container *container.Scroll
 	panel     *fyne.Container
+	content   *fyne.Container
 	viewport  *fyne.Container
 	documents *container.Scroll
 	g         *Gui
@@ -28,10 +30,13 @@ func NewSidebar(g *Gui) *Sidebar {
 	scroll.Hide()
 
 	viewport := container.New(&thumbnailViewportLayout{g: g}, container.NewThemeOverride(scroll, thumbnailScrollTheme{Theme: fyne.CurrentApp().Settings().Theme()}))
-	panel := container.NewBorder(documents, nil, nil, nil, viewport)
+	content := container.NewBorder(documents, nil, nil, nil, viewport)
+	inner := container.New(layout.NewCustomPaddedLayout(6, 6, 6, 6), content)
+	panel := container.NewStack(newChromePanel(inner, 0))
 	panel.Hide()
 	return &Sidebar{
 		panel:     panel,
+		content:   content,
 		viewport:  viewport,
 		documents: documents,
 		g:         g,

@@ -25,7 +25,7 @@ func (g *Gui) newToolPropertyPanel() {
 	space := canvas.NewRectangle(color.Transparent)
 	space.SetMinSize(fyne.NewSize(44, 0))
 	rail := container.NewBorder(g.toolIndicatorHeader, nil, nil, nil, container.NewStack(space, properties))
-	g.toolPropertyPanel = container.NewBorder(nil, nil, widget.NewSeparator(), nil, rail)
+	g.toolPropertyPanel = container.NewStack(newChromePanel(rail, chromeBorderLeft))
 	g.refreshToolIndicator()
 }
 

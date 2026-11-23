@@ -22,9 +22,9 @@ func newToolIndicator() *toolIndicator {
 }
 
 func (i *toolIndicator) CreateRenderer() fyne.WidgetRenderer {
-	circle := canvas.NewCircle(theme.SelectionColor())
-	circle.StrokeColor = theme.PrimaryColor()
-	circle.StrokeWidth = 1
+	circle := canvas.NewCircle(theme.Color(theme.ColorNameSelection))
+	circle.StrokeColor = theme.Color(theme.ColorNamePrimary)
+	circle.StrokeWidth = 1.5
 	content := container.NewGridWrap(fyne.NewSize(36, 36), container.NewStack(circle, container.NewCenter(i.icon)))
 	return &toolIndicatorRenderer{WidgetRenderer: widget.NewSimpleRenderer(content), circle: circle}
 }
@@ -35,8 +35,8 @@ type toolIndicatorRenderer struct {
 }
 
 func (r *toolIndicatorRenderer) Refresh() {
-	r.circle.FillColor = theme.SelectionColor()
-	r.circle.StrokeColor = theme.PrimaryColor()
+	r.circle.FillColor = theme.Color(theme.ColorNameSelection)
+	r.circle.StrokeColor = theme.Color(theme.ColorNamePrimary)
 	r.WidgetRenderer.Refresh()
 }
 

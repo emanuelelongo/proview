@@ -478,8 +478,8 @@ func (g *Gui) showPDF(loadedDocument *document.Document, openingPreview ...image
 		pageImages = append(pageImages, pageImage)
 		pageSizes = append(pageSizes, pageSize)
 		pageBorder := canvas.NewRectangle(color.Transparent)
-		pageBorder.StrokeColor = theme.PrimaryColor()
-		pageBorder.StrokeWidth = 3
+		pageBorder.StrokeColor = theme.Color(theme.ColorNamePrimary)
+		pageBorder.StrokeWidth = 2
 		if page != 0 {
 			pageBorder.Hide()
 		}
@@ -514,8 +514,9 @@ func (g *Gui) showPDF(loadedDocument *document.Document, openingPreview ...image
 		thumbImage.SetMinSize(thumbnailSizeForSidebar(pageSize, g.sidebarSplit.width))
 		thumbImages = append(thumbImages, thumbImage)
 		thumbBorder := canvas.NewRectangle(color.Transparent)
-		thumbBorder.StrokeColor = theme.PrimaryColor()
-		thumbBorder.StrokeWidth = 3
+		thumbBorder.StrokeColor = theme.Color(theme.ColorNamePrimary)
+		thumbBorder.StrokeWidth = 2.5
+		thumbBorder.CornerRadius = 3
 		if page != 0 {
 			thumbBorder.Hide()
 		}
@@ -553,8 +554,11 @@ func (g *Gui) showPDF(loadedDocument *document.Document, openingPreview ...image
 			placeholder.Hide()
 		}
 		thumbPlaceholders = append(thumbPlaceholders, placeholder)
-		card := container.NewStack(canvas.NewRectangle(color.White), thumbImage, placeholder, thumbBorder, newThumbnailBadge(page+1))
-		thumbs = append(thumbs, container.New(layout.NewCustomPaddedLayout(0, 6, 0, 0), container.NewStack(card, indicator, goToPage)))
+		thumbBackdrop := canvas.NewRectangle(color.White)
+		thumbBackdrop.StrokeColor = theme.Color(theme.ColorNameSeparator)
+		thumbBackdrop.StrokeWidth = 1
+		card := container.NewStack(thumbBackdrop, thumbImage, placeholder, thumbBorder, newThumbnailBadge(page+1))
+		thumbs = append(thumbs, container.New(layout.NewCustomPaddedLayout(0, 8, 0, 0), container.NewStack(card, indicator, goToPage)))
 	}
 
 	g.clearSignatureSelection()

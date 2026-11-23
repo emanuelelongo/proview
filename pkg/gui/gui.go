@@ -55,6 +55,7 @@ type Gui struct {
 	textMove                          *textMoveState
 	markdownView                      *markdownView
 	markdownPanel                     *fyne.Container
+	emptyState                        *emptyState
 	modelViewport                     *modelViewport
 	modelPanel                        fyne.CanvasObject
 	modelCrop                         *cropOverlay
@@ -250,7 +251,7 @@ func newGui(application fyne.App) *Gui {
 	g.editors = &editorGroup{windows: []*Gui{g}, active: g}
 	g.app.SetIcon(fyne.NewStaticResource("app-icon.png", assets.AppIcon))
 	if _, ok := g.app.Settings().Theme().(largerIconTheme); !ok {
-		g.app.Settings().SetTheme(largerIconTheme{Theme: g.app.Settings().Theme()})
+		g.app.Settings().SetTheme(largerIconTheme{Theme: newProviewTheme(g.app.Settings().Theme())})
 	}
 
 	g.image = canvas.NewImageFromImage(nil)
@@ -308,9 +309,10 @@ func newGui(application fyne.App) *Gui {
 	flipVerticalAction := newIconToolbarAction(tablerIcon("flip-vertical"), "Flip vertically", func() { g.transformSelected("vertical") })
 	g.transformActions = []*iconToolbarAction{rotateLeftAction, rotateRightAction, flipHorizontalAction, flipVerticalAction}
 	g.flipActions = []*iconToolbarAction{flipHorizontalAction, flipVerticalAction}
-	toolbar := widget.NewToolbar(
+	toolbar := newModernToolbar(
 		g.openAction,
 		g.blankAction,
+		widget.NewToolbarSeparator(),
 		g.annotationActions[toolSelect],
 		g.cropAction,
 		g.annotationActions[toolDraw],
@@ -335,28 +337,28 @@ func newGui(application fyne.App) *Gui {
 	g.markdownPanel.Hide()
 	g.modelPanel = newModelPanel(g)
 	g.modelPanel.Hide()
+	g.emptyState = newEmptyState(g)
 	contentArea := container.NewStack(g.imageScroll, g.pdfScroll,
-		newZoomScrollSurface(g, g.imageScroll), newZoomScrollSurface(g, g.pdfScroll), g.modelPanel, g.markdownPanel)
+		newZoomScrollSurface(g, g.imageScroll), newZoomScrollSurface(g, g.pdfScroll), g.modelPanel, g.markdownPanel, g.emptyState)
 
 	g.sidebarSplit = newFixedSidebarSplit(g.sidebar.panel, contentArea, defaultSidebarWidth, g.updatePDFThumbnailSizes)
 	g.mainSplit = g.sidebarSplit
 
 	g.newToolPropertyPanel()
 	g.rightPanel = container.NewStack(g.toolPropertyPanel)
-	g.tipText = canvas.NewText("", theme.Color(theme.ColorNameForeground))
+	g.tipText = canvas.NewText("", theme.Color(theme.ColorNamePlaceHolder))
 	g.tipText.TextSize = 12
 	g.tipText.Alignment = fyne.TextAlignLeading
-	tipBackground := canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
 	// A fixed slot keeps both the viewport and window minimum size stable.
 	tipContent := container.New(tipTextLayout{}, newStatusTextSurface(g))
 	tipViewport := container.NewScroll(tipContent)
 	tipViewport.Direction = container.ScrollNone
-	g.fileInfo = canvas.NewText("", theme.Color(theme.ColorNameForeground))
+	g.fileInfo = canvas.NewText("", theme.Color(theme.ColorNamePlaceHolder))
 	g.fileInfo.TextSize = g.tipText.TextSize
 	g.fileInfo.Alignment = fyne.TextAlignTrailing
 	infoViewport := container.NewScroll(container.NewStack(newFileInfoSurface(g)))
 	infoViewport.Direction = container.ScrollNone
-	g.tipBar = container.NewStack(tipBackground, container.New(statusBarLayout{}, tipViewport, infoViewport))
+	g.tipBar = container.NewStack(newChromePanel(container.New(statusBarLayout{}, tipViewport, infoViewport), chromeBorderTop))
 
 	documentArea := container.NewBorder(g.newSearchBar(), nil, nil, nil, g.mainSplit)
 	g.search.host = documentArea

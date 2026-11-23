@@ -78,7 +78,7 @@ func (g *Gui) showNextTip(generation uint64, schedule bool) {
 	if g.closed || g.selectionStatusActive || !g.tipsEnabled || generation != g.tipGeneration || len(startupTips) == 0 {
 		return
 	}
-	g.tipText.Color = theme.Color(theme.ColorNameForeground)
+	g.tipText.Color = theme.Color(theme.ColorNamePlaceHolder)
 	g.tipText.Text = startupTips[g.tipIndex%len(startupTips)]
 	g.refreshTipText()
 	g.tipBar.Show()
@@ -111,7 +111,7 @@ func (g *Gui) fadeTip(generation uint64, step int, deadline time.Time) {
 	if g.closed || g.selectionStatusActive || !g.tipsEnabled || generation != g.tipGeneration {
 		return
 	}
-	foreground := color.NRGBAModel.Convert(theme.Color(theme.ColorNameForeground)).(color.NRGBA)
+	foreground := color.NRGBAModel.Convert(theme.Color(theme.ColorNamePlaceHolder)).(color.NRGBA)
 	foreground.A = uint8(int(foreground.A) * step / tipFadeSteps)
 	g.tipText.Color = foreground
 	g.tipText.Refresh()
@@ -125,14 +125,14 @@ func (g *Gui) fadeTip(generation uint64, step int, deadline time.Time) {
 // Text width must not change the editor's minimum size when tips rotate.
 type tipTextLayout struct{}
 
-func (tipTextLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, 22) }
+func (tipTextLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, 26) }
 func (tipTextLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	for _, object := range objects {
 		textSize := object.MinSize()
 		if text, ok := object.(*canvas.Text); ok && text.Alignment == fyne.TextAlignTrailing {
-			textSize.Width = max(0, size.Width-8)
+			textSize.Width = max(0, size.Width-12)
 		}
-		object.Move(fyne.NewPos(4, (size.Height-textSize.Height)/2))
+		object.Move(fyne.NewPos(10, (size.Height-textSize.Height)/2))
 		object.Resize(textSize)
 	}
 }
@@ -140,15 +140,15 @@ func (tipTextLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 // Keep file information on the right and clip tips to the remaining width.
 type statusBarLayout struct{}
 
-func (statusBarLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, 22) }
+func (statusBarLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, 26) }
 func (statusBarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	if len(objects) != 2 {
 		return
 	}
 	infoWidth := min(float32(360), size.Width*.4)
 	objects[0].Move(fyne.NewPos(0, 0))
-	objects[0].Resize(fyne.NewSize(max(0, size.Width-infoWidth-8), size.Height))
-	objects[1].Move(fyne.NewPos(size.Width-infoWidth, 0))
+	objects[0].Resize(fyne.NewSize(max(0, size.Width-infoWidth-12), size.Height))
+	objects[1].Move(fyne.NewPos(size.Width-infoWidth-6, 0))
 	objects[1].Resize(fyne.NewSize(infoWidth, size.Height))
 }
 func (g *Gui) updateFileInfo() {
